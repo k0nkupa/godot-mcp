@@ -23,6 +23,8 @@ func _capture(message: String, data: Array, debugger_session_id: int) -> bool:
 	match message:
 		"godot_mcp_runtime:hello":
 			_accept_hello(payload, debugger_session_id)
+		"godot_mcp_runtime:ready":
+			_accept_ready(payload, debugger_session_id)
 		"godot_mcp_runtime:result":
 			_accept_result(payload, debugger_session_id)
 		"godot_mcp_runtime:stopped":
@@ -57,9 +59,9 @@ func execute(command: Dictionary) -> Dictionary:
 	var operation := String(command.get("arguments", {}).get("operation", ""))
 	var deadline := int(command.get("deadlineUnixMs", 0))
 	if operation == "await_ready":
-		while _bound_session_id < 0 and _now_ms() < deadline:
+		while _ready_info.is_empty() and _now_ms() < deadline:
 			await Engine.get_main_loop().process_frame
-		if _bound_session_id < 0:
+		if _ready_info.is_empty():
 			return _error("TIMEOUT", "Runtime did not authenticate before the deadline", true)
 		return {"ok": true, "data": _ready_info.duplicate(true)}
 	if _bound_session_id < 0:
@@ -115,16 +117,22 @@ func _accept_hello(payload: Dictionary, debugger_session_id: int) -> void:
 	if not SessionCrypto.constant_time_equal(String(payload.proof), expected):
 		return
 	_bound_session_id = debugger_session_id
-	_ready_info = {
-		"handle": {"runId": String(payload.runId), "generation": int(payload.generation)},
-		"pid": int(payload.pid),
-		"scenePath": String(_prepared.scenePath),
-	}
 	_prepared.secret = ""
 	get_session(debugger_session_id).send_message("godot_mcp_runtime:hello_ok", [{
 		"runId": String(payload.runId),
 		"generation": int(payload.generation),
 	}])
+
+func _accept_ready(payload: Dictionary, debugger_session_id: int) -> void:
+	if debugger_session_id != _bound_session_id or _prepared.is_empty() or not _ready_info.is_empty():
+		return
+	if String(payload.get("runId", "")) != String(_prepared.runId) or int(payload.get("generation", 0)) != int(_prepared.generation):
+		return
+	_ready_info = {
+		"handle": {"runId": String(payload.runId), "generation": int(payload.generation)},
+		"pid": int(payload.get("pid", 0)),
+		"scenePath": String(_prepared.scenePath),
+	}
 	runtime_ready.emit(_ready_info.duplicate(true))
 
 func _accept_result(payload: Dictionary, debugger_session_id: int) -> void:

@@ -3,12 +3,18 @@ extends Node
 
 const DescriptorReader = preload("res://addons/godot_mcp/bridge/descriptor_reader.gd")
 const SessionCrypto = preload("res://addons/godot_mcp/bridge/session_crypto.gd")
+const RuntimeControl = preload("res://addons/godot_mcp/runtime/runtime_control.gd")
+const RuntimeLogger = preload("res://addons/godot_mcp/runtime/runtime_logger.gd")
+const RuntimeQuery = preload("res://addons/godot_mcp/runtime/runtime_query.gd")
 
 var _descriptor: Dictionary = {}
 var _secret := PackedByteArray()
 var _authenticated := false
 var _receive_sequence := 0
 var _game_scene: Node
+var _logger: Logger
+var _query: RefCounted
+var _control: RefCounted
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -27,6 +33,8 @@ func _ready() -> void:
 		return
 	_secret = SessionCrypto.base64url_decode(String(_descriptor.secret))
 	_descriptor.secret = ""
+	_logger = RuntimeLogger.new(ProjectSettings.globalize_path("res://"))
+	OS.add_logger(_logger)
 	EngineDebugger.register_message_capture("godot_mcp_runtime", _capture)
 	var hello := {
 		"runId": String(_descriptor.runId),
@@ -42,6 +50,11 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	if EngineDebugger.has_capture("godot_mcp_runtime"):
 		EngineDebugger.unregister_message_capture("godot_mcp_runtime")
+	if _logger != null:
+		OS.remove_logger(_logger)
+	_logger = null
+	_query = null
+	_control = null
 	_secret.fill(0)
 	_secret = PackedByteArray()
 	_descriptor.clear()
@@ -74,6 +87,13 @@ func _load_game_scene() -> void:
 	_game_scene = resource.instantiate()
 	get_tree().root.add_child(_game_scene)
 	get_tree().current_scene = _game_scene
+	_query = RuntimeQuery.new(_game_scene, _logger)
+	_control = RuntimeControl.new(_game_scene, _query, _logger)
+	EngineDebugger.send_message("godot_mcp_runtime:ready", [{
+		"runId": String(_descriptor.runId),
+		"generation": int(_descriptor.generation),
+		"pid": OS.get_process_id(),
+	}])
 
 func _handle_command(command: Dictionary) -> void:
 	var request_id := String(command.get("requestId", ""))
@@ -89,15 +109,16 @@ func _handle_command(command: Dictionary) -> void:
 		outcome = _error("INVALID_REQUEST", "Runtime operation is not allowed")
 	else:
 		_receive_sequence = sequence
-		outcome = _execute_operation(operation, command.get("arguments", {}))
+		outcome = await _execute_operation(operation, command.get("arguments", {}), deadline)
 	EngineDebugger.send_message("godot_mcp_runtime:result", [{
 		"requestId": request_id,
 		"outcome": outcome,
 	}])
 
-func _execute_operation(operation: String, _arguments: Dictionary) -> Dictionary:
+func _execute_operation(operation: String, arguments: Dictionary, deadline_unix_ms: int) -> Dictionary:
 	match operation:
-		"status": return {"ok": true, "data": {"running": true, "paused": get_tree().paused}}
+		"status", "tree", "node", "logs": return _query.execute(operation, arguments)
+		"wait", "pause", "resume", "step": return await _control.execute(operation, arguments, deadline_unix_ms)
 		"stop":
 			call_deferred("_cooperative_stop")
 			return {"ok": true, "data": {"stopping": true}}

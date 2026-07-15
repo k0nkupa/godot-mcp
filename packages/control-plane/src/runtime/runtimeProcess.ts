@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import { GodotMcpException } from "../errors.js";
 
 const execFileAsync = promisify(execFile);
-const ENVIRONMENT_ALLOWLIST = ["HOME", "LANG", "LC_ALL", "LC_CTYPE", "PATH", "TMPDIR"] as const;
+const ENVIRONMENT_ALLOWLIST = ["HOME", "LANG", "LC_ALL", "LC_CTYPE", "PATH", "TMPDIR", "XDG_RUNTIME_DIR"] as const;
 
 export interface RuntimeArgumentsInput {
   projectRoot: string;
@@ -55,10 +55,12 @@ export interface OwnedRuntimeProcess {
   readonly fingerprint: string;
   stop(graceMs?: number): Promise<void>;
   wait(): Promise<number>;
+  diagnostics?(): string;
 }
 
 export class OwnedGodotProcess implements OwnedRuntimeProcess {
   private stopPromise: Promise<void> | undefined;
+  private output = "";
 
   private constructor(
     private readonly child: ChildProcess,
@@ -77,7 +79,17 @@ export class OwnedGodotProcess implements OwnedRuntimeProcess {
     });
     const pid = child.pid;
     if (!pid) throw new Error("Godot runtime did not report a PID");
-    return new OwnedGodotProcess(child, pid, await processFingerprint(pid));
+    const owned = new OwnedGodotProcess(child, pid, await processFingerprint(pid));
+    const append = (chunk: Buffer | string): void => {
+      owned.output = `${owned.output}${chunk.toString()}`.slice(-64 * 1024);
+    };
+    child.stdout?.on("data", append);
+    child.stderr?.on("data", append);
+    return owned;
+  }
+
+  diagnostics(): string {
+    return this.output;
   }
 
   wait(): Promise<number> {

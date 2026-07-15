@@ -1,0 +1,96 @@
+import { spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+
+import { startBridgeServer } from "@godot-mcp/bridge-client";
+import { initProject } from "@godot-mcp/cli";
+import { JsonlAuditSink, OwnedGodotProcess, readProjectIdentity, RuntimeService } from "@godot-mcp/control-plane";
+import { copyFixture, findGodotBinary, runGodot } from "@godot-mcp/testkit";
+import { expect, test } from "vitest";
+
+test("launches, inspects, controls, and cleans one authenticated runtime", async () => {
+  const project = await copyFixture();
+  const previousRuntimeDirectory = process.env.XDG_RUNTIME_DIR;
+  process.env.XDG_RUNTIME_DIR = join(project.root, "runtime-dir");
+  let editor: ReturnType<typeof spawn> | undefined;
+  let editorOutput = "";
+  let runtimeOutput = "";
+  try {
+    expect((await runGodot(["--headless", "--editor", "--path", project.root, "--import"])).exitCode).toBe(0);
+    await initProject(project.root, resolve(process.cwd(), "addons/godot_mcp"), process.env.GODOT_BIN);
+    await project.snapshot();
+    const identity = await readProjectIdentity(project.root);
+    const manifest = JSON.parse(await readFile(join(project.root, ".godot/godot-mcp/install-manifest.json"), "utf8")) as { manifestSha256: string };
+    const bridge = await startBridgeServer({
+      project: identity,
+      grants: { tiers: ["observe", "runtime_control"], packs: ["core", "runtime"] },
+      addonManifestSha256: manifest.manifestSha256,
+      auditSink: new JsonlAuditSink(join(dirname(project.root), "runtime-audit.jsonl")),
+    });
+    try {
+      editor = spawn(await findGodotBinary(), ["--headless", "--editor", "--debug-server", "tcp://127.0.0.1:6007", "--path", project.root], { env: process.env, stdio: ["ignore", "pipe", "pipe"] });
+      editor.stdout?.on("data", (chunk: Buffer) => { editorOutput += chunk.toString(); });
+      editor.stderr?.on("data", (chunk: Buffer) => { editorOutput += chunk.toString(); });
+      const session = await bridge.waitForAttachment(15_000);
+      const runtime = new RuntimeService({
+        project: identity,
+        sessionId: () => session.sessionId,
+        godotBin: await findGodotBinary(),
+        launchProcess: async (input) => {
+          const owned = await OwnedGodotProcess.launch(input);
+          const diagnostics = owned.diagnostics.bind(owned);
+          const stop = owned.stop.bind(owned);
+          return {
+            pid: owned.pid,
+            fingerprint: owned.fingerprint,
+            wait: owned.wait.bind(owned),
+            diagnostics,
+            async stop(graceMs?: number): Promise<void> {
+              runtimeOutput = diagnostics();
+              await stop(graceMs);
+              runtimeOutput = diagnostics();
+            },
+          };
+        },
+        prepare: async ({ descriptor }) => (await session.request<{ debugPort: number }>("runtime.prepare", { descriptor }, { timeoutMs: 5_000 })).data,
+        command: async (operation, input, timeoutMs = 10_000) => (await session.request<Record<string, unknown>>("runtime.command", { operation, ...input }, { timeoutMs })).data,
+      });
+      try {
+        const launched = await runtime.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 15_000 });
+        expect(launched.root).toMatchObject({ pid: expect.any(Number), scenePath: "res://runtime/runtime_fixture.tscn" });
+        const tree = await runtime.execute({ operation: "tree", handle: launched.handle, root: ".", maxDepth: 4, maxNodes: 20 }) as { nodes: Array<{ nodePath: string }> };
+        expect(tree.nodes.map((node) => node.nodePath)).toEqual([".", "Backdrop", "Accent", "Status", "Nested", "Nested/Marker"]);
+        const node = await runtime.execute({ operation: "node", handle: launched.handle, nodePath: ".", includeProperties: true, includeSignals: true }) as { properties: Array<{ name: string; value: unknown }>; signals: unknown[] };
+        expect(node.properties).toEqual(expect.arrayContaining([expect.objectContaining({ name: "fixture_name", value: "phase-3-runtime" })]));
+        expect(JSON.stringify(node.signals)).toContain("milestone");
+        const logs = await runtime.execute({ operation: "logs", handle: launched.handle, afterSequence: 0, levels: ["log"], limit: 20 }) as { records: Array<{ message: string }> };
+        expect(logs.records.map((record) => record.message).join("\n")).toContain("phase-3 runtime ready");
+        await expect(runtime.execute({ operation: "wait", handle: launched.handle, timeoutMs: 5_000, condition: { type: "property_equals", nodePath: ".", property: "phase", value: "ready" } })).resolves.toMatchObject({ satisfied: true });
+        await expect(runtime.execute({ operation: "wait", handle: launched.handle, timeoutMs: 5_000, condition: { type: "signal_emitted", nodePath: ".", signal: "milestone" } })).resolves.toMatchObject({ satisfied: true });
+        await runtime.execute({ operation: "pause", handle: launched.handle });
+        expect(runtime.snapshot().state).toBe("paused");
+        const beforeStep = await runtime.execute({ operation: "node", handle: launched.handle, nodePath: ".", includeProperties: true, includeSignals: false }) as { properties: Array<{ name: string; value: unknown }> };
+        await runtime.execute({ operation: "step", handle: launched.handle, frames: 2 });
+        const afterStep = await runtime.execute({ operation: "node", handle: launched.handle, nodePath: ".", includeProperties: true, includeSignals: false }) as { properties: Array<{ name: string; value: unknown }> };
+        const property = (result: { properties: Array<{ name: string; value: unknown }> }, name: string) => Number(result.properties.find((entry) => entry.name === name)?.value);
+        expect(property(afterStep, "frame_counter") - property(beforeStep, "frame_counter")).toBe(2);
+        await expect(runtime.execute({ operation: "pause", handle: { ...launched.handle, generation: launched.handle.generation + 1 } })).rejects.toMatchObject({ code: "STALE_HANDLE" });
+        await runtime.execute({ operation: "resume", handle: launched.handle });
+        await runtime.execute({ operation: "stop", handle: launched.handle });
+        expect(runtime.snapshot().state).toBe("stopped");
+      } finally {
+        await runtime.close();
+      }
+    } catch (error) {
+      throw new Error(`${String(error)}\nEditor:\n${editorOutput}\nRuntime:\n${runtimeOutput}`);
+    } finally {
+      await bridge.close();
+    }
+    expect(await project.diffFromOriginal()).toEqual([]);
+  } finally {
+    if (editor?.exitCode === null) editor.kill("SIGTERM");
+    if (previousRuntimeDirectory === undefined) delete process.env.XDG_RUNTIME_DIR;
+    else process.env.XDG_RUNTIME_DIR = previousRuntimeDirectory;
+    await project.cleanup();
+  }
+}, 60_000);
