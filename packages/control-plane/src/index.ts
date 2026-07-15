@@ -27,6 +27,11 @@ export {
 export { authorize } from "./policy/authorize.js";
 export { redactAuditValue } from "./audit/redact.js";
 export {
+  EvidenceStore,
+  type EvidenceReference,
+  type PngEvidenceMetadata,
+} from "./evidence/evidenceStore.js";
+export {
   JsonlAuditSink,
   type AuditInput,
   type AuditSink,

@@ -24,6 +24,7 @@ export interface AuditInput {
   finishedAt?: string;
   arguments: unknown;
   errorCode: string | null;
+  evidence?: string[];
 }
 
 export interface AuditSink {
@@ -46,6 +47,7 @@ function buildAuditRecord(input: AuditInput): AuditRecord {
     finishedAt: input.finishedAt ?? timestamp,
     arguments: redactAuditValue(input.arguments),
     errorCode: input.errorCode,
+    evidence: input.evidence ?? [],
   });
 }
 

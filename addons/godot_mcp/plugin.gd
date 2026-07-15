@@ -5,17 +5,20 @@ const BridgeClient = preload("res://addons/godot_mcp/bridge/bridge_client.gd")
 const DescriptorReader = preload("res://addons/godot_mcp/bridge/descriptor_reader.gd")
 const DiagnosticLogger = preload("res://addons/godot_mcp/observation/diagnostic_logger.gd")
 const EditorQuery = preload("res://addons/godot_mcp/observation/editor_query.gd")
+const EditorCapture = preload("res://addons/godot_mcp/observation/editor_capture.gd")
 const MainThreadQueue = preload("res://addons/godot_mcp/commands/main_thread_queue.gd")
 
 var bridge: Node
 var command_queue: Node
 var diagnostic_logger: Logger
 var editor_query: RefCounted
+var editor_capture: RefCounted
 
 func _enter_tree() -> void:
 	diagnostic_logger = DiagnosticLogger.new(ProjectSettings.globalize_path("res://"))
 	OS.add_logger(diagnostic_logger)
 	editor_query = EditorQuery.new(get_editor_interface(), diagnostic_logger)
+	editor_capture = EditorCapture.new(get_editor_interface())
 	command_queue = MainThreadQueue.new()
 	command_queue.set_handler(_execute_command)
 	add_child(command_queue)
@@ -33,10 +36,18 @@ func _on_command_received(command: Dictionary) -> void:
 func _execute_command(command: Dictionary) -> Dictionary:
 	if String(command.method) == "editor.query":
 		return editor_query.execute(command.arguments)
+	if String(command.method) == "editor.capture":
+		return await editor_capture.execute(command.arguments)
 	return {"ok": false, "code": "INVALID_REQUEST", "message": "Unsupported editor command", "retryable": false}
 
-func _on_command_completed(request_id: String, result: Dictionary) -> void:
-	bridge.send_command_result(request_id, result)
+func _on_command_completed(request_id: String, outcome: Dictionary) -> void:
+	var chunks: Array = outcome.get("chunks", [])
+	var binary: Dictionary = outcome.get("binary", {})
+	for index in chunks.size():
+		if not bridge.is_attached():
+			return
+		bridge.send_command_chunk(request_id, index, chunks.size(), String(binary.get("sha256", "")), String(chunks[index]))
+	bridge.send_command_result(request_id, outcome.get("data", {}), binary)
 
 func _on_command_failed(request_id: String, code: String, message: String, retryable: bool) -> void:
 	bridge.send_command_error(request_id, code, message, retryable)
@@ -52,3 +63,4 @@ func _exit_tree() -> void:
 		OS.remove_logger(diagnostic_logger)
 	diagnostic_logger = null
 	editor_query = null
+	editor_capture = null

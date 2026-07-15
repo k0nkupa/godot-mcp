@@ -88,6 +88,7 @@ export const AuditRecordSchema = z.object({
   finishedAt: z.string(),
   arguments: z.unknown(),
   errorCode: z.string().nullable(),
+  evidence: z.array(z.string()).default([]),
 });
 
 export type PermissionTier = z.infer<typeof PermissionTierSchema>;

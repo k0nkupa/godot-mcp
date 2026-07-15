@@ -4,9 +4,12 @@ const DiagnosticLogger = preload("res://addons/godot_mcp/observation/diagnostic_
 const MainThreadQueue = preload("res://addons/godot_mcp/commands/main_thread_queue.gd")
 const VariantEncoder = preload("res://addons/godot_mcp/observation/variant_encoder.gd")
 const CanonicalJson = preload("res://addons/godot_mcp/bridge/canonical_json.gd")
+const EditorCapture = preload("res://addons/godot_mcp/observation/editor_capture.gd")
 
 func _init() -> void:
 	assert(CanonicalJson.encode({"limit": 20.0}) == "{\"limit\":20}")
+	var chunks: Array[PackedByteArray] = EditorCapture.chunk_bytes(PackedByteArray([1, 2, 3, 4, 5]), 3)
+	assert(chunks.size() == 2 and chunks[0].size() == 3 and chunks[1].size() == 2)
 	var encoded: Variant = VariantEncoder.encode_value(Vector2(3, 4))
 	assert(encoded == {"type": "Vector2", "x": "3.0", "y": "4.0"})
 	var resource_value: Dictionary = VariantEncoder.encode_value(Resource.new())

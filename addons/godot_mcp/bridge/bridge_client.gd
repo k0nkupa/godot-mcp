@@ -186,9 +186,16 @@ func _send_signed(method: String, params: Variant, timeout_ms: int) -> void:
 func is_attached() -> bool:
 	return _paired and _socket != null and _socket.get_ready_state() == WebSocketPeer.STATE_OPEN
 
-func send_command_result(request_id: String, data: Dictionary) -> void:
+func send_command_result(request_id: String, data: Dictionary, binary: Dictionary = {}) -> void:
 	if is_attached():
-		_send_signed("command.result", {"requestId": request_id, "ok": true, "data": data}, 5000)
+		var params := {"requestId": request_id, "ok": true, "data": data}
+		if not binary.is_empty():
+			params.binary = binary
+		_send_signed("command.result", params, 5000)
+
+func send_command_chunk(request_id: String, index: int, total: int, sha256: String, data: String) -> void:
+	if is_attached():
+		_send_signed("command.chunk", {"requestId": request_id, "index": index, "total": total, "sha256": sha256, "data": data}, 5000)
 
 func send_command_error(request_id: String, code: String, message: String, retryable: bool = false) -> void:
 	if is_attached():

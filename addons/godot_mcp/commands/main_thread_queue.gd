@@ -45,7 +45,7 @@ func _run_next() -> void:
 		if typeof(outcome) != TYPE_DICTIONARY:
 			failed.emit(request_id, "GODOT_RUNTIME_ERROR", "Command returned an invalid result", false)
 		elif bool(outcome.get("ok", false)):
-			completed.emit(request_id, outcome.get("data", {}))
+			completed.emit(request_id, outcome)
 		else:
 			failed.emit(request_id, String(outcome.get("code", "GODOT_RUNTIME_ERROR")), String(outcome.get("message", "Godot command failed")), bool(outcome.get("retryable", false)))
 	_active = false
