@@ -22,3 +22,9 @@ export {
   type SessionGrants,
 } from "./policy/capabilities.js";
 export { authorize } from "./policy/authorize.js";
+export { redactAuditValue } from "./audit/redact.js";
+export {
+  JsonlAuditSink,
+  type AuditInput,
+  type AuditSink,
+} from "./audit/jsonlAuditSink.js";
