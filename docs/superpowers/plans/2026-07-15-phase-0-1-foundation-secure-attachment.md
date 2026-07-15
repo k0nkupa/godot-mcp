@@ -6,7 +6,7 @@
 
 **Architecture:** Codex launches a Node.js MCP server over stdio. The server creates a one-use pairing descriptor and an authenticated loopback WebSocket endpoint; the project-local Godot EditorPlugin connects outward, proves possession of the pairing token, and reports its identity. Every request passes through shared schemas, project identity, permissions, and audit services.
 
-**Tech Stack:** Node.js 22; pnpm 11.13.0 workspaces; TypeScript 6.0.3; Zod 4.4.3; MCP TypeScript SDK 1.29.0; ws 8.21.1; Vitest 4.1.10; ESLint 10.7.0; typescript-eslint 8.64.0; Godot 4.7 stable; GDScript.
+**Tech Stack:** Node.js 22; pnpm 11.13.0 workspaces; TypeScript 6.0.3; Zod 4.4.3; MCP TypeScript SDK 1.29.0; ws 8.21.0; Vitest 4.1.10; ESLint 10.7.0; typescript-eslint 8.64.0; Godot 4.7 stable; GDScript.
 
 ## Global Constraints
 
@@ -62,7 +62,7 @@ Workspace dependencies are fixed in Task 1 so later tasks do not improvise packa
 |---|---|---|
 | `protocol` | `zod@4.4.3` | none |
 | `control-plane` | `@godot-mcp/protocol@workspace:*`, `zod@4.4.3` | `@godot-mcp/testkit@workspace:*` |
-| `bridge-client` | `@godot-mcp/control-plane@workspace:*`, `@godot-mcp/protocol@workspace:*`, `ws@8.21.1` | `@godot-mcp/testkit@workspace:*`, `@types/ws@8.18.1` |
+| `bridge-client` | `@godot-mcp/control-plane@workspace:*`, `@godot-mcp/protocol@workspace:*`, `ws@8.21.0` | `@godot-mcp/testkit@workspace:*`, `@types/ws@8.18.1` |
 | `mcp-server` | `@godot-mcp/control-plane@workspace:*`, `@godot-mcp/protocol@workspace:*`, `@modelcontextprotocol/sdk@1.29.0`, `zod@4.4.3` | none |
 | `cli` | `@godot-mcp/bridge-client@workspace:*`, `@godot-mcp/control-plane@workspace:*`, `@godot-mcp/mcp-server@workspace:*`, `@godot-mcp/protocol@workspace:*` | `@godot-mcp/testkit@workspace:*` |
 | `testkit` | `@modelcontextprotocol/sdk@1.29.0` | none |
