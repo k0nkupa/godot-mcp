@@ -1,6 +1,7 @@
 import { startBridgeServer, type BridgeServer } from "@godot-mcp/bridge-client";
 import {
   JsonlAuditSink,
+  EvidenceStore,
   SessionService,
   readProjectIdentity,
   type SessionGrants,
@@ -65,7 +66,14 @@ export async function createRuntime(options: RuntimeOptions): Promise<GodotMcpRu
       },
       onDisconnected: () => session.onDisconnected(),
     });
-    mcp = createGodotMcpServer({ project, grants, audit, session });
+    mcp = createGodotMcpServer({
+      project,
+      grants,
+      audit,
+      session,
+      bridge: () => bridge?.session ?? null,
+      evidence: new EvidenceStore(project.rootRealPath),
+    });
     return new GodotMcpRuntime(project, audit, session, bridge, mcp);
   } catch (error) {
     await mcp?.close().catch(() => undefined);
