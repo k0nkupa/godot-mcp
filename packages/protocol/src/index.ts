@@ -27,4 +27,14 @@ export {
   type ProjectIdentity,
   type ToolResult,
 } from "./schemas.js";
+export {
+  RuntimeCaptureInputSchema,
+  RuntimeCommandSchema,
+  RuntimeHandleSchema,
+  RuntimeOperationInputSchema,
+  type RuntimeCaptureInput,
+  type RuntimeCommand,
+  type RuntimeHandle,
+  type RuntimeOperationInput,
+} from "./runtime.js";
 export { BRIDGE_PROTOCOL_VERSION, PRODUCT_VERSION } from "./version.js";

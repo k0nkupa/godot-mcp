@@ -14,6 +14,8 @@ import { runDoctor } from "../install/doctor.js";
 
 export interface RuntimeOptions {
   project: string;
+  grants?: SessionGrants;
+  godotBin?: string;
 }
 
 type GodotMcpServer = ReturnType<typeof createGodotMcpServer>;
@@ -44,7 +46,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<GodotMcpRu
   const project = await readProjectIdentity(options.project);
   const manifest = await readInstallManifest(project.rootRealPath);
   const audit = JsonlAuditSink.forProject(project.rootRealPath);
-  const grants: SessionGrants = { tiers: ["observe"], packs: ["core"] };
+  const grants: SessionGrants = options.grants ?? { tiers: ["observe"], packs: ["core"] };
   const session = new SessionService(project, grants, () => runDoctor(project.rootRealPath));
   let bridge: BridgeServer | undefined;
   let mcp: GodotMcpServer | undefined;

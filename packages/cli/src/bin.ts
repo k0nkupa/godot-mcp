@@ -10,6 +10,7 @@ import {
   initProject,
   uninstallProject,
 } from "./index.js";
+import { parseConnectGrants } from "./commands/connect.js";
 
 async function main(): Promise<number> {
   const parsed = parseArgs({
@@ -18,6 +19,8 @@ async function main(): Promise<number> {
       project: { type: "string", short: "p", default: process.cwd() },
       source: { type: "string", default: resolve(process.cwd(), "addons/godot_mcp") },
       godot: { type: "string" },
+      grant: { type: "string", multiple: true, default: [] },
+      pack: { type: "string", multiple: true, default: [] },
     },
   });
   const [command, ...extra] = parsed.positionals;
@@ -37,7 +40,10 @@ async function main(): Promise<number> {
     return report.healthy ? 0 : 4;
   }
   if (command === "connect") {
-    await connectProject(parsed.values.project);
+    await connectProject(
+      parsed.values.project,
+      parseConnectGrants(parsed.values.grant, parsed.values.pack),
+    );
     return 0;
   }
   if (command === "disable") {

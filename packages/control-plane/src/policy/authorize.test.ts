@@ -4,6 +4,8 @@ import {
   authorize,
   CORE_SESSION_POLICY,
   expandPermissionTiers,
+  RUNTIME_CAPTURE_POLICY,
+  RUNTIME_POLICY,
   visibleCapabilities,
 } from "../index.js";
 
@@ -47,5 +49,24 @@ describe("authorization policy", () => {
       "godot_session",
     ]);
     expect(visibleCapabilities({ tiers: ["observe"], packs: [] })).toEqual([]);
+    expect(
+      visibleCapabilities({
+        tiers: ["observe", "runtime_control"],
+        packs: ["core", "runtime"],
+      })
+        .map((item) => item.command)
+        .sort(),
+    ).toEqual([
+      "godot_capabilities",
+      "godot_capture",
+      "godot_doctor",
+      "godot_help",
+      "godot_query",
+      "godot_runtime",
+      "godot_runtime_capture",
+      "godot_session",
+    ]);
+    expect(() => authorize({ tiers: ["observe"], packs: ["core", "runtime"] }, RUNTIME_POLICY)).toThrowError(expect.objectContaining({ code: "PERMISSION_REQUIRED" }));
+    expect(() => authorize({ tiers: ["observe", "runtime_control"], packs: ["core"] }, RUNTIME_CAPTURE_POLICY)).toThrowError(expect.objectContaining({ code: "PERMISSION_REQUIRED" }));
   });
 });

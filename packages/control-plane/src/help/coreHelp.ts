@@ -2,14 +2,14 @@ import { randomUUID } from "node:crypto";
 
 import { GodotMcpException } from "../errors.js";
 
-export type CoreHelpTopic = "session" | "capabilities" | "doctor" | "help" | "query" | "capture";
+export type CoreHelpTopic = "session" | "capabilities" | "doctor" | "help" | "query" | "capture" | "runtime" | "runtime_capture";
 
 export interface CoreHelp {
   topic: CoreHelpTopic;
   title: string;
   summary: string;
   tool: `godot_${CoreHelpTopic}`;
-  readOnly: true;
+  readOnly: boolean;
 }
 
 const HELP: Record<CoreHelpTopic, CoreHelp> = {
@@ -54,6 +54,20 @@ const HELP: Record<CoreHelpTopic, CoreHelp> = {
     summary: "Returns a bounded PNG image from the current 2D editor viewport or one of four 3D editor viewports without switching editor screens.",
     tool: "godot_capture",
     readOnly: true,
+  },
+  runtime: {
+    topic: "runtime",
+    title: "Control an ephemeral Godot runtime",
+    summary: "Launches and controls one authenticated MCP-owned runtime with bounded tree, node, log, wait, pause, resume, step, and stop operations.",
+    tool: "godot_runtime",
+    readOnly: false,
+  },
+  runtime_capture: {
+    topic: "runtime_capture",
+    title: "Capture an ephemeral Godot runtime",
+    summary: "Returns one to eight bounded running-game PNG frames from the authenticated MCP-owned runtime.",
+    tool: "godot_runtime_capture",
+    readOnly: false,
   },
 };
 

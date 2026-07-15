@@ -38,3 +38,21 @@ it("creates an observe-only runtime and removes its descriptor on concurrent clo
   await Promise.all([runtime.close("test"), runtime.close("test-again")]);
   expect(await pathExists(runtime.bridge.descriptorPath)).toBe(false);
 });
+
+it("uses only explicitly supplied runtime grants", async () => {
+  const project = await copyFixture();
+  cleanups.push(project.cleanup);
+  process.env.XDG_RUNTIME_DIR = join(project.root, "runtime");
+  await installAddon(project.root, resolve(process.cwd(), "addons/godot_mcp"));
+
+  const runtime = await createRuntime({
+    project: project.root,
+    grants: { tiers: ["observe", "runtime_control"], packs: ["core", "runtime"] },
+  });
+  cleanups.push(() => runtime.close("cleanup"));
+
+  expect(runtime.session.snapshot().grants).toEqual({
+    tiers: ["observe", "runtime_control"],
+    packs: ["core", "runtime"],
+  });
+});

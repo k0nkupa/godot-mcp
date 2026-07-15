@@ -72,6 +72,18 @@ export const CORE_CAPTURE_POLICY: CommandPolicy = {
   pack: "core",
   mutating: false,
 };
+export const RUNTIME_POLICY: CommandPolicy = {
+  command: "godot_runtime",
+  tier: "runtime_control",
+  pack: "runtime",
+  mutating: false,
+};
+export const RUNTIME_CAPTURE_POLICY: CommandPolicy = {
+  command: "godot_runtime_capture",
+  tier: "runtime_control",
+  pack: "runtime",
+  mutating: false,
+};
 
 export const PHASE_ONE_POLICIES: readonly CommandPolicy[] = [
   CORE_CAPABILITIES_POLICY,
@@ -89,9 +101,14 @@ export const CORE_POLICIES: readonly CommandPolicy[] = [
   CORE_SESSION_POLICY,
 ];
 
+export const RUNTIME_POLICIES: readonly CommandPolicy[] = [
+  RUNTIME_CAPTURE_POLICY,
+  RUNTIME_POLICY,
+];
+
 export function visibleCapabilities(grants: SessionGrants): CommandPolicy[] {
   const tiers = expandPermissionTiers(grants.tiers);
-  return CORE_POLICIES.filter(
+  return [...CORE_POLICIES, ...RUNTIME_POLICIES].filter(
     (policy) => tiers.includes(policy.tier) && grants.packs.includes(policy.pack),
   );
 }
