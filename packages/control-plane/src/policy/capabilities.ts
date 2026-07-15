@@ -76,13 +76,13 @@ export const RUNTIME_POLICY: CommandPolicy = {
   command: "godot_runtime",
   tier: "runtime_control",
   pack: "runtime",
-  mutating: false,
+  mutating: true,
 };
 export const RUNTIME_CAPTURE_POLICY: CommandPolicy = {
   command: "godot_runtime_capture",
   tier: "runtime_control",
   pack: "runtime",
-  mutating: false,
+  mutating: true,
 };
 
 export const PHASE_ONE_POLICIES: readonly CommandPolicy[] = [

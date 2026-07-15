@@ -68,5 +68,7 @@ describe("authorization policy", () => {
     ]);
     expect(() => authorize({ tiers: ["observe"], packs: ["core", "runtime"] }, RUNTIME_POLICY)).toThrowError(expect.objectContaining({ code: "PERMISSION_REQUIRED" }));
     expect(() => authorize({ tiers: ["observe", "runtime_control"], packs: ["core"] }, RUNTIME_CAPTURE_POLICY)).toThrowError(expect.objectContaining({ code: "PERMISSION_REQUIRED" }));
+    expect(RUNTIME_POLICY.mutating).toBe(true);
+    expect(RUNTIME_CAPTURE_POLICY.mutating).toBe(true);
   });
 });

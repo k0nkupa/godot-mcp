@@ -10,6 +10,7 @@ const project = {
 
 it("serializes one runtime generation and rejects stale handles", async () => {
   const calls: string[] = [];
+  const timeouts: Array<number | undefined> = [];
   const service = new RuntimeService({
     project,
     sessionId: () => "session_12345678",
@@ -26,8 +27,9 @@ it("serializes one runtime generation and rejects stale handles", async () => {
       stop: async () => { calls.push("process.stop"); },
       wait: async () => new Promise<number>(() => undefined),
     }),
-    command: async (operation) => {
+    command: async (operation, _input, timeoutMs) => {
       calls.push(operation);
+      timeouts.push(timeoutMs);
       return operation === "await_ready" ? { pid: 42, root: "." } : { ok: true };
     },
     capture: async (input) => ({
@@ -46,6 +48,8 @@ it("serializes one runtime generation and rejects stale handles", async () => {
   expect(service.snapshot().state).toBe("paused");
   await service.execute({ operation: "resume", handle: launched.handle });
   expect(service.snapshot().state).toBe("running");
+  await service.execute({ operation: "wait", handle: launched.handle, timeoutMs: 30_000, condition: { type: "frames_elapsed", frames: 1 } });
+  expect(timeouts.at(-1)).toBe(31_000);
   await expect(service.capture({ handle: launched.handle, maxWidth: 640, maxHeight: 360, frameCount: 2, intervalFrames: 3, advancePaused: false })).resolves.toMatchObject({ frames: [{ metadata: { frameIndex: 0 } }, { metadata: { frameIndex: 1 } }] });
   await service.execute({ operation: "stop", handle: launched.handle });
   expect(service.snapshot().state).toBe("stopped");

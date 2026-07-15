@@ -151,7 +151,8 @@ export class RuntimeService {
       this.state = "stopped";
       return this.snapshot();
     }
-    const result = await this.dependencies.command(input.operation, { ...input });
+    const timeoutMs = input.operation === "wait" ? input.timeoutMs + 1_000 : undefined;
+    const result = await this.dependencies.command(input.operation, { ...input }, timeoutMs);
     if (input.operation === "pause") this.state = "paused";
     if (input.operation === "resume") this.state = "running";
     return result;

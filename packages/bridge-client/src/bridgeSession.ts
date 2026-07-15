@@ -135,7 +135,7 @@ export class BridgeSession {
       return Promise.reject(bridgeError("CONFLICT", "Bridge request queue is full"));
     }
     const requestId = options.correlationId ?? randomUUID();
-    const timeoutMs = Math.min(Math.max(options.timeoutMs ?? 30_000, 1), 30_000);
+    const timeoutMs = Math.min(Math.max(options.timeoutMs ?? 30_000, 1), 60_000);
     const maxResponseBytes = Math.min(
       Math.max(options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES, 1),
       8 * 1024 * 1024,

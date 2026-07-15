@@ -49,9 +49,11 @@ async function fixture() {
 
 it("registers runtime tools only for the explicit runtime grants", async () => {
   const { client } = await fixture();
-  expect((await client.listTools()).tools.map((tool) => tool.name).sort()).toEqual([
+  const tools = (await client.listTools()).tools;
+  expect(tools.map((tool) => tool.name).sort()).toEqual([
     "godot_capabilities", "godot_capture", "godot_doctor", "godot_help", "godot_query", "godot_runtime", "godot_runtime_capture", "godot_session",
   ]);
+  expect(tools.find((tool) => tool.name === "godot_runtime_capture")?.annotations).toMatchObject({ readOnlyHint: false });
   const launch = await client.callTool({ name: "godot_runtime", arguments: { operation: "launch", scenePath: "res://runtime/runtime_fixture.tscn" } });
   expect(launch.structuredContent).toMatchObject({ ok: true, data: { handle, root: { pid: 42 } } });
 });

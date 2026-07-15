@@ -50,7 +50,7 @@ const runtimeAnnotations = {
 } as const;
 
 const captureAnnotations = {
-  readOnlyHint: true,
+  readOnlyHint: false,
   destructiveHint: false,
   idempotentHint: false,
   openWorldHint: false,
