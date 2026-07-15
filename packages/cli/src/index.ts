@@ -8,3 +8,9 @@ export {
   type InstallAddonResult,
 } from "./install/addonInstaller.js";
 export { runDoctor, type DoctorCheck, type DoctorReport } from "./install/doctor.js";
+export {
+  GodotMcpRuntime,
+  createRuntime,
+  type RuntimeOptions,
+} from "./runtime/createRuntime.js";
+export { connectProject } from "./commands/connect.js";

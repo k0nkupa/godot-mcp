@@ -19,6 +19,8 @@ export interface StartBridgeServerOptions {
   auditSink: AuditSink;
   handshakeTimeoutMs?: number;
   now?: () => number;
+  onAttached?: (session: BridgeSession) => void;
+  onDisconnected?: () => void;
 }
 
 export interface BridgeServer {
@@ -109,8 +111,10 @@ export async function startBridgeServer(options: StartBridgeServerOptions): Prom
         });
         currentSession = session;
         pendingSocket = null;
+        options.onAttached?.(session);
         session.onClose(() => {
           if (currentSession === session) currentSession = null;
+          options.onDisconnected?.();
           void audit("session.closed", "success", {}, null);
         });
         await audit("pair.succeeded", "success", { godotVersion: handshake.godotVersion }, null);

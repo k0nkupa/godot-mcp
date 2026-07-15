@@ -3,7 +3,13 @@
 import { parseArgs } from "node:util";
 import { resolve } from "node:path";
 
-import { disableAddon, doctorProject, initProject, uninstallProject } from "./index.js";
+import {
+  connectProject,
+  disableAddon,
+  doctorProject,
+  initProject,
+  uninstallProject,
+} from "./index.js";
 
 async function main(): Promise<number> {
   const parsed = parseArgs({
@@ -15,8 +21,8 @@ async function main(): Promise<number> {
     },
   });
   const [command, ...extra] = parsed.positionals;
-  if (!command || extra.length > 0 || !["init", "doctor", "disable", "uninstall"].includes(command)) {
-    process.stderr.write("Usage: godot-mcp <init|doctor|disable|uninstall> [--project PATH]\n");
+  if (!command || extra.length > 0 || !["init", "doctor", "disable", "uninstall", "connect"].includes(command)) {
+    process.stderr.write("Usage: godot-mcp <init|doctor|disable|uninstall|connect> [--project PATH]\n");
     return 2;
   }
 
@@ -29,6 +35,10 @@ async function main(): Promise<number> {
     const report = await doctorProject(parsed.values.project);
     process.stdout.write(`${JSON.stringify(report)}\n`);
     return report.healthy ? 0 : 4;
+  }
+  if (command === "connect") {
+    await connectProject(parsed.values.project);
+    return 0;
   }
   if (command === "disable") {
     await disableAddon(parsed.values.project, parsed.values.godot);
