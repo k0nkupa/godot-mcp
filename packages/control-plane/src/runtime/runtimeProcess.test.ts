@@ -1,0 +1,22 @@
+import { describe, expect, it } from "vitest";
+
+import { godotRuntimeArguments, scrubRuntimeEnvironment } from "./runtimeProcess.js";
+
+describe("owned runtime launch", () => {
+  it("builds only fixed Godot arguments", () => {
+    expect(godotRuntimeArguments({
+      projectRoot: "/private/project",
+      debugPort: 6007,
+      descriptorPath: "/private/runtime/runtime.json",
+    })).toEqual([
+      "--path", "/private/project",
+      "--scene", "res://addons/godot_mcp/runtime/runtime_harness.tscn",
+      "--remote-debug", "tcp://127.0.0.1:6007",
+      "--", "--godot-mcp-runtime-descriptor=/private/runtime/runtime.json",
+    ]);
+  });
+
+  it("keeps only the runtime allowlist and removes credentials", () => {
+    expect(scrubRuntimeEnvironment({ PATH: "/bin", HOME: "/tmp/home", LANG: "en_NZ", AWS_SECRET_ACCESS_KEY: "secret", TOKEN: "secret" })).toEqual({ PATH: "/bin", HOME: "/tmp/home", LANG: "en_NZ" });
+  });
+});

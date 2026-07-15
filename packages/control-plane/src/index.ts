@@ -70,3 +70,24 @@ export {
   type PublicSessionSnapshot,
   type SessionState,
 } from "./session/sessionService.js";
+export {
+  RuntimeDescriptorSchema,
+  consumeRuntimeDescriptor,
+  createRuntimeDescriptor,
+  type RuntimeDescriptor,
+  type RuntimeDescriptorInput,
+  type RuntimeDescriptorMaterial,
+} from "./runtime/runtimeDescriptor.js";
+export {
+  OwnedGodotProcess,
+  godotRuntimeArguments,
+  scrubRuntimeEnvironment,
+  type OwnedRuntimeProcess,
+  type RuntimeArgumentsInput,
+} from "./runtime/runtimeProcess.js";
+export {
+  RuntimeService,
+  type RuntimeServiceDependencies,
+  type RuntimeSnapshot,
+  type RuntimeState,
+} from "./runtime/runtimeService.js";
