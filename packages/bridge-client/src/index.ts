@@ -3,4 +3,9 @@ export {
   type BridgeServer,
   type StartBridgeServerOptions,
 } from "./bridgeServer.js";
-export { BridgeSession, type BridgeSessionInfo } from "./bridgeSession.js";
+export {
+  BridgeSession,
+  type BridgeCommandResult,
+  type BridgeRequestOptions,
+  type BridgeSessionInfo,
+} from "./bridgeSession.js";
