@@ -19,12 +19,16 @@ func _init() -> void:
 	logger.record_for_test("error", "token=abc123 at /Users/example/secret-project/main.gd")
 	logger.record_for_test("error", "Authorization: Bearer header-secret")
 	logger.record_for_test("error", "failure at /private/tmp/host-only.log")
+	logger.record_for_test("error", "mounted asset /Volumes/External/private.png")
+	logger.record_for_test("error", "tool path=/opt/homebrew/bin/godot")
 	var records: Array[Dictionary] = logger.read_after(0, ["error"], 10)
-	assert(records.size() == 3)
+	assert(records.size() == 5)
 	assert("abc123" not in JSON.stringify(records))
 	assert("header-secret" not in JSON.stringify(records))
 	assert("/Users/example" not in JSON.stringify(records))
 	assert("/private/tmp" not in JSON.stringify(records))
+	assert("/Volumes/External" not in JSON.stringify(records))
+	assert("/opt/homebrew" not in JSON.stringify(records))
 
 	var queue := MainThreadQueue.new()
 	for index in 33:
