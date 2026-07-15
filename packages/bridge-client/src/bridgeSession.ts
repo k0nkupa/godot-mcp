@@ -61,7 +61,11 @@ export class BridgeSession {
   close(code = 1001, reason = "server closing"): Promise<void> {
     if (this.socket.readyState === WebSocket.CLOSED) return Promise.resolve();
     return new Promise((resolvePromise) => {
-      this.socket.once("close", resolvePromise);
+      const timeout = setTimeout(() => this.socket.terminate(), 1_000);
+      this.socket.once("close", () => {
+        clearTimeout(timeout);
+        resolvePromise();
+      });
       this.socket.close(code, reason);
     });
   }

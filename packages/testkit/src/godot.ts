@@ -81,7 +81,11 @@ function spawnAndCollect(
     child.once("close", (code, signal) => {
       clearTimeout(timeout);
       if (timedOut) {
-        reject(new Error(`Godot timed out after ${options.timeoutMs}ms`));
+        reject(
+          new Error(
+            `Godot timed out after ${options.timeoutMs}ms\nstdout:\n${stdout}\nstderr:\n${stderr}`,
+          ),
+        );
         return;
       }
       if (code === null) {

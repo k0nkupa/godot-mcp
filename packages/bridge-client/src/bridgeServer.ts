@@ -152,10 +152,11 @@ export async function startBridgeServer(options: StartBridgeServerOptions): Prom
       closePromise = (async () => {
         await rm(pairing.path, { force: true });
         if (pendingSocket) {
-          pendingSocket.close(1001, "server closing");
+          pendingSocket.terminate();
           pendingSocket = null;
         }
         if (currentSession) await currentSession.close();
+        for (const client of websocket.clients) client.terminate();
         await new Promise<void>((resolvePromise) => websocket.close(() => resolvePromise()));
       })();
       return closePromise;
