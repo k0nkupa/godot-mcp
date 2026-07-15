@@ -45,3 +45,17 @@ export {
   type EnvelopeVerificationOptions,
   type UnsignedBridgeEnvelope,
 } from "./auth/sessionCrypto.js";
+export {
+  getCoreHelp,
+  type CoreHelp,
+  type CoreHelpTopic,
+} from "./help/coreHelp.js";
+export {
+  SessionService,
+  type CapabilitySummary,
+  type DoctorCheck,
+  type DoctorResult,
+  type PublicAttachment,
+  type PublicSessionSnapshot,
+  type SessionState,
+} from "./session/sessionService.js";
