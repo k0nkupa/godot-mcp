@@ -93,6 +93,16 @@ afterEach(async () => {
 });
 
 describe("BridgeSession requests", () => {
+  it("correlates the closed runtime editor commands", async () => {
+    for (const method of ["runtime.prepare", "runtime.command", "runtime.capture", "runtime.cleanup"] as const) {
+      const request = peer.session.request<{ accepted: boolean }>(method, {}, { timeoutMs: 1_000 });
+      const sent = await peer.nextEnvelope();
+      const requestId = String((sent.params as { requestId: string }).requestId);
+      peer.send("command.result", { requestId, ok: true, data: { accepted: true } });
+      await expect(request).resolves.toMatchObject({ data: { accepted: true } });
+    }
+  });
+
   it("correlates a command result", async () => {
     const request = peer.session.request<{ state: string }>(
       "editor.query",

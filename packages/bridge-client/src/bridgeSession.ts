@@ -121,7 +121,13 @@ export class BridgeSession {
   }
 
   request<T>(
-    method: "editor.query" | "editor.capture",
+    method:
+      | "editor.query"
+      | "editor.capture"
+      | "runtime.prepare"
+      | "runtime.command"
+      | "runtime.capture"
+      | "runtime.cleanup",
     params: unknown,
     options: BridgeRequestOptions = {},
   ): Promise<BridgeCommandResult<T>> {

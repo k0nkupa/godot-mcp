@@ -28,7 +28,7 @@ it("serializes one runtime generation and rejects stale handles", async () => {
     }),
     command: async (operation) => {
       calls.push(operation);
-      return operation === "await_ready" ? { root: "." } : { ok: true };
+      return operation === "await_ready" ? { pid: 42, root: "." } : { ok: true };
     },
   });
 
@@ -46,4 +46,24 @@ it("serializes one runtime generation and rejects stale handles", async () => {
   await service.close();
   await service.close();
   expect(calls.filter((call) => call === "process.stop")).toHaveLength(1);
+});
+
+it("rejects an authenticated debugger session from a different process", async () => {
+  let stopped = false;
+  const service = new RuntimeService({
+    project,
+    sessionId: () => "session_12345678",
+    createDescriptor: async (input) => ({
+      path: "/private/runtime/descriptor.json",
+      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001 },
+      secret: Buffer.alloc(32),
+      cleanup: async () => undefined,
+    }),
+    prepare: async () => ({ debugPort: 6007 }),
+    launchProcess: async () => ({ pid: 42, fingerprint: "42:start", stop: async () => { stopped = true; }, wait: async () => 0 }),
+    command: async () => ({ pid: 99 }),
+  });
+
+  await expect(service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 })).rejects.toMatchObject({ code: "AUTHENTICATION_FAILED" });
+  expect(stopped).toBe(true);
 });

@@ -38,7 +38,7 @@ export interface RuntimeSnapshot {
 
 type LaunchInput = Extract<RuntimeOperationInput, { operation: "launch" }>;
 
-function runtimeError(code: "NOT_ATTACHED" | "CONFLICT" | "STALE_HANDLE" | "GODOT_RUNTIME_ERROR", message: string, retryable = false): GodotMcpException {
+function runtimeError(code: "NOT_ATTACHED" | "AUTHENTICATION_FAILED" | "CONFLICT" | "STALE_HANDLE" | "GODOT_RUNTIME_ERROR", message: string, retryable = false): GodotMcpException {
   return new GodotMcpException({
     code,
     message,
@@ -102,6 +102,14 @@ export class RuntimeService {
       });
       this.state = "authenticating";
       const ready = await this.dependencies.command("await_ready", { handle: this.handle }, input.startupTimeoutMs);
+      if (
+        typeof ready !== "object" ||
+        ready === null ||
+        !("pid" in ready) ||
+        Number((ready as { pid: unknown }).pid) !== this.process.pid
+      ) {
+        throw runtimeError("AUTHENTICATION_FAILED", "Authenticated runtime PID does not match the owned process");
+      }
       await this.descriptor.cleanup();
       this.descriptor = null;
       this.state = "running";

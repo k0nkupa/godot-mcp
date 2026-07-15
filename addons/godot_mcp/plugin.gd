@@ -7,18 +7,22 @@ const DiagnosticLogger = preload("res://addons/godot_mcp/observation/diagnostic_
 const EditorQuery = preload("res://addons/godot_mcp/observation/editor_query.gd")
 const EditorCapture = preload("res://addons/godot_mcp/observation/editor_capture.gd")
 const MainThreadQueue = preload("res://addons/godot_mcp/commands/main_thread_queue.gd")
+const RuntimeDebugger = preload("res://addons/godot_mcp/runtime/runtime_debugger.gd")
 
 var bridge: Node
 var command_queue: Node
 var diagnostic_logger: Logger
 var editor_query: RefCounted
 var editor_capture: RefCounted
+var runtime_debugger: EditorDebuggerPlugin
 
 func _enter_tree() -> void:
 	diagnostic_logger = DiagnosticLogger.new(ProjectSettings.globalize_path("res://"))
 	OS.add_logger(diagnostic_logger)
 	editor_query = EditorQuery.new(get_editor_interface(), diagnostic_logger)
 	editor_capture = EditorCapture.new(get_editor_interface())
+	runtime_debugger = RuntimeDebugger.new()
+	add_debugger_plugin(runtime_debugger)
 	command_queue = MainThreadQueue.new()
 	command_queue.set_handler(_execute_command)
 	add_child(command_queue)
@@ -38,6 +42,16 @@ func _execute_command(command: Dictionary) -> Dictionary:
 		outcome = editor_query.execute(command.arguments)
 	elif String(command.method) == "editor.capture":
 		outcome = await editor_capture.execute(command.arguments)
+	elif String(command.method) == "runtime.prepare":
+		outcome = runtime_debugger.prepare(
+			command.arguments.get("descriptor", {}),
+			int(get_editor_interface().get_editor_settings().get_setting("network/debug/remote_port")),
+		)
+	elif String(command.method) in ["runtime.command", "runtime.capture"]:
+		outcome = await runtime_debugger.execute(command)
+	elif String(command.method) == "runtime.cleanup":
+		runtime_debugger.clear()
+		outcome = {"ok": true, "data": {"cleaned": true}}
 	else:
 		outcome = {"ok": false, "code": "INVALID_REQUEST", "message": "Unsupported editor command", "retryable": false}
 	await _deliver_command(command, outcome)
@@ -67,6 +81,10 @@ func _on_command_failed(request_id: String, code: String, message: String, retry
 	bridge.send_command_error(request_id, code, message, retryable)
 
 func _exit_tree() -> void:
+	if runtime_debugger != null:
+		runtime_debugger.clear()
+		remove_debugger_plugin(runtime_debugger)
+		runtime_debugger = null
 	if is_instance_valid(command_queue):
 		command_queue.clear()
 		command_queue.queue_free()

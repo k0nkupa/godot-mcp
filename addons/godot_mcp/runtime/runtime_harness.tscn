@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource path="res://addons/godot_mcp/runtime/runtime_harness.gd" type="Script" id="1"]
+
+[node name="GodotMcpRuntimeInstrumentation" type="Node"]
+script = ExtResource("1")

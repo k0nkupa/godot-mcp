@@ -118,7 +118,7 @@ func _handle_message(text: String) -> void:
 	if not _paired and message.method == "pair.complete":
 		_complete_pairing()
 		return
-	if message.method in ["editor.query", "editor.capture"]:
+	if message.method in ["editor.query", "editor.capture", "runtime.prepare", "runtime.command", "runtime.capture", "runtime.cleanup"]:
 		var params: Variant = message.params
 		if typeof(params) != TYPE_DICTIONARY or not params.has("requestId") or typeof(params.get("arguments")) != TYPE_DICTIONARY:
 			rejected.emit("INVALID_REQUEST", "Bridge command parameters are invalid")
