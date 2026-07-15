@@ -11,7 +11,7 @@ import {
   type SessionGrants,
 } from "@godot-mcp/control-plane";
 import { BRIDGE_PROTOCOL_VERSION, PRODUCT_VERSION } from "@godot-mcp/protocol";
-import { copyFixture } from "@godot-mcp/testkit";
+import { copyFixture, waitUntil } from "@godot-mcp/testkit";
 import { WebSocket } from "ws";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -128,8 +128,9 @@ describe("bridge server", () => {
     const first = await pairClient(descriptor);
     expect(first.sessionId).toMatch(/^session_/);
     expect((await server.waitForAttachment(1_000)).sessionId).toBe(first.sessionId);
-    await expect(pairClient(descriptor)).rejects.toMatchObject({ code: "AUTHENTICATION_FAILED" });
     first.socket.close();
+    await waitUntil(() => server.session === null, 1_000, 10);
+    await expect(pairClient(descriptor)).rejects.toMatchObject({ code: "AUTHENTICATION_FAILED" });
   });
 
   it("rejects a wrong token", async () => {
@@ -150,7 +151,7 @@ describe("bridge server", () => {
       pairClient(descriptor, {
         project: { ...descriptor.project, projectConfigSha256: "b".repeat(64) },
       }),
-    ).rejects.toMatchObject({ code: "AUTHENTICATION_FAILED" });
+    ).rejects.toMatchObject({ code: "PROJECT_CHANGED" });
 
     await projectServer.close();
     cleanups.pop();

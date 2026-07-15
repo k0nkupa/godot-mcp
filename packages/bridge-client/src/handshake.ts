@@ -7,7 +7,12 @@ import {
   deriveSessionKey,
   type SessionDescriptor,
 } from "@godot-mcp/control-plane";
-import { BRIDGE_PROTOCOL_VERSION, PRODUCT_VERSION, canonicalJson } from "@godot-mcp/protocol";
+import {
+  BRIDGE_PROTOCOL_VERSION,
+  PRODUCT_VERSION,
+  ProjectIdentitySchema,
+  canonicalJson,
+} from "@godot-mcp/protocol";
 import { WebSocket, type RawData } from "ws";
 
 export interface PairRequest {
@@ -38,8 +43,15 @@ export interface HandshakeResult {
 }
 
 function authenticationFailed(message: string): GodotMcpException {
+  return protocolFailure("AUTHENTICATION_FAILED", message);
+}
+
+function protocolFailure(
+  code: "AUTHENTICATION_FAILED" | "INVALID_REQUEST" | "PROJECT_CHANGED",
+  message: string,
+): GodotMcpException {
   return new GodotMcpException({
-    code: "AUTHENTICATION_FAILED",
+    code,
     message,
     retryable: false,
     correlationId: randomUUID(),
@@ -90,10 +102,10 @@ function parsePairRequest(text: string): PairRequest {
   try {
     value = JSON.parse(text);
   } catch {
-    throw authenticationFailed("Pairing request is not valid JSON");
+    throw protocolFailure("INVALID_REQUEST", "Pairing request is not valid JSON");
   }
   if (typeof value !== "object" || value === null) {
-    throw authenticationFailed("Pairing request must be an object");
+    throw protocolFailure("INVALID_REQUEST", "Pairing request must be an object");
   }
   const request = value as Partial<PairRequest>;
   if (
@@ -102,12 +114,14 @@ function parsePairRequest(text: string): PairRequest {
     typeof request.sessionNonce !== "string" ||
     typeof request.protocolVersion !== "string" ||
     typeof request.productVersion !== "string" ||
-    typeof request.project !== "object" ||
-    request.project === null ||
+    !ProjectIdentitySchema.safeParse(request.project).success ||
     typeof request.addonManifestSha256 !== "string" ||
     typeof request.godotVersion !== "string"
   ) {
-    throw authenticationFailed("The only allowed unauthenticated message is a complete pair request");
+    throw protocolFailure(
+      "INVALID_REQUEST",
+      "The only allowed unauthenticated message is a complete pair request",
+    );
   }
   return request as PairRequest;
 }
@@ -130,6 +144,13 @@ export async function performHandshake(
     throw authenticationFailed("Pairing protocol or product version does not match");
   }
   if (canonicalJson(request.project) !== canonicalJson(descriptor.project)) {
+    if (
+      request.project.projectId === descriptor.project.projectId &&
+      request.project.rootRealPath === descriptor.project.rootRealPath &&
+      request.project.projectConfigSha256 !== descriptor.project.projectConfigSha256
+    ) {
+      throw protocolFailure("PROJECT_CHANGED", "Pairing project contents changed");
+    }
     throw authenticationFailed("Pairing project identity does not match");
   }
   if (request.addonManifestSha256 !== options.addonManifestSha256) {
@@ -176,10 +197,11 @@ export async function performHandshake(
 
 export function rejectHandshake(socket: WebSocket, error: unknown): void {
   if (socket.readyState === WebSocket.OPEN) {
+    const code = error instanceof GodotMcpException ? error.code : "AUTHENTICATION_FAILED";
     socket.send(
       JSON.stringify({
         method: "pair_rejected",
-        code: "AUTHENTICATION_FAILED",
+        code,
         message: error instanceof Error ? error.message : "Pairing rejected",
       }),
       () => socket.close(1008, "authentication failed"),

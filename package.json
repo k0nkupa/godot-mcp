@@ -13,14 +13,17 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "qa": "pnpm build && pnpm lint && pnpm typecheck && pnpm test"
+    "qa": "pnpm build && pnpm lint && pnpm typecheck && pnpm test",
+    "qa:phase-0-1": "node scripts/qa-phase-0-1.mjs"
   },
   "devDependencies": {
     "@types/node": "22.20.1",
+    "@types/ws": "8.18.1",
     "@vitest/coverage-v8": "4.1.10",
     "eslint": "10.7.0",
     "typescript": "6.0.3",
     "typescript-eslint": "8.64.0",
-    "vitest": "4.1.10"
+    "vitest": "4.1.10",
+    "ws": "8.21.0"
   }
 }

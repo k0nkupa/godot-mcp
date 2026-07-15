@@ -151,10 +151,16 @@ func _complete_pairing() -> void:
 		"addonManifestSha256": _addon_manifest_hash(),
 	}
 	attached.emit(session_info)
+	var configured_features := ProjectSettings.get_setting(
+		"application/config/features", PackedStringArray()
+	) as PackedStringArray
+	var feature_tags: Array[String] = []
+	for feature in configured_features:
+		feature_tags.append(feature)
 	_send_signed("addon.ready", {
 		"project": _identity,
 		"godotVersion": _godot_version(),
-		"featureTags": ProjectSettings.get_setting("application/config/features", PackedStringArray()),
+		"featureTags": feature_tags,
 		"addonManifestSha256": _addon_manifest_hash(),
 		"pluginEnabled": true,
 	}, 30000)

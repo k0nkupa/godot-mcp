@@ -3,6 +3,7 @@ class_name GodotMcpSessionCrypto
 extends RefCounted
 
 const CanonicalJson = preload("res://addons/godot_mcp/bridge/canonical_json.gd")
+const MAX_SAFE_INTEGER := 9007199254740991
 
 static func base64url_decode(value: String) -> PackedByteArray:
 	var normalized := value.replace("-", "+").replace("_", "/")
@@ -26,8 +27,8 @@ static func derive_key(token: String, session_nonce: String, server_nonce: Strin
 static func signing_text(envelope: Dictionary) -> String:
 	return "%s\n%s\n%s\n%s\n%s" % [
 		envelope.sessionId,
-		str(envelope.sequence),
-		str(envelope.deadlineUnixMs),
+		str(int(envelope.sequence)),
+		str(int(envelope.deadlineUnixMs)),
 		envelope.method,
 		CanonicalJson.encode(envelope.params),
 	]
@@ -64,6 +65,10 @@ static func verify_envelope(
 			return false
 	if envelope.sessionId != expected_session_id:
 		return false
+	if not _is_safe_protocol_integer(envelope.sequence):
+		return false
+	if not _is_safe_protocol_integer(envelope.deadlineUnixMs):
+		return false
 	if int(envelope.sequence) <= last_sequence:
 		return false
 	var now_ms := int(Time.get_unix_time_from_system() * 1000.0)
@@ -71,6 +76,13 @@ static func verify_envelope(
 	if deadline_ms < now_ms or deadline_ms - now_ms > 60000:
 		return false
 	return constant_time_equal(String(envelope.mac), _sign_message(envelope, key))
+
+static func _is_safe_protocol_integer(value: Variant) -> bool:
+	if typeof(value) == TYPE_INT:
+		return abs(value) <= MAX_SAFE_INTEGER
+	if typeof(value) != TYPE_FLOAT or is_nan(value) or is_inf(value):
+		return false
+	return floor(value) == value and abs(value) <= MAX_SAFE_INTEGER
 
 static func server_proof(token: String, session_id: String, server_nonce: String) -> String:
 	return hmac_sha256(

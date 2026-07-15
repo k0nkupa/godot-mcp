@@ -1,8 +1,9 @@
 import type { AddressInfo } from "node:net";
-import { rm } from "node:fs/promises";
+import { access, rm } from "node:fs/promises";
 
 import {
   createPairingDescriptor,
+  GodotMcpException,
   type AuditSink,
   type SessionGrants,
 } from "@godot-mcp/control-plane";
@@ -56,6 +57,7 @@ export async function startBridgeServer(options: StartBridgeServerOptions): Prom
 
   let currentSession: BridgeSession | null = null;
   let pendingSocket: WebSocket | null = null;
+  let pairingConsumed = false;
   let closePromise: Promise<void> | null = null;
   const attachmentWaiters = new Set<(session: BridgeSession) => void>();
   const now = options.now ?? Date.now;
@@ -87,8 +89,15 @@ export async function startBridgeServer(options: StartBridgeServerOptions): Prom
       request.socket.remoteAddress !== "127.0.0.1" ||
       pendingSocket !== null ||
       currentSession !== null ||
+      pairingConsumed ||
       closePromise !== null
     ) {
+      void audit(
+        "pair.rejected",
+        "rejected",
+        { reason: "connection_state" },
+        "AUTHENTICATION_FAILED",
+      );
       socket.close(1008, "connection rejected");
       return;
     }
@@ -102,6 +111,7 @@ export async function startBridgeServer(options: StartBridgeServerOptions): Prom
           timeoutMs: options.handshakeTimeoutMs ?? 5_000,
           now,
         });
+        pairingConsumed = true;
         const session = new BridgeSession(socket, handshake.key, handshake.verifier, {
           sessionId: handshake.sessionId,
           project: options.project,
@@ -117,13 +127,21 @@ export async function startBridgeServer(options: StartBridgeServerOptions): Prom
           options.onDisconnected?.();
           void audit("session.closed", "success", {}, null);
         });
+        session.onRejected((code) => {
+          void audit("session.rejected", "rejected", {}, code);
+        });
         await audit("pair.succeeded", "success", { godotVersion: handshake.godotVersion }, null);
         for (const resolveWaiter of attachmentWaiters) resolveWaiter(session);
         attachmentWaiters.clear();
         session.send("pair.complete", { attached: true }, now() + 5_000);
       } catch (error) {
         pendingSocket = null;
-        await audit("pair.rejected", "rejected", {}, "AUTHENTICATION_FAILED");
+        pairingConsumed ||= await access(pairing.path).then(
+          () => false,
+          () => true,
+        );
+        const code = error instanceof GodotMcpException ? error.code : "AUTHENTICATION_FAILED";
+        await audit("pair.rejected", "rejected", {}, code);
         rejectHandshake(socket, error);
       }
     })();

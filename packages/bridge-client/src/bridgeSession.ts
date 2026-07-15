@@ -44,6 +44,11 @@ export class BridgeSession {
     return () => this.events.off("close", listener);
   }
 
+  onRejected(listener: (code: "AUTHENTICATION_FAILED" | "INVALID_REQUEST") => void): () => void {
+    this.events.on("rejected", listener);
+    return () => this.events.off("rejected", listener);
+  }
+
   send(method: string, params: unknown, deadlineUnixMs = Date.now() + 30_000): BridgeEnvelope {
     if (this.socket.readyState !== WebSocket.OPEN) throw new Error("Bridge session is closed");
     this.sendSequence += 1;
@@ -72,6 +77,7 @@ export class BridgeSession {
 
   private readonly handleMessage = (data: RawData, isBinary: boolean): void => {
     if (isBinary) {
+      this.events.emit("rejected", "INVALID_REQUEST");
       this.socket.close(1008, "binary frames are not allowed");
       return;
     }
@@ -80,6 +86,7 @@ export class BridgeSession {
       if (envelope.sessionId !== this.sessionId) throw new Error("Session ID mismatch");
       this.events.emit("envelope", envelope);
     } catch {
+      this.events.emit("rejected", "AUTHENTICATION_FAILED");
       this.socket.close(1008, "invalid signed envelope");
     }
   };
