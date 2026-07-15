@@ -6,7 +6,7 @@
 
 **Architecture:** Codex launches a Node.js MCP server over stdio. The server creates a one-use pairing descriptor and an authenticated loopback WebSocket endpoint; the project-local Godot EditorPlugin connects outward, proves possession of the pairing token, and reports its identity. Every request passes through shared schemas, project identity, permissions, and audit services.
 
-**Tech Stack:** Node.js 22; pnpm 11.13.0 workspaces; TypeScript 7.0.2; Zod 4.4.3; MCP TypeScript SDK 1.29.0; ws 8.21.1; Vitest 4.1.10; ESLint 10.7.0; typescript-eslint 8.64.0; Godot 4.7 stable; GDScript.
+**Tech Stack:** Node.js 22; pnpm 11.13.0 workspaces; TypeScript 6.0.3; Zod 4.4.3; MCP TypeScript SDK 1.29.0; ws 8.21.1; Vitest 4.1.10; ESLint 10.7.0; typescript-eslint 8.64.0; Godot 4.7 stable; GDScript.
 
 ## Global Constraints
 
@@ -109,7 +109,7 @@ Workspace dependencies are fixed in Task 1 so later tasks do not improvise packa
     "@types/node": "22.20.1",
     "@vitest/coverage-v8": "4.1.10",
     "eslint": "10.7.0",
-    "typescript": "7.0.2",
+    "typescript": "6.0.3",
     "typescript-eslint": "8.64.0",
     "vitest": "4.1.10"
   }
