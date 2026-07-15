@@ -1,0 +1,29 @@
+{
+  "name": "@godot-mcp/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "godot-mcp": "./dist/bin.js"
+  },
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@godot-mcp/bridge-client": "workspace:*",
+    "@godot-mcp/control-plane": "workspace:*",
+    "@godot-mcp/mcp-server": "workspace:*",
+    "@godot-mcp/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@godot-mcp/testkit": "workspace:*"
+  }
+}
