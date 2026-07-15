@@ -1,6 +1,6 @@
 # Godot MCP
 
-Godot MCP is an open-source, security-first MCP server and Godot editor addon. Phase 2 provides reversible addon installation, authenticated attachment to a real Godot 4.7 editor, bounded editor observation, and real 2D/3D editor viewport PNGs through six observe-only MCP tools. Runtime, input, debugging, mutation, build, export, and unsafe execution remain roadmap capabilities—not current functionality.
+Godot MCP is an open-source, security-first MCP server and Godot editor addon. Phase 3 provides reversible installation, authenticated Godot 4.7 editor attachment, six default observe-only tools, and an explicitly authorized two-tool ephemeral runtime surface. Runtime input, editor mutation, debugger stacks, builds, exports, and unsafe evaluation remain roadmap capabilities.
 
 ## Requirements
 
@@ -26,6 +26,12 @@ Register the source checkout with Codex using absolute paths:
 codex mcp add godot -- node /absolute/path/to/godot-mcp/packages/cli/dist/bin.js connect --project /absolute/path/to/godot-project
 ```
 
+The default registration remains observe-only. To opt into one MCP-owned instrumented runtime, explicitly grant both its tier and pack:
+
+```bash
+codex mcp add godot-runtime -- node /absolute/path/to/godot-mcp/packages/cli/dist/bin.js connect --project /absolute/path/to/godot-project --grant runtime_control --pack runtime
+```
+
 Start a fresh Codex task after registration so the newly registered MCP server is exposed. To stop using the addon while retaining its files, or remove the verified installation completely:
 
 ```bash
@@ -44,24 +50,31 @@ Uninstall refuses to remove the addon, project configuration, or `project.godot`
 - `godot_query` — bounded editor state, open scene/tree/node metadata, indexed resources, approved project settings, and redacted diagnostics
 - `godot_capture` — bounded PNG from the current 2D or selected 3D editor viewport, returned as MCP image content and persisted as session evidence
 
-All six tools are read-only and closed-world. For example:
+The default six tools are read-only and closed-world. A runtime-authorized session additionally exposes:
+
+- `godot_runtime` — launch, status, bounded tree/node/log queries, waits, pause, step, resume, and stop for one authenticated child runtime
+- `godot_runtime_capture` — one to eight ordered running-game PNG frames with verified evidence metadata
+
+For example:
 
 ```json
 { "operation": "scene_tree", "scenePath": "res://main.tscn", "maxDepth": 8, "maxNodes": 250 }
 { "viewport": "2d", "maxWidth": 1280, "maxHeight": 720 }
+{ "operation": "launch", "scenePath": "res://main.tscn" }
 ```
 
-Queries inspect only already-open scenes and EditorFileSystem-indexed metadata; they never return script source or arbitrary file bytes. Capture is PNG-only and does not switch editor screens. Phase 2 has no project mutation, runtime control, input injection, debugger, build/export, arbitrary filesystem, shell, network, generic method invocation, or unsafe-evaluation tool.
+Runtime control is off unless both explicit flags are present. The server owns one exact Godot child process, authenticates its debugger harness with a one-use descriptor, binds it to the MCP/editor/project/run identity, and accepts only closed typed operations. It exposes no arbitrary process, filesystem, network, method-call, or GDScript-evaluation primitive.
 
 ## Development and certification
 
 ```bash
 GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-0-1
 GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-2
+GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-3
 ```
 
-The Phase 0–1 gate preserves the attachment and lifecycle baseline. The Phase 2 gate additionally certifies query truth, visible 2D/3D captures, chunk integrity, hostile observation bounds, MCP image delivery, audit redaction, and clean uninstall. See [Phase 2 testing](docs/testing/phase-2.md), [Phase 0–1 testing](docs/testing/phase-0-1.md), the [threat model](docs/security/threat-model.md), the [bridge protocol](docs/protocol/bridge-v1.md), and the [master design](docs/superpowers/specs/2026-07-15-godot-mcp-master-design.md).
+The Phase 3 gate certifies explicit tool visibility, owned-process authentication, bounded runtime truth, deterministic stepping, running-game evidence, hostile inputs, crash/disconnect cleanup, published stdio behavior, and zero fixture diff. Earlier gates remain required regressions. See [Phase 3 testing](docs/testing/phase-3.md), [Phase 2 testing](docs/testing/phase-2.md), [Phase 0–1 testing](docs/testing/phase-0-1.md), the [threat model](docs/security/threat-model.md), the [bridge protocol](docs/protocol/bridge-v1.md), and the [master design](docs/superpowers/specs/2026-07-15-godot-mcp-master-design.md).
 
 ## Roadmap
 
-Later phases add runtime launch and inspection, game screenshots, input automation, scene/resource authoring with Undo/Redo, debugger and profiler integration, declarative playtests, imports/builds/exports, evidence retrieval, compatibility lanes, and explicitly gated disposable-fixture unsafe mode. None of those capabilities are claimed by Phase 2.
+Later phases add input automation, scene/resource authoring with Undo/Redo, debugger stacks and profiler integration, declarative playtests, imports/builds/exports, evidence retrieval, compatibility lanes, and explicitly gated disposable-fixture unsafe mode. None of those capabilities are claimed by Phase 3.

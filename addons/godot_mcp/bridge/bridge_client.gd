@@ -123,6 +123,9 @@ func _handle_message(text: String) -> void:
 		if typeof(params) != TYPE_DICTIONARY or not params.has("requestId") or typeof(params.get("arguments")) != TYPE_DICTIONARY:
 			rejected.emit("INVALID_REQUEST", "Bridge command parameters are invalid")
 			return
+		if String(message.method).begins_with("runtime.") and not _runtime_granted():
+			send_command_error(String(params.requestId), "PERMISSION_REQUIRED", "Runtime control was not granted for this session")
+			return
 		command_received.emit({"requestId": String(params.requestId), "deadlineUnixMs": int(message.deadlineUnixMs), "method": String(message.method), "arguments": params.arguments})
 		return
 	rejected.emit("INVALID_REQUEST", "Unsupported bridge command")
@@ -132,6 +135,9 @@ func _handle_pair_ok(message: Dictionary) -> void:
 		if not message.has(field):
 			close("invalid_pair_response")
 			return
+	if message.grants != _descriptor.grants:
+		close("grant_mismatch")
+		return
 	var expected_proof := SessionCrypto.server_proof(
 		_descriptor.token,
 		message.sessionId,
@@ -147,6 +153,14 @@ func _handle_pair_ok(message: Dictionary) -> void:
 		message.serverNonce
 	)
 	_send_signed("pair.ack", {"serverProof": expected_proof}, 5000)
+
+func _runtime_granted() -> bool:
+	var grants: Variant = _descriptor.get("grants", {})
+	return (
+		typeof(grants) == TYPE_DICTIONARY
+		and "runtime_control" in grants.get("tiers", [])
+		and "runtime" in grants.get("packs", [])
+	)
 
 func _complete_pairing() -> void:
 	_paired = true

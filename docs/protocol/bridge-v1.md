@@ -1,6 +1,6 @@
 # Godot MCP bridge protocol v1
 
-The Phase 2 bridge is JSON over a loopback WebSocket at `ws://127.0.0.1:<ephemeral-port>/bridge`. The server writes the address and one-use authentication material to an owner-only runtime descriptor. The addon initiates the connection; it opens no port.
+The Phase 3 editor bridge is JSON over a loopback WebSocket at `ws://127.0.0.1:<ephemeral-port>/bridge`. The server writes the address and one-use authentication material to an owner-only pairing descriptor. The addon initiates the connection; it opens no port.
 
 ## Pair request
 
@@ -10,7 +10,7 @@ No other unauthenticated message is accepted. Invalid JSON or an incomplete shap
 
 ## Pair response and proof
 
-The server consumes the descriptor, creates a session ID and server nonce, and returns `pair_ok` with the fixed observe/core grants and an HMAC server proof. The addon validates the proof, derives the session key, and sends a signed `pair.ack` containing the proof. The server answers with signed `pair.complete`; the addon clears the token and sends signed `addon.ready` with its identity, version, feature tags, addon hash, and plugin state.
+The server consumes the descriptor, creates a session ID and server nonce, and returns `pair_ok` with the session's granted tiers/packs and an HMAC server proof. Grants are observe/core by default; runtime requires both explicit `runtime_control` and `runtime`. The addon validates the proof, derives the session key, and sends a signed `pair.ack` containing the proof. The server answers with signed `pair.complete`; the addon clears the token and sends signed `addon.ready` with its identity, version, feature tags, addon hash, and plugin state.
 
 Protocol or product mismatches are rejected. Phase 1 requires Godot `4.7.stable`; support for earlier 4.x releases is not yet certified.
 
@@ -48,6 +48,16 @@ The addon replies with signed envelopes in this order:
 Errors use one terminal `command.result` with `ok: false` and a bounded `{ code, message, retryable }` error. A request has exactly one terminal result. Chunks are allowed only before that result, must start at zero, remain contiguous, agree on `total` and SHA-256, and use no more than 16 chunks of at most 512 KiB decoded each. The receiver verifies declared count, decoded length, and digest before exposing bytes. Duplicate, out-of-order, oversized, late, or digest-mismatched chunks reject the request and discard its buffered state.
 
 The addon uses a bounded one-MiB outbound queue and drains between capture chunks; this does not raise the server's one-MiB per-frame limit. Timeouts, cancellation, protocol rejection, or either peer disconnecting reject all matching pending requests and erase accumulated chunks. Stale results cannot be reassigned to a later request because correlation IDs are unique per session.
+
+## Phase 3 runtime commands
+
+An explicitly runtime-authorized session may additionally send `runtime.prepare`, `runtime.command`, `runtime.capture`, and `runtime.cleanup`. These use the same signed envelope, queue, deadline, correlation, chunk, and terminal-result rules as editor commands. The addon rejects them when the session grants omit either the tier or pack.
+
+`runtime.prepare` supplies a bounded descriptor for one run. Separately from the editor pairing descriptor, the control plane creates an owner-only runtime descriptor containing project identity, MCP session, run UUID, positive generation, scene path, launch nonce, 256-bit secret, and expiry. The owned Godot child consumes and deletes it, then proves possession in its first `godot_mcp_runtime:hello` debugger message. The editor debugger plugin verifies all identities, expiry, and HMAC before binding one debugger session. The control plane accepts readiness only when the authenticated PID equals its owned child PID.
+
+`runtime.command` permits only status, bounded tree/node/log reads, typed waits, pause, resume, deterministic frame step, and stop. Every command carries the run handle, strictly increasing runtime sequence, and deadline. Stale generations, replayed/reordered messages, wrong debugger sessions, and expired commands are rejected. `runtime.capture` returns one bounded PNG per bridge request; the MCP layer issues sequential requests for ordered multi-frame capture and verifies every digest before evidence persistence. `runtime.cleanup` clears prepared identity, pending requests, ready state, and debugger binding idempotently.
+
+The runtime opens no listener and receives no WebSocket credentials. It connects only to the editor's loopback Godot debugger server. The TypeScript process owner launches only the fixed harness scene, scrubs the child environment, records PID/start fingerprint, and signals only that verified child during cleanup.
 
 ## Limits and closes
 

@@ -90,7 +90,7 @@ describe("Phase 2 editor schemas", () => {
     expect(() => EditorCaptureInputSchema.parse({ viewport: "2d", maxWidth: 2049 })).toThrow();
   });
 
-  it.each(["NOT_ATTACHED", "AUTHENTICATION_FAILED", "STALE_HANDLE", "PRECONDITION_FAILED"] as const)(
+  it.each(["NOT_ATTACHED", "AUTHENTICATION_FAILED", "PERMISSION_REQUIRED", "STALE_HANDLE", "PRECONDITION_FAILED"] as const)(
     "preserves the %s runtime bridge error",
     (code) => {
       expect(BridgeCommandResultSchema.parse({
