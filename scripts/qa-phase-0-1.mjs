@@ -94,6 +94,23 @@ async function runGdscriptProtocolFixture(godot) {
   }
 }
 
+async function runFixtureImport(godot) {
+  const container = await mkdtemp(join(tmpdir(), "godot-mcp-import-"));
+  const project = join(container, "project");
+  const environment = { ...process.env, XDG_RUNTIME_DIR: join(container, "runtime") };
+  try {
+    await cp(join(root, "fixtures/godot-4.7"), project, { recursive: true });
+    await run("6/11 Godot fixture import", godot, [
+      "--headless",
+      "--path",
+      project,
+      "--import",
+    ], { env: environment });
+  } finally {
+    await rm(container, { force: true, recursive: true });
+  }
+}
+
 const godot = await godotBinary();
 const detectedGodotVersion = await readOutput(godot, ["--version"]);
 if (detectedGodotVersion !== "4.7.stable.official.5b4e0cb0f") {
@@ -110,31 +127,27 @@ await run("2/11 topological package builds", pnpm, ["build"]);
 await run("3/11 ESLint", pnpm, ["lint"]);
 await run("4/11 TypeScript typecheck", pnpm, ["typecheck"]);
 await run("5/11 unit tests", pnpm, ["exec", "vitest", "run", "packages"]);
-await run("6/11 Godot fixture import", godot, [
-  "--headless",
-  "--path",
-  "fixtures/godot-4.7",
-  "--import",
-  "--quit",
-]);
+await runFixtureImport(godot);
 await runGdscriptProtocolFixture(godot);
 await run("8/11 real-editor integration tests", pnpm, [
   "exec",
   "vitest",
   "run",
-  "tests/integration",
+  "tests/integration/addon-lifecycle.test.ts",
+  "tests/integration/editor-pairing.test.ts",
+  "tests/integration/godot-fixture.test.ts",
 ]);
 await run("9/11 security tests", pnpm, [
   "exec",
   "vitest",
   "run",
-  "tests/security",
+  "tests/security/pairing-hostile.test.ts",
 ]);
 await run("10/11 end-to-end stdio/editor test", pnpm, [
   "exec",
   "vitest",
   "run",
-  "tests/end-to-end",
+  "tests/end-to-end/phase-0-1.test.ts",
 ]);
 await run("11/11 whitespace check", "git", ["diff", "--check"]);
 process.stdout.write("\n[phase-0-1] PASS\n");

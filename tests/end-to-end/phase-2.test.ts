@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile, readdir } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
@@ -12,6 +12,28 @@ import {
   waitUntil,
 } from "@godot-mcp/testkit";
 import { expect, test } from "vitest";
+
+async function preserveFailureReceipts(
+  projectRoot: string,
+  editorOutput: string,
+  mcpStderr: string,
+  lastStructured: unknown,
+): Promise<void> {
+  const directory = process.env.GODOT_MCP_FAILURE_ARTIFACT_DIR;
+  if (!directory) return;
+  await mkdir(directory, { recursive: true });
+  await copyFile(
+    join(projectRoot, ".godot/evidence/godot-mcp/audit.jsonl"),
+    join(directory, "phase-2-end-to-end-audit.jsonl"),
+  ).catch(() => undefined);
+  await writeFile(join(directory, "phase-2-end-to-end-editor.log"), editorOutput, "utf8");
+  await writeFile(join(directory, "phase-2-end-to-end-mcp-stderr.log"), mcpStderr, "utf8");
+  await writeFile(
+    join(directory, "phase-2-end-to-end-receipt.json"),
+    `${JSON.stringify(lastStructured ?? null)}\n`,
+    "utf8",
+  );
+}
 
 test.skipIf(process.platform !== "darwin")(
   "Phase 2 works through published stdio and a visible Godot editor",
@@ -137,6 +159,12 @@ test.skipIf(process.platform !== "darwin")(
       expect(await project.diffFromOriginal()).toEqual([]);
       expect(await readdir(join(project.root, "runtime/godot-mcp")).catch(() => [])).toEqual([]);
     } catch (error) {
+      await preserveFailureReceipts(
+        project.root,
+        editor?.output ?? "",
+        client?.stderr ?? "",
+        lastStructured,
+      );
       throw new Error(
         `${String(error)}\nLast structured:\n${JSON.stringify(lastStructured)}\nMCP stderr:\n${client?.stderr ?? ""}\nEditor output:\n${editor?.output ?? ""}`,
       );

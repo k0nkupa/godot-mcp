@@ -1,6 +1,6 @@
 # Godot MCP bridge protocol v1
 
-The Phase 1 bridge is JSON over a loopback WebSocket at `ws://127.0.0.1:<ephemeral-port>/bridge`. The server writes the address and one-use authentication material to an owner-only runtime descriptor. The addon initiates the connection; it opens no port.
+The Phase 2 bridge is JSON over a loopback WebSocket at `ws://127.0.0.1:<ephemeral-port>/bridge`. The server writes the address and one-use authentication material to an owner-only runtime descriptor. The addon initiates the connection; it opens no port.
 
 ## Pair request
 
@@ -31,6 +31,23 @@ canonicalJson(params)
 Canonical JSON sorts object keys, preserves array order, allows null, booleans, strings, and safe integers only, and rejects floating-point numbers. Godot’s JSON parser represents wire numbers as floats, so the addon accepts only finite integral values within JavaScript’s safe-integer range and renders them as integers for signing.
 
 Sequences must increase strictly for each direction. Deadlines must be unexpired and no more than 60 seconds in the future. A bad MAC, repeated sequence, wrong session ID, malformed envelope, or invalid deadline closes the session.
+
+## Phase 2 editor commands
+
+After `pair.complete`, the server may send signed `editor.query` or `editor.capture` envelopes. Parameters contain a UUID `requestId` and an `arguments` object. The signed envelope deadline is authoritative: the addon rejects an expired queued command before executing it. At most 32 editor commands may wait and only one runs at a time on Godot's main thread.
+
+`editor.query` supports exactly `editor_state`, `scene_tree`, `node`, `resources`, `project_settings`, and `diagnostics`. Results are JSON-only and limited to 512 KiB. `editor.capture` supports the current `2d` viewport or `3d` viewport index 0–3, with requested dimensions no larger than 2048×2048. It returns PNG only, capped at 8 MiB decoded.
+
+The addon replies with signed envelopes in this order:
+
+```json
+{ "method": "command.chunk", "params": { "requestId": "...", "index": 0, "total": 2, "sha256": "...", "data": "<base64>" } }
+{ "method": "command.result", "params": { "requestId": "...", "ok": true, "data": {}, "binary": { "size": 700000, "sha256": "...", "chunks": 2 } } }
+```
+
+Errors use one terminal `command.result` with `ok: false` and a bounded `{ code, message, retryable }` error. A request has exactly one terminal result. Chunks are allowed only before that result, must start at zero, remain contiguous, agree on `total` and SHA-256, and use no more than 16 chunks of at most 512 KiB decoded each. The receiver verifies declared count, decoded length, and digest before exposing bytes. Duplicate, out-of-order, oversized, late, or digest-mismatched chunks reject the request and discard its buffered state.
+
+The addon uses a bounded one-MiB outbound queue and drains between capture chunks; this does not raise the server's one-MiB per-frame limit. Timeouts, cancellation, protocol rejection, or either peer disconnecting reject all matching pending requests and erase accumulated chunks. Stale results cannot be reassigned to a later request because correlation IDs are unique per session.
 
 ## Limits and closes
 

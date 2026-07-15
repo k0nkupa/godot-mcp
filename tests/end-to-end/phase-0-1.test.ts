@@ -62,8 +62,10 @@ test("Phase 0-1 works through CLI, real editor, and MCP stdio", async () => {
 
     expect((await client.listTools()).tools.map((tool) => tool.name).sort()).toEqual([
       "godot_capabilities",
+      "godot_capture",
       "godot_doctor",
       "godot_help",
+      "godot_query",
       "godot_session",
     ]);
     await client.close();
