@@ -9,6 +9,7 @@ const SessionCrypto = preload("res://addons/godot_mcp/bridge/session_crypto.gd")
 signal attached(session_info: Dictionary)
 signal rejected(code: String, message: String)
 signal disconnected(reason: String)
+signal command_received(command: Dictionary)
 
 var _identity: Dictionary = {}
 var _descriptor: Dictionary = {}
@@ -114,8 +115,14 @@ func _handle_message(text: String) -> void:
 	if not _paired and message.method == "pair.complete":
 		_complete_pairing()
 		return
-	# Phase 1 deliberately refuses all post-pair commands.
-	rejected.emit("INVALID_REQUEST", "Phase 1 accepts no bridge commands")
+	if message.method in ["editor.query", "editor.capture"]:
+		var params: Variant = message.params
+		if typeof(params) != TYPE_DICTIONARY or not params.has("requestId") or typeof(params.get("arguments")) != TYPE_DICTIONARY:
+			rejected.emit("INVALID_REQUEST", "Bridge command parameters are invalid")
+			return
+		command_received.emit({"requestId": String(params.requestId), "deadlineUnixMs": int(message.deadlineUnixMs), "method": String(message.method), "arguments": params.arguments})
+		return
+	rejected.emit("INVALID_REQUEST", "Unsupported bridge command")
 
 func _handle_pair_ok(message: Dictionary) -> void:
 	for field in ["sessionId", "serverNonce", "serverProof", "grants"]:
@@ -175,6 +182,17 @@ func _send_signed(method: String, params: Variant, timeout_ms: int) -> void:
 		"params": params,
 	}
 	_socket.send_text(JSON.stringify(SessionCrypto.sign_envelope(envelope, _session_key)))
+
+func is_attached() -> bool:
+	return _paired and _socket != null and _socket.get_ready_state() == WebSocketPeer.STATE_OPEN
+
+func send_command_result(request_id: String, data: Dictionary) -> void:
+	if is_attached():
+		_send_signed("command.result", {"requestId": request_id, "ok": true, "data": data}, 5000)
+
+func send_command_error(request_id: String, code: String, message: String, retryable: bool = false) -> void:
+	if is_attached():
+		_send_signed("command.result", {"requestId": request_id, "ok": false, "error": {"code": code, "message": message.left(4096), "retryable": retryable}}, 5000)
 
 func close(reason: String = "closed") -> void:
 	if _closed:

@@ -125,6 +125,7 @@ export const BridgeCommandResultSchema = z
         code: z.enum([
           "INVALID_REQUEST",
           "PAYLOAD_TOO_LARGE",
+          "CONFLICT",
           "TARGET_NOT_FOUND",
           "TIMEOUT",
           "GODOT_RUNTIME_ERROR",

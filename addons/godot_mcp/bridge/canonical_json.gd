@@ -30,7 +30,9 @@ static func _encode_value(value: Variant) -> Dictionary:
 				return _failure("integer outside the safe range")
 			return _success(str(value))
 		TYPE_FLOAT:
-			return _failure("floating-point values require tagged strings in protocol v1")
+			if not is_finite(value) or floor(value) != value or abs(value) > MAX_SAFE_INTEGER:
+				return _failure("floating-point values require tagged strings in protocol v1")
+			return _success(str(int(value)))
 		TYPE_ARRAY:
 			var items: Array[String] = []
 			for item in value:
