@@ -189,24 +189,28 @@ func _send_signed(method: String, params: Variant, timeout_ms: int) -> Error:
 func is_attached() -> bool:
 	return _paired and _socket != null and _socket.get_ready_state() == WebSocketPeer.STATE_OPEN
 
-func send_command_result(request_id: String, data: Dictionary, binary: Dictionary = {}) -> void:
+func send_command_result(request_id: String, data: Dictionary, binary: Dictionary = {}, deadline_unix_ms: int = 0) -> void:
 	if is_attached():
 		var params := {"requestId": request_id, "ok": true, "data": data}
 		if not binary.is_empty():
 			params.binary = binary
-		_send_signed("command.result", params, 5000)
+		var timeout_ms := 5000 if deadline_unix_ms <= 0 else clampi(deadline_unix_ms - int(Time.get_unix_time_from_system() * 1000.0), 1, 5000)
+		_send_signed("command.result", params, timeout_ms)
 
 func send_command_chunk(request_id: String, index: int, total: int, sha256: String, data: String) -> void:
 	if is_attached():
 		_send_signed("command.chunk", {"requestId": request_id, "index": index, "total": total, "sha256": sha256, "data": data}, 5000)
 
-func send_command_chunk_flow_controlled(request_id: String, index: int, total: int, sha256: String, data: String) -> bool:
+func send_command_chunk_flow_controlled(request_id: String, index: int, total: int, sha256: String, data: String, deadline_unix_ms: int) -> bool:
 	while is_attached() and _socket.get_current_outbound_buffered_amount() > OUTBOUND_DRAIN_TARGET_BYTES:
+		if int(Time.get_unix_time_from_system() * 1000.0) >= deadline_unix_ms:
+			return false
 		_socket.poll()
 		await get_tree().process_frame
-	if not is_attached():
+	var remaining_ms := deadline_unix_ms - int(Time.get_unix_time_from_system() * 1000.0)
+	if not is_attached() or remaining_ms <= 0:
 		return false
-	return _send_signed("command.chunk", {"requestId": request_id, "index": index, "total": total, "sha256": sha256, "data": data}, 5000) == OK
+	return _send_signed("command.chunk", {"requestId": request_id, "index": index, "total": total, "sha256": sha256, "data": data}, mini(remaining_ms, 5000)) == OK
 
 func send_command_error(request_id: String, code: String, message: String, retryable: bool = false) -> void:
 	if is_attached():

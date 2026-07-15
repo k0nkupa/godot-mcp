@@ -55,6 +55,20 @@ describe("Phase 2 editor schemas", () => {
     expect(() =>
       EditorQueryInputSchema.parse({ operation: "resources", prefix: "res://../secret" }),
     ).toThrow();
+    expect(() =>
+      EditorQueryInputSchema.parse({
+        operation: "node",
+        scenePath: "res://scene.tscn",
+        nodePath: "/root/EditorNode",
+      }),
+    ).toThrow();
+    expect(() =>
+      EditorQueryInputSchema.parse({
+        operation: "node",
+        scenePath: "res://scene.tscn",
+        nodePath: "Child:secret_property",
+      }),
+    ).toThrow();
   });
 
   it("accepts bounded captures and rejects invalid viewport combinations", () => {

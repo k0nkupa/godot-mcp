@@ -56,6 +56,13 @@ test("queries bounded truth from an open editor scene without changing the proje
           scenePath: "res://observation/editor_3d.tscn",
         }),
       ).rejects.toMatchObject({ code: "TARGET_NOT_FOUND" });
+      await expect(
+        session.request("editor.query", {
+          operation: "node",
+          scenePath: scene,
+          nodePath: "/root/EditorNode",
+        }),
+      ).rejects.toMatchObject({ code: "INVALID_REQUEST" });
 
       const tree = await session.request<{ nodes: Array<Record<string, unknown>>; truncated: boolean }>(
         "editor.query",
@@ -80,6 +87,8 @@ test("queries bounded truth from an open editor scene without changing the proje
       expect(JSON.stringify(node.data)).toContain("phase-2-2d");
       expect(JSON.stringify(node.data)).toContain("fixture_resource.tres");
       expect(JSON.stringify(node.data)).not.toContain("push_warning");
+      expect(JSON.stringify(node.data)).not.toContain("fixture-secret");
+      expect(JSON.stringify(node.data)).toContain("[redacted]");
 
       const resources = await session.request<{ resources: Array<{ path: string }> }>("editor.query", {
         operation: "resources",
@@ -94,6 +103,21 @@ test("queries bounded truth from an open editor scene without changing the proje
           "res://observation/fixture_script.gd",
         ]),
       );
+      const scripts = await session.request<{
+        resources: Array<{ path: string }>;
+        nextCursor: string;
+        truncated: boolean;
+      }>("editor.query", {
+        operation: "resources",
+        prefix: "res://observation",
+        kinds: ["script"],
+        limit: 1,
+      });
+      expect(scripts.data).toMatchObject({
+        resources: [{ path: "res://observation/fixture_script.gd" }],
+        nextCursor: "",
+        truncated: false,
+      });
 
       const settings = await session.request<{ settings: Array<{ name: string }> }>("editor.query", {
         operation: "project_settings",

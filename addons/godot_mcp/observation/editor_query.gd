@@ -5,6 +5,7 @@ extends RefCounted
 const VariantEncoder = preload("res://addons/godot_mcp/observation/variant_encoder.gd")
 const MAX_JSON_BYTES := 512 * 1024
 const MAX_PROPERTIES := 128
+const MAX_SCANNED_RESOURCES := 10000
 const APPROVED_SETTING_PREFIXES := ["application/", "audio/", "display/", "input/", "navigation/", "physics/", "rendering/"]
 
 var _editor: EditorInterface
@@ -68,7 +69,10 @@ func _scene_tree(arguments: Dictionary) -> Dictionary:
 		if depth >= max_depth:
 			truncated = truncated or node.get_child_count() > 0
 			continue
-		for index in range(node.get_child_count() - 1, -1, -1):
+		var available := max_nodes - nodes.size() - stack.size()
+		if node.get_child_count() > available:
+			truncated = true
+		for index in range(mini(node.get_child_count(), available) - 1, -1, -1):
 			stack.append({"node": node.get_child(index), "depth": depth + 1})
 	return {"scenePath": String(root.scene_file_path), "nodes": nodes, "truncated": truncated}
 
@@ -76,8 +80,11 @@ func _node(arguments: Dictionary) -> Dictionary:
 	var root := _find_open_root(String(arguments.get("scenePath", "")))
 	if root == null:
 		return {"_error": _error("TARGET_NOT_FOUND", "Requested scene is not open")}
-	var target := root.get_node_or_null(NodePath(String(arguments.get("nodePath", ""))))
-	if target == null:
+	var requested_path := NodePath(String(arguments.get("nodePath", "")))
+	if requested_path.is_absolute() or requested_path.get_subname_count() > 0:
+		return {"_error": _error("INVALID_REQUEST", "Node path must be relative and contain no subnames")}
+	var target := root.get_node_or_null(requested_path)
+	if target == null or (target != root and not root.is_ancestor_of(target)):
 		return {"_error": _error("TARGET_NOT_FOUND", "Requested node was not found")}
 	var data := _node_summary(root, target)
 	data.signals = VariantEncoder.encode_value(target.get_signal_list())
@@ -91,7 +98,7 @@ func _node(arguments: Dictionary) -> Dictionary:
 			if usage & (PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_EDITOR) == 0:
 				continue
 			var name := String(property.name)
-			data.properties.append({"name": name, "type": int(property.type), "value": VariantEncoder.encode_value(target.get(name))})
+			data.properties.append({"name": name, "type": int(property.type), "value": "[redacted]" if VariantEncoder.is_secret_name(name) else VariantEncoder.encode_value(target.get(name))})
 	return data
 
 func _resources(arguments: Dictionary) -> Dictionary:
@@ -100,19 +107,18 @@ func _resources(arguments: Dictionary) -> Dictionary:
 	var limit := clampi(int(arguments.get("limit", 200)), 1, 2000)
 	var requested_kinds: Array = arguments.get("kinds", [])
 	var records: Array[Dictionary] = []
-	_collect_resources(_editor.get_resource_filesystem().get_filesystem(), records)
+	var scan_truncated := _collect_resources(_editor.get_resource_filesystem().get_filesystem(), records, MAX_SCANNED_RESOURCES)
 	records.sort_custom(func(left: Dictionary, right: Dictionary) -> bool: return String(left.path) < String(right.path))
-	var page: Array[Dictionary] = []
+	var filtered: Array[Dictionary] = []
 	for record in records:
 		if not String(record.path).begins_with(prefix) or (not cursor.is_empty() and String(record.path) <= cursor):
 			continue
 		if not requested_kinds.is_empty() and record.kind not in requested_kinds:
 			continue
-		if page.size() >= limit:
-			break
-		page.append(record)
-	var has_more := page.size() == limit and records.any(func(record: Dictionary) -> bool: return String(record.path) > String(page[-1].path) and String(record.path).begins_with(prefix))
-	return {"resources": page, "nextCursor": String(page[-1].path) if has_more else "", "truncated": has_more}
+		filtered.append(record)
+	var has_more := scan_truncated or filtered.size() > limit
+	var page: Array[Dictionary] = filtered.slice(0, limit)
+	return {"resources": page, "nextCursor": String(page[-1].path) if has_more and not page.is_empty() else "", "truncated": has_more}
 
 func _project_settings(arguments: Dictionary) -> Dictionary:
 	var prefix := String(arguments.get("prefix", ""))
@@ -123,7 +129,7 @@ func _project_settings(arguments: Dictionary) -> Dictionary:
 	var records: Array[Dictionary] = []
 	for property in ProjectSettings.get_property_list():
 		var name := String(property.name)
-		if not name.begins_with(prefix) or (not cursor.is_empty() and name <= cursor) or VariantEncoder._is_secret_name(name):
+		if not name.begins_with(prefix) or (not cursor.is_empty() and name <= cursor) or VariantEncoder.is_secret_name(name):
 			continue
 		records.append({"name": name, "type": int(property.type), "value": VariantEncoder.encode_value(ProjectSettings.get_setting(name)), "changedFromDefault": ProjectSettings.get_setting(name) != ProjectSettings.property_get_revert(name) if ProjectSettings.property_can_revert(name) else false})
 	records.sort_custom(func(left: Dictionary, right: Dictionary) -> bool: return String(left.name) < String(right.name))
@@ -153,13 +159,17 @@ func _node_summary(root: Node, node: Node) -> Dictionary:
 		"script": null if script == null else {"className": script.get_class(), "path": script.resource_path, "uid": ResourceUID.path_to_uid(script.resource_path)},
 	}
 
-func _collect_resources(directory: EditorFileSystemDirectory, records: Array[Dictionary]) -> void:
+func _collect_resources(directory: EditorFileSystemDirectory, records: Array[Dictionary], limit: int) -> bool:
 	for index in directory.get_file_count():
+		if records.size() >= limit:
+			return true
 		var path := directory.get_file_path(index)
 		var type := String(directory.get_file_type(index))
 		records.append({"path": path, "type": type, "uid": ResourceUID.path_to_uid(path), "importValid": directory.get_file_import_is_valid(index), "scriptClass": directory.get_file_script_class_name(index), "kind": _resource_kind(path, type)})
 	for index in directory.get_subdir_count():
-		_collect_resources(directory.get_subdir(index), records)
+		if _collect_resources(directory.get_subdir(index), records, limit):
+			return true
+	return false
 
 func _resource_kind(path: String, type: String) -> String:
 	var extension := path.get_extension().to_lower()

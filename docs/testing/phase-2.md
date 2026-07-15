@@ -20,8 +20,8 @@ Godot exposes a real rendered 2D or 3D editor viewport only when that main edito
 
 - `editor_state`: open/edited/unsaved scenes, selection, and filesystem scan/import state.
 - `scene_tree`: an already-open scene, bounded to depth 32 and 1,000 nodes.
-- `node`: identity, groups, signals, script/resource references, and up to 128 encoded properties.
-- `resources`: sorted `EditorFileSystem` metadata, paged to at most 2,000 records.
+- `node`: identity, groups, signals, script/resource references, and up to 128 encoded properties; secret-shaped property names have redacted values.
+- `resources`: sorted `EditorFileSystem` metadata, paged to at most 2,000 records with at most 10,000 indexed entries scanned per request.
 - `project_settings`: paged values under approved namespaces with secret-shaped names omitted.
 - `diagnostics`: sequence-pageable, path/token-redacted records from a 500-entry ring.
 

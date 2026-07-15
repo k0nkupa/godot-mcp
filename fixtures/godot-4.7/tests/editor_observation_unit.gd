@@ -17,10 +17,14 @@ func _init() -> void:
 
 	var logger := DiagnosticLogger.new("/Users/example/secret-project")
 	logger.record_for_test("error", "token=abc123 at /Users/example/secret-project/main.gd")
+	logger.record_for_test("error", "Authorization: Bearer header-secret")
+	logger.record_for_test("error", "failure at /private/tmp/host-only.log")
 	var records: Array[Dictionary] = logger.read_after(0, ["error"], 10)
-	assert(records.size() == 1)
+	assert(records.size() == 3)
 	assert("abc123" not in JSON.stringify(records))
+	assert("header-secret" not in JSON.stringify(records))
 	assert("/Users/example" not in JSON.stringify(records))
+	assert("/private/tmp" not in JSON.stringify(records))
 
 	var queue := MainThreadQueue.new()
 	for index in 33:
@@ -40,6 +44,26 @@ func _init() -> void:
 	expired_queue._run_next()
 	assert(expired_codes == ["TIMEOUT"])
 	expired_queue.queue_free()
+	var serialized_queue := MainThreadQueue.new()
+	get_root().add_child(serialized_queue)
+	var activity := [0, 0, 0]
+	serialized_queue.set_handler(func(_command: Dictionary) -> Dictionary:
+		activity[0] += 1
+		activity[1] = maxi(activity[1], activity[0])
+		await process_frame
+		activity[0] -= 1
+		activity[2] += 1
+		return {"ok": true}
+	)
+	assert(serialized_queue.enqueue({"requestId": "first", "deadlineUnixMs": 9999999999999}))
+	assert(serialized_queue.enqueue({"requestId": "second", "deadlineUnixMs": 9999999999999}))
+	serialized_queue._run_next()
+	for _frame in 60:
+		if activity[2] == 2:
+			break
+		await process_frame
+	assert(activity[1] == 1 and activity[2] == 2)
+	serialized_queue.queue_free()
 	logger = null
 
 	print("GODOT_MCP_EDITOR_OBSERVATION_UNIT_OK")

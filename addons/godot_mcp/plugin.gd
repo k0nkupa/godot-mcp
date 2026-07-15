@@ -25,7 +25,6 @@ func _enter_tree() -> void:
 	bridge = BridgeClient.new()
 	add_child(bridge)
 	bridge.command_received.connect(_on_command_received)
-	command_queue.completed.connect(_on_command_completed)
 	command_queue.failed.connect(_on_command_failed)
 	bridge.start(DescriptorReader.read_project_identity())
 
@@ -34,21 +33,35 @@ func _on_command_received(command: Dictionary) -> void:
 		bridge.send_command_error(String(command.get("requestId", "")), "CONFLICT", "Editor command queue is full", true)
 
 func _execute_command(command: Dictionary) -> Dictionary:
+	var outcome: Dictionary
 	if String(command.method) == "editor.query":
-		return editor_query.execute(command.arguments)
-	if String(command.method) == "editor.capture":
-		return await editor_capture.execute(command.arguments)
-	return {"ok": false, "code": "INVALID_REQUEST", "message": "Unsupported editor command", "retryable": false}
+		outcome = editor_query.execute(command.arguments)
+	elif String(command.method) == "editor.capture":
+		outcome = await editor_capture.execute(command.arguments)
+	else:
+		outcome = {"ok": false, "code": "INVALID_REQUEST", "message": "Unsupported editor command", "retryable": false}
+	await _deliver_command(command, outcome)
+	return {"ok": true}
 
-func _on_command_completed(request_id: String, outcome: Dictionary) -> void:
+func _deliver_command(command: Dictionary, outcome: Dictionary) -> void:
+	var request_id := String(command.get("requestId", ""))
+	var deadline_unix_ms := int(command.get("deadlineUnixMs", 0))
+	if not bool(outcome.get("ok", false)):
+		bridge.send_command_error(request_id, String(outcome.get("code", "GODOT_RUNTIME_ERROR")), String(outcome.get("message", "Godot command failed")), bool(outcome.get("retryable", false)))
+		return
 	var chunks: Array = outcome.get("chunks", [])
 	var binary: Dictionary = outcome.get("binary", {})
 	for index in chunks.size():
 		if not bridge.is_attached():
 			return
-		if not await bridge.send_command_chunk_flow_controlled(request_id, index, chunks.size(), String(binary.get("sha256", "")), String(chunks[index])):
+		if not await bridge.send_command_chunk_flow_controlled(request_id, index, chunks.size(), String(binary.get("sha256", "")), String(chunks[index]), deadline_unix_ms):
+			if bridge.is_attached():
+				bridge.send_command_error(request_id, "TIMEOUT", "Command deadline expired during response delivery", true)
 			return
-	bridge.send_command_result(request_id, outcome.get("data", {}), binary)
+	if int(Time.get_unix_time_from_system() * 1000.0) >= deadline_unix_ms:
+		bridge.send_command_error(request_id, "TIMEOUT", "Command deadline expired during response delivery", true)
+		return
+	bridge.send_command_result(request_id, outcome.get("data", {}), binary, deadline_unix_ms)
 
 func _on_command_failed(request_id: String, code: String, message: String, retryable: bool) -> void:
 	bridge.send_command_error(request_id, code, message, retryable)

@@ -18,6 +18,7 @@ import {
 } from "@godot-mcp/control-plane";
 import {
   EditorCaptureInputSchema,
+  EditorCaptureResultSchema,
   EditorQueryInputSchema,
   ToolResultSchema,
   type ProjectIdentity,
@@ -103,16 +104,28 @@ export function registerCoreTools(server: McpServer, dependencies: CoreToolDepen
       timeoutMs: 15_000, maxResponseBytes: 8 * 1024 * 1024, correlationId,
     });
     if (!response.binary) throw new Error("Godot capture response omitted PNG bytes");
+    const metadata = EditorCaptureResultSchema.parse(response.data);
+    const expectedViewportIndex = input.viewport === "3d" ? input.viewportIndex ?? 0 : null;
+    if (
+      metadata.viewport !== input.viewport ||
+      (metadata.viewportIndex ?? null) !== expectedViewportIndex ||
+      metadata.width > input.maxWidth ||
+      metadata.height > input.maxHeight ||
+      metadata.byteLength !== response.binary.byteLength ||
+      metadata.sha256 !== response.binarySha256
+    ) {
+      throw new Error("Godot capture metadata does not match verified PNG bytes or request bounds");
+    }
     const attachment = dependencies.session.snapshot().attachment;
     if (!attachment) return requireBridge(null) as never;
-    const viewport = input.viewport;
-    const width = Number(response.data.width);
-    const height = Number(response.data.height);
+    const viewport = metadata.viewport;
+    const width = metadata.width;
+    const height = metadata.height;
     const evidence = await dependencies.evidence.putPng(attachment.sessionId, response.binary, {
       viewport, width, height, ...(viewport === "3d" ? { viewportIndex: input.viewportIndex ?? 0 } : {}),
     });
     return {
-      data: { ...response.data, mimeType: "image/png", sha256: evidence.sha256, byteLength: evidence.byteLength, evidenceUri: evidence.uri },
+      data: { ...metadata, sha256: evidence.sha256, byteLength: evidence.byteLength, evidenceUri: evidence.uri },
       evidence: [evidence.uri],
       image: { data: response.binary, mimeType: "image/png" },
     };

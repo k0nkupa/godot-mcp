@@ -5,8 +5,8 @@ extends RefCounted
 const MAX_DEPTH := 4
 const MAX_ENTRIES := 128
 const MAX_STRING_LENGTH := 4096
-const SECRET_PATTERN := "(?i)(token|secret|password|authorization|cookie|api[_-]?key)\\s*[:=]\\s*[^\\s,;]+"
-const HOST_PATH_PATTERN := "(?:/Users|/home)/[^\\s\"']+"
+const SECRET_PATTERN := "(?i)(token|secret|password|authorization|cookie|api[_-]?key)\\s*[:=]\\s*[^\\r\\n,;]+"
+const HOST_PATH_PATTERN := "(?:/Users|/home|/private|/var|/tmp)/[^\\s\"']+"
 
 static func redact_text(value: String, project_root: String = "") -> String:
 	var output := value
@@ -63,7 +63,7 @@ static func encode_value(value: Variant, depth: int = 0) -> Variant:
 					output["_truncated"] = true
 					break
 				var name := String(key)
-				output[redact_text(name)] = "[redacted]" if _is_secret_name(name) else encode_value(value[key], depth + 1)
+				output[redact_text(name)] = "[redacted]" if is_secret_name(name) else encode_value(value[key], depth + 1)
 				count += 1
 			return output
 		TYPE_OBJECT:
@@ -75,7 +75,7 @@ static func encode_value(value: Variant, depth: int = 0) -> Variant:
 				return {"type": "NodeRef", "className": value.get_class(), "nodePath": String(value.get_path()) if value.is_inside_tree() else String(value.name)}
 	return {"type": type_string(typeof(value)), "unsupported": true}
 
-static func _is_secret_name(name: String) -> bool:
+static func is_secret_name(name: String) -> bool:
 	var normalized := name.to_lower()
 	for marker in ["token", "secret", "password", "authorization", "cookie", "api_key", "api-key"]:
 		if marker in normalized:

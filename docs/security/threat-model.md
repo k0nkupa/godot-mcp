@@ -25,7 +25,7 @@ Editor queries inspect only roots already open in the editor and resources alrea
 
 | Abuse case | Control |
 |---|---|
-| Broad scene/resource enumeration | Open scenes only; indexed metadata only; 1,000 nodes, 2,000 resources, depth 32, pagination and 512 KiB JSON cap |
+| Broad scene/resource enumeration | Open scenes only; relative descendant NodePaths; indexed metadata only; 1,000 nodes, 2,000 returned resources, 10,000 scanned resources, depth 32, pagination and 512 KiB JSON cap |
 | Secret-bearing settings or logs | Approved setting prefixes, secret-name omission, diagnostic token/path redaction, 4,096-character strings, redacted audit arguments |
 | Oversized properties or diagnostics | 128 properties, encoder depth 4 and 128 entries, 500-record diagnostic ring and request limit |
 | Capture memory/encoding pressure | Current editor viewport only, PNG only, 2048×2048 and 8 MiB decoded caps, one command active per addon queue |

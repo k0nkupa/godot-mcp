@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterEach, describe, expect, it } from "vitest";
@@ -44,12 +46,15 @@ async function testServer(options: { attached?: boolean } = {}) {
     });
   }
   const png = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
+  const pngSha256 = createHash("sha256").update(png).digest("hex");
+  let captureMetadataValid = true;
   const bridge = options.attached
     ? {
         async request<T>(method: string): Promise<{
           requestId: string;
           data: T;
           binary?: Uint8Array;
+          binarySha256?: string;
         }> {
           if (method === "editor.query") {
             return {
@@ -59,8 +64,16 @@ async function testServer(options: { attached?: boolean } = {}) {
           }
           return {
             requestId: "019f644c-1379-79c0-825e-66a4b7653bd3",
-            data: { mimeType: "image/png", viewport: "2d", width: 1, height: 1, byteLength: png.length, sha256: "ignored" } as T,
+            data: {
+              mimeType: "image/png",
+              viewport: "2d",
+              width: captureMetadataValid ? 1 : -1,
+              height: 1,
+              byteLength: png.length,
+              sha256: pngSha256,
+            } as T,
             binary: png,
+            binarySha256: pngSha256,
           };
         },
       }
@@ -68,6 +81,9 @@ async function testServer(options: { attached?: boolean } = {}) {
   return {
     auditPath: join(directory, "audit.jsonl"),
     png,
+    invalidateCaptureMetadata(): void {
+      captureMetadataValid = false;
+    },
     server: createGodotMcpServer({
       project,
       grants,
@@ -133,6 +149,23 @@ describe("core MCP tools", () => {
     });
     expect(JSON.stringify(capture.structuredContent)).not.toContain(png.toString("base64"));
     await Promise.all([client.close(), server.close()]);
+  });
+
+  it("rejects malformed capture metadata before evidence persistence", async () => {
+    const fixture = await testServer({ attached: true });
+    fixture.invalidateCaptureMetadata();
+    const client = new Client({ name: "phase-2-test", version: "0.1.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([fixture.server.connect(serverTransport), client.connect(clientTransport)]);
+
+    const capture = await client.callTool({
+      name: "godot_capture",
+      arguments: { viewport: "2d" },
+    });
+
+    expect(capture.isError).toBe(true);
+    expect(capture.structuredContent).toMatchObject({ ok: false });
+    await Promise.all([client.close(), fixture.server.close()]);
   });
 
   it("returns structured content and audits invalid help topics", async () => {

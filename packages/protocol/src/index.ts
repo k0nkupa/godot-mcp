@@ -3,10 +3,12 @@ export {
   BridgeCommandChunkSchema,
   BridgeCommandResultSchema,
   EditorCaptureInputSchema,
+  EditorCaptureResultSchema,
   EditorQueryInputSchema,
   type BridgeCommandChunk,
   type BridgeCommandResult,
   type EditorCaptureInput,
+  type EditorCaptureResult,
   type EditorQueryInput,
 } from "./editor.js";
 export {

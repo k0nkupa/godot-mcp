@@ -13,8 +13,33 @@ const NodePathSchema = z
   .string()
   .min(1)
   .max(512)
-  .refine((value) => !value.split("/").includes(".."), {
-    message: "NodePath may not contain parent traversal",
+  .refine(
+    (value) =>
+      !value.startsWith("/") && !value.includes(":") && !value.split("/").includes(".."),
+    {
+      message: "NodePath must be relative and may not contain traversal or subnames",
+    },
+  );
+
+const CaptureMetadataSchema = z
+  .object({
+    mimeType: z.literal("image/png"),
+    viewport: z.enum(["2d", "3d"]),
+    viewportIndex: z.number().int().min(0).max(3).nullable().optional(),
+    width: z.number().int().min(1).max(2048),
+    height: z.number().int().min(1).max(2048),
+    byteLength: z.number().int().min(1).max(8 * 1024 * 1024),
+    sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.viewport === "2d" && value.viewportIndex != null) {
+      context.addIssue({
+        code: "custom",
+        path: ["viewportIndex"],
+        message: "viewportIndex is valid only for 3d",
+      });
+    }
   });
 
 const CursorSchema = z.string().max(256).optional();
@@ -97,6 +122,8 @@ export const EditorCaptureInputSchema = z
     }
   });
 
+export const EditorCaptureResultSchema = CaptureMetadataSchema;
+
 export const BridgeCommandChunkSchema = z
   .object({
     requestId: z.uuid(),
@@ -148,5 +175,6 @@ export const BridgeCommandResultSchema = z
 
 export type EditorQueryInput = z.infer<typeof EditorQueryInputSchema>;
 export type EditorCaptureInput = z.infer<typeof EditorCaptureInputSchema>;
+export type EditorCaptureResult = z.infer<typeof EditorCaptureResultSchema>;
 export type BridgeCommandChunk = z.infer<typeof BridgeCommandChunkSchema>;
 export type BridgeCommandResult = z.infer<typeof BridgeCommandResultSchema>;
