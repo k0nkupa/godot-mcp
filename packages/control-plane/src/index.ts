@@ -28,3 +28,20 @@ export {
   type AuditInput,
   type AuditSink,
 } from "./audit/jsonlAuditSink.js";
+export { ensureRuntimeDirectory, runtimeDirectoryPath } from "./auth/runtimeDirectory.js";
+export {
+  PairingDescriptorSchema,
+  consumePairingDescriptor,
+  createPairingDescriptor,
+  type PairingMaterial,
+  type SessionDescriptor,
+} from "./auth/pairingDescriptor.js";
+export {
+  EnvelopeVerifier,
+  deriveSessionKey,
+  envelopeSigningText,
+  signEnvelope,
+  verifyEnvelope,
+  type EnvelopeVerificationOptions,
+  type UnsignedBridgeEnvelope,
+} from "./auth/sessionCrypto.js";

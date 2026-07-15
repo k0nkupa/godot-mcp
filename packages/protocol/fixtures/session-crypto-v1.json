@@ -1,0 +1,21 @@
+{
+  "token": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+  "sessionNonce": "session-nonce-v1",
+  "serverNonce": "server-nonce-v1",
+  "canonicalPayloadText": "{\"a\":{\"x\":[2,1],\"y\":true},\"z\":1}",
+  "derivedKeyHex": "71b1b3ccc1b8f2cc22c90945e1fb64e06ee940e8d4d79a2b0da55a675f982223",
+  "envelope": {
+    "sessionId": "session_fixture_01",
+    "sequence": 7,
+    "deadlineUnixMs": 1893456000000,
+    "method": "session.status",
+    "params": {
+      "z": 1,
+      "a": {
+        "y": true,
+        "x": [2, 1]
+      }
+    }
+  },
+  "macHex": "6e2e84114d433ee6efd363807a3877a45ddf9e3c4586c8201b9bc396d7709ab5"
+}
