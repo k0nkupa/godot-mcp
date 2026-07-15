@@ -1,0 +1,11 @@
+{
+  "input": {
+    "unicode": "Godot ☃",
+    "truth": true,
+    "nothing": null,
+    "nested": {
+      "values": [0, -9007199254740991, 9007199254740991, "line\nbreak"]
+    }
+  },
+  "canonical": "{\"nested\":{\"values\":[0,-9007199254740991,9007199254740991,\"line\\nbreak\"]},\"nothing\":null,\"truth\":true,\"unicode\":\"Godot ☃\"}"
+}
