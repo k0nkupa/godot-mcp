@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { GodotMcpException } from "../errors.js";
 
-export type CoreHelpTopic = "session" | "capabilities" | "doctor" | "help";
+export type CoreHelpTopic = "session" | "capabilities" | "doctor" | "help" | "query" | "capture";
 
 export interface CoreHelp {
   topic: CoreHelpTopic;
@@ -37,8 +37,22 @@ const HELP: Record<CoreHelpTopic, CoreHelp> = {
   help: {
     topic: "help",
     title: "Godot MCP help",
-    summary: "Returns focused documentation for one of the four Phase 1 read-only tools.",
+    summary: "Returns focused documentation for one of the read-only core tools.",
     tool: "godot_help",
+    readOnly: true,
+  },
+  query: {
+    topic: "query",
+    title: "Query Godot editor",
+    summary: "Reads bounded editor state, open scene trees and nodes, indexed resource metadata, approved project settings, or redacted diagnostics.",
+    tool: "godot_query",
+    readOnly: true,
+  },
+  capture: {
+    topic: "capture",
+    title: "Capture Godot editor viewport",
+    summary: "Returns a bounded PNG image from the current 2D editor viewport or one of four 3D editor viewports without switching editor screens.",
+    tool: "godot_capture",
     readOnly: true,
   },
 };
@@ -48,7 +62,7 @@ export function getCoreHelp(topic: CoreHelpTopic = "help"): CoreHelp {
   if (!help) {
     throw new GodotMcpException({
       code: "TARGET_NOT_FOUND",
-      message: `Unknown Phase 1 help topic: ${String(topic)}`,
+      message: `Unknown core help topic: ${String(topic)}`,
       retryable: false,
       correlationId: randomUUID(),
       partialEffects: false,

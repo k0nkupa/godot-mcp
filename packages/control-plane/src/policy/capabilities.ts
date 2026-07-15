@@ -60,6 +60,18 @@ export const CORE_SESSION_POLICY: CommandPolicy = {
   pack: "core",
   mutating: false,
 };
+export const CORE_QUERY_POLICY: CommandPolicy = {
+  command: "godot_query",
+  tier: "observe",
+  pack: "core",
+  mutating: false,
+};
+export const CORE_CAPTURE_POLICY: CommandPolicy = {
+  command: "godot_capture",
+  tier: "observe",
+  pack: "core",
+  mutating: false,
+};
 
 export const PHASE_ONE_POLICIES: readonly CommandPolicy[] = [
   CORE_CAPABILITIES_POLICY,
@@ -68,9 +80,18 @@ export const PHASE_ONE_POLICIES: readonly CommandPolicy[] = [
   CORE_SESSION_POLICY,
 ];
 
+export const CORE_POLICIES: readonly CommandPolicy[] = [
+  CORE_CAPABILITIES_POLICY,
+  CORE_CAPTURE_POLICY,
+  CORE_DOCTOR_POLICY,
+  CORE_HELP_POLICY,
+  CORE_QUERY_POLICY,
+  CORE_SESSION_POLICY,
+];
+
 export function visibleCapabilities(grants: SessionGrants): CommandPolicy[] {
   const tiers = expandPermissionTiers(grants.tiers);
-  return PHASE_ONE_POLICIES.filter(
+  return CORE_POLICIES.filter(
     (policy) => tiers.includes(policy.tier) && grants.packs.includes(policy.pack),
   );
 }

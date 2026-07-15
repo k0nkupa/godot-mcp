@@ -1,5 +1,15 @@
 export { canonicalJson } from "./canonicalJson.js";
 export {
+  BridgeCommandChunkSchema,
+  BridgeCommandResultSchema,
+  EditorCaptureInputSchema,
+  EditorQueryInputSchema,
+  type BridgeCommandChunk,
+  type BridgeCommandResult,
+  type EditorCaptureInput,
+  type EditorQueryInput,
+} from "./editor.js";
+export {
   AuditRecordSchema,
   BridgeEnvelopeSchema,
   CapabilityPackSchema,

@@ -45,13 +45,15 @@ describe("SessionService", () => {
     });
   });
 
-  it("returns only the four Phase 1 core capabilities and merges doctor state", async () => {
+  it("returns all six read-only core capabilities and merges doctor state", async () => {
     const service = new SessionService(project, grants, async () => healthyDoctor);
 
     expect(service.capabilities().operations).toEqual([
       "godot_capabilities",
+      "godot_capture",
       "godot_doctor",
       "godot_help",
+      "godot_query",
       "godot_session",
     ]);
     const report = await service.doctor();
@@ -64,6 +66,8 @@ describe("SessionService", () => {
   it("returns focused help and rejects unknown topics", () => {
     const service = new SessionService(project, grants, async () => healthyDoctor);
     expect(service.help("session").topic).toBe("session");
+    expect(service.help("query")).toMatchObject({ topic: "query", tool: "godot_query" });
+    expect(service.help("capture")).toMatchObject({ topic: "capture", tool: "godot_capture" });
     expect(() => service.help("shell" as never)).toThrowError(
       expect.objectContaining({ code: "TARGET_NOT_FOUND" }),
     );

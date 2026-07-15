@@ -34,10 +34,16 @@ describe("authorization policy", () => {
   });
 
   it("shows only capabilities authorized by both tier and pack", () => {
-    expect(visibleCapabilities({ tiers: ["observe"], packs: ["core"] }).map((item) => item.command)).toEqual([
+    expect(
+      visibleCapabilities({ tiers: ["observe"], packs: ["core"] })
+        .map((item) => item.command)
+        .sort(),
+    ).toEqual([
       "godot_capabilities",
+      "godot_capture",
       "godot_doctor",
       "godot_help",
+      "godot_query",
       "godot_session",
     ]);
     expect(visibleCapabilities({ tiers: ["observe"], packs: [] })).toEqual([]);

@@ -12,8 +12,11 @@ export {
 export { resolveProjectPath, type ProjectPathMode } from "./project/pathPolicy.js";
 export {
   CORE_CAPABILITIES_POLICY,
+  CORE_CAPTURE_POLICY,
   CORE_DOCTOR_POLICY,
   CORE_HELP_POLICY,
+  CORE_POLICIES,
+  CORE_QUERY_POLICY,
   CORE_SESSION_POLICY,
   PHASE_ONE_POLICIES,
   expandPermissionTiers,
