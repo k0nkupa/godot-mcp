@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { startBridgeServer } from "@godot-mcp/bridge-client";
 import { JsonlAuditSink, readProjectIdentity } from "@godot-mcp/control-plane";
 import { initProject } from "@godot-mcp/cli";
-import { copyFixture, findGodotBinary } from "@godot-mcp/testkit";
+import { copyFixture, findGodotBinary, waitUntil } from "@godot-mcp/testkit";
 import { expect, test } from "vitest";
 
 test("attached addon returns bounded editor state and the open scene tree", async () => {
@@ -37,11 +37,15 @@ test("attached addon returns bounded editor state and the open scene tree", asyn
       const session = await server.waitForAttachment(10_000).catch((error: unknown) => {
         throw new Error(`${String(error)}\n${editorOutput}`);
       });
-      const state = await session.request<Record<string, unknown>>(
-        "editor.query",
-        { operation: "editor_state" },
-        { timeoutMs: 5_000 },
-      );
+      let state: Awaited<ReturnType<typeof session.request<Record<string, unknown>>>> | undefined;
+      await waitUntil(async () => {
+        state = await session.request<Record<string, unknown>>(
+          "editor.query",
+          { operation: "editor_state" },
+          { timeoutMs: 5_000 },
+        );
+        return state.data.editedScene === "res://main.tscn";
+      }, 10_000, 100);
       expect(state.data).toMatchObject({ operation: "editor_state", editedScene: "res://main.tscn" });
       const tree = await session.request<{ nodes: Array<{ nodePath: string }> }>(
         "editor.query",
