@@ -6,7 +6,7 @@ const MAX_DEPTH := 4
 const MAX_ENTRIES := 128
 const MAX_STRING_LENGTH := 4096
 const SECRET_PATTERN := "(?i)(token|secret|password|authorization|cookie|api[_-]?key)\\s*[:=]\\s*[^\\r\\n,;]+"
-const HOST_PATH_PATTERN := "(?m)(^|[\\s(=])/(?!/)[^\\s\"']+"
+const HOST_PATH_PATTERN := "(?m)(^|file://|[^A-Za-z0-9_/.])/(?!/)[^\\s\"']+"
 
 static func redact_text(value: String, project_root: String = "") -> String:
 	var output := value
