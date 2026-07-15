@@ -7,7 +7,7 @@ import { startBridgeServer } from "@godot-mcp/bridge-client";
 import { initProject } from "@godot-mcp/cli";
 import { JsonlAuditSink, OwnedGodotProcess, readProjectIdentity, RuntimeService } from "@godot-mcp/control-plane";
 import type { RuntimeCaptureFrameMetadata } from "@godot-mcp/protocol";
-import { copyFixture, findGodotBinary, runGodot } from "@godot-mcp/testkit";
+import { copyFixture, findGodotBinary, reserveLoopbackPort, runGodot } from "@godot-mcp/testkit";
 import { expect, test } from "vitest";
 
 test("launches, inspects, controls, and cleans one authenticated runtime", async () => {
@@ -30,7 +30,11 @@ test("launches, inspects, controls, and cleans one authenticated runtime", async
       auditSink: new JsonlAuditSink(join(dirname(project.root), "runtime-audit.jsonl")),
     });
     try {
-      editor = spawn(await findGodotBinary(), ["--headless", "--editor", "--debug-server", "tcp://127.0.0.1:6007", "--path", project.root], { env: process.env, stdio: ["ignore", "pipe", "pipe"] });
+      const debugServerPort = await reserveLoopbackPort();
+      editor = spawn(await findGodotBinary(), [
+        "--headless", "--editor", "--debug-server", `tcp://127.0.0.1:${debugServerPort}`,
+        "--path", project.root, "--", `--godot-mcp-debug-port=${debugServerPort}`,
+      ], { env: process.env, stdio: ["ignore", "pipe", "pipe"] });
       editor.stdout?.on("data", (chunk: Buffer) => { editorOutput += chunk.toString(); });
       editor.stderr?.on("data", (chunk: Buffer) => { editorOutput += chunk.toString(); });
       const session = await bridge.waitForAttachment(15_000);
