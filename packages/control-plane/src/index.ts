@@ -10,3 +10,15 @@ export {
   type DiscoveredProject,
 } from "./project/projectIdentity.js";
 export { resolveProjectPath, type ProjectPathMode } from "./project/pathPolicy.js";
+export {
+  CORE_CAPABILITIES_POLICY,
+  CORE_DOCTOR_POLICY,
+  CORE_HELP_POLICY,
+  CORE_SESSION_POLICY,
+  PHASE_ONE_POLICIES,
+  expandPermissionTiers,
+  visibleCapabilities,
+  type CommandPolicy,
+  type SessionGrants,
+} from "./policy/capabilities.js";
+export { authorize } from "./policy/authorize.js";
