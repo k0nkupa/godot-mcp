@@ -5,6 +5,8 @@ extends Node
 const DescriptorReader = preload("res://addons/godot_mcp/bridge/descriptor_reader.gd")
 const ProtocolConstants = preload("res://addons/godot_mcp/generated/protocol_constants.gd")
 const SessionCrypto = preload("res://addons/godot_mcp/bridge/session_crypto.gd")
+const OUTBOUND_BUFFER_BYTES := 1024 * 1024
+const OUTBOUND_DRAIN_TARGET_BYTES := 128 * 1024
 
 signal attached(session_info: Dictionary)
 signal rejected(code: String, message: String)
@@ -66,6 +68,7 @@ func _try_descriptor() -> void:
 	_last_attempted_nonce = descriptor.sessionNonce
 	_descriptor = descriptor
 	_socket = WebSocketPeer.new()
+	_socket.outbound_buffer_size = OUTBOUND_BUFFER_BYTES
 	var error := _socket.connect_to_url("ws://127.0.0.1:%s/bridge" % int(descriptor.port))
 	if error != OK:
 		_socket = null
@@ -172,7 +175,7 @@ func _complete_pairing() -> void:
 		"pluginEnabled": true,
 	}, 30000)
 
-func _send_signed(method: String, params: Variant, timeout_ms: int) -> void:
+func _send_signed(method: String, params: Variant, timeout_ms: int) -> Error:
 	_send_sequence += 1
 	var envelope := {
 		"sessionId": _session_id,
@@ -181,7 +184,7 @@ func _send_signed(method: String, params: Variant, timeout_ms: int) -> void:
 		"method": method,
 		"params": params,
 	}
-	_socket.send_text(JSON.stringify(SessionCrypto.sign_envelope(envelope, _session_key)))
+	return _socket.send_text(JSON.stringify(SessionCrypto.sign_envelope(envelope, _session_key)))
 
 func is_attached() -> bool:
 	return _paired and _socket != null and _socket.get_ready_state() == WebSocketPeer.STATE_OPEN
@@ -196,6 +199,14 @@ func send_command_result(request_id: String, data: Dictionary, binary: Dictionar
 func send_command_chunk(request_id: String, index: int, total: int, sha256: String, data: String) -> void:
 	if is_attached():
 		_send_signed("command.chunk", {"requestId": request_id, "index": index, "total": total, "sha256": sha256, "data": data}, 5000)
+
+func send_command_chunk_flow_controlled(request_id: String, index: int, total: int, sha256: String, data: String) -> bool:
+	while is_attached() and _socket.get_current_outbound_buffered_amount() > OUTBOUND_DRAIN_TARGET_BYTES:
+		_socket.poll()
+		await get_tree().process_frame
+	if not is_attached():
+		return false
+	return _send_signed("command.chunk", {"requestId": request_id, "index": index, "total": total, "sha256": sha256, "data": data}, 5000) == OK
 
 func send_command_error(request_id: String, code: String, message: String, retryable: bool = false) -> void:
 	if is_attached():

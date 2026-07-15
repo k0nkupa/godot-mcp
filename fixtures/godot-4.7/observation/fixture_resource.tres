@@ -1,0 +1,5 @@
+[gd_resource type="Resource" format=3]
+
+[resource]
+resource_name = "Observation Fixture Resource"
+metadata/_godot_mcp_fixture = "safe-visible-value"

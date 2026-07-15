@@ -5,6 +5,7 @@ extends RefCounted
 const VariantEncoder = preload("res://addons/godot_mcp/observation/variant_encoder.gd")
 const MAX_JSON_BYTES := 512 * 1024
 const MAX_PROPERTIES := 128
+const APPROVED_SETTING_PREFIXES := ["application/", "audio/", "display/", "input/", "navigation/", "physics/", "rendering/"]
 
 var _editor: EditorInterface
 var _logger: Logger
@@ -115,6 +116,8 @@ func _resources(arguments: Dictionary) -> Dictionary:
 
 func _project_settings(arguments: Dictionary) -> Dictionary:
 	var prefix := String(arguments.get("prefix", ""))
+	if prefix not in APPROVED_SETTING_PREFIXES:
+		return {"_error": _error("INVALID_REQUEST", "Project setting prefix is not approved")}
 	var cursor := String(arguments.get("cursor", ""))
 	var limit := clampi(int(arguments.get("limit", 200)), 1, 2000)
 	var records: Array[Dictionary] = []
@@ -122,7 +125,7 @@ func _project_settings(arguments: Dictionary) -> Dictionary:
 		var name := String(property.name)
 		if not name.begins_with(prefix) or (not cursor.is_empty() and name <= cursor) or VariantEncoder._is_secret_name(name):
 			continue
-		records.append({"name": name, "type": int(property.type), "value": VariantEncoder.encode_value(ProjectSettings.get_setting(name)), "changedFromDefault": not ProjectSettings.property_get_revert(name).is_null() if ProjectSettings.property_can_revert(name) else false})
+		records.append({"name": name, "type": int(property.type), "value": VariantEncoder.encode_value(ProjectSettings.get_setting(name)), "changedFromDefault": ProjectSettings.get_setting(name) != ProjectSettings.property_get_revert(name) if ProjectSettings.property_can_revert(name) else false})
 	records.sort_custom(func(left: Dictionary, right: Dictionary) -> bool: return String(left.name) < String(right.name))
 	var has_more := records.size() > limit
 	var page := records.slice(0, limit)

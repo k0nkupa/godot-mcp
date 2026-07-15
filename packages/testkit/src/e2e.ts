@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { resolve } from "node:path";
+import { writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -23,6 +24,7 @@ export interface McpClientProcess {
   readonly stderr: string;
   callTool(input: { name: string; arguments?: Record<string, unknown> }): Promise<{
     structuredContent?: unknown;
+    content: unknown[];
   }>;
   listTools(): Promise<{ tools: Array<{ name: string }> }>;
   close(): Promise<void>;
@@ -82,9 +84,30 @@ export async function runCli(args: readonly string[], timeoutMs = 30_000): Promi
   return { exitCode: timedOut.exitCode, stdout, stderr };
 }
 
-export async function launchEditor(project: string): Promise<EditorProcess> {
+export interface LaunchEditorOptions {
+  scene?: string;
+  headless?: boolean;
+}
+
+export async function launchEditor(
+  project: string,
+  options: LaunchEditorOptions = {},
+): Promise<EditorProcess> {
   const godot = await findGodotBinary();
-  const child = spawn(godot, ["--headless", "--editor", "--path", project], {
+  if (options.scene) {
+    const selectedMainEditor = options.scene.includes("3d") ? 1 : 0;
+    await writeFile(
+      join(project, ".godot/editor/editor_layout.cfg"),
+      `[EditorNode]\n\nopen_scenes=PackedStringArray("${options.scene}")\ncurrent_scene="${options.scene}"\nselected_main_editor_idx=${selectedMainEditor}\n`,
+    );
+  }
+  const child = spawn(godot, [
+    ...((options.headless ?? true) ? ["--headless"] : []),
+    "--editor",
+    "--path",
+    project,
+    ...(options.scene ? [options.scene] : []),
+  ], {
     env: process.env,
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -158,11 +181,14 @@ export async function launchMcpClient(args: readonly string[]): Promise<McpClien
     get stderr(): string {
       return stderr;
     },
-    async callTool(input): Promise<{ structuredContent?: unknown }> {
+    async callTool(input): Promise<{ structuredContent?: unknown; content: unknown[] }> {
       const result = await client.callTool(input);
-      return result.structuredContent === undefined
-        ? {}
-        : { structuredContent: result.structuredContent };
+      return {
+        ...(result.structuredContent === undefined
+          ? {}
+          : { structuredContent: result.structuredContent }),
+        content: Array.isArray(result.content) ? result.content : [],
+      };
     },
     async listTools(): Promise<{ tools: Array<{ name: string }> }> {
       const result = await client.listTools();

@@ -1,0 +1,29 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://observation/fixture_script.gd" id="1_script"]
+[ext_resource type="Resource" path="res://observation/fixture_resource.tres" id="2_resource"]
+
+[node name="Editor2DObservation" type="Node2D" groups=["observation_fixture"]]
+
+[node name="Backdrop" type="ColorRect" parent="."]
+offset_left = -320.0
+offset_top = -220.0
+offset_right = 320.0
+offset_bottom = 220.0
+color = Color(0.055, 0.18, 0.48, 1)
+
+[node name="FixtureLabel" type="Label" parent="."]
+offset_left = -90.0
+offset_top = -12.0
+offset_right = 90.0
+offset_bottom = 12.0
+text = "phase-2-2d"
+horizontal_alignment = 1
+
+[node name="ObservedNode" type="Node2D" parent="." groups=["observable", "ui"]]
+script = ExtResource("1_script")
+fixture_resource = ExtResource("2_resource")
+
+[node name="Marker" type="Polygon2D" parent="ObservedNode"]
+polygon = PackedVector2Array(-45, -45, 45, -45, 45, 45, -45, 45)
+color = Color(1, 0.55, 0.18, 1)

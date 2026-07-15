@@ -6,6 +6,7 @@ import { join, relative, resolve } from "node:path";
 export interface TempProject {
   root: string;
   cleanup(): Promise<void>;
+  snapshot(): Promise<void>;
   diffFromOriginal(): Promise<string[]>;
 }
 
@@ -38,12 +39,15 @@ export async function copyFixture(
   const container = await mkdtemp(join(tmpdir(), "godot-mcp-fixture-"));
   const root = join(container, "project");
   await cp(fixtureRoot, root, { recursive: true, errorOnExist: true });
-  const original = await fileMap(root);
+  let original = await fileMap(root);
 
   return {
     root,
     async cleanup(): Promise<void> {
       await rm(container, { force: true, recursive: true });
+    },
+    async snapshot(): Promise<void> {
+      original = await fileMap(root);
     },
     async diffFromOriginal(): Promise<string[]> {
       const current = await fileMap(root);

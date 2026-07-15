@@ -32,6 +32,14 @@ func _init() -> void:
 		})
 		assert(accepted == (index < 32))
 	queue.free()
+	var expired_queue := MainThreadQueue.new()
+	get_root().add_child(expired_queue)
+	var expired_codes: Array[String] = []
+	expired_queue.failed.connect(func(_request_id: String, code: String, _message: String, _retryable: bool) -> void: expired_codes.append(code))
+	assert(expired_queue.enqueue({"requestId": "expired", "deadlineUnixMs": 1, "method": "editor.query", "arguments": {}}))
+	expired_queue._run_next()
+	assert(expired_codes == ["TIMEOUT"])
+	expired_queue.queue_free()
 	logger = null
 
 	print("GODOT_MCP_EDITOR_OBSERVATION_UNIT_OK")

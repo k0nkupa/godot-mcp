@@ -30,6 +30,14 @@ func execute(arguments: Dictionary) -> Dictionary:
 		return _error("INVALID_REQUEST", "Viewport selection is invalid")
 	if viewport == null:
 		return _error("TARGET_NOT_FOUND", "Editor viewport is unavailable")
+	# A freshly opened editor can expose its placeholder 2x2 viewport before the
+	# selected main screen has completed layout. Wait without changing screens.
+	var ready_frames := 0
+	while (viewport.size.x <= 64 or viewport.size.y <= 64) and ready_frames < 120:
+		await _editor.get_base_control().get_tree().process_frame
+		ready_frames += 1
+	if viewport.size.x <= 64 or viewport.size.y <= 64:
+		return _error("TARGET_NOT_FOUND", "Editor viewport has not completed layout")
 	await RenderingServer.frame_post_draw
 	var image := viewport.get_texture().get_image()
 	if image == null or image.is_empty():

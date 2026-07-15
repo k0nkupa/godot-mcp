@@ -46,7 +46,8 @@ func _on_command_completed(request_id: String, outcome: Dictionary) -> void:
 	for index in chunks.size():
 		if not bridge.is_attached():
 			return
-		bridge.send_command_chunk(request_id, index, chunks.size(), String(binary.get("sha256", "")), String(chunks[index]))
+		if not await bridge.send_command_chunk_flow_controlled(request_id, index, chunks.size(), String(binary.get("sha256", "")), String(chunks[index])):
+			return
 	bridge.send_command_result(request_id, outcome.get("data", {}), binary)
 
 func _on_command_failed(request_id: String, code: String, message: String, retryable: bool) -> void:
