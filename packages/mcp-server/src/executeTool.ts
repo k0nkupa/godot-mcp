@@ -27,11 +27,13 @@ export interface ExecutedPayload<T = unknown> {
   data: T;
   evidence?: string[];
   image?: { data: Uint8Array; mimeType: "image/png" };
+  images?: Array<{ data: Uint8Array; mimeType: "image/png" }>;
 }
 
 export interface ExecutedToolResult {
   result: ToolResult;
   image?: ExecutedPayload["image"];
+  images?: ExecutedPayload["images"];
 }
 
 function normalizeError(error: unknown, correlationId: string): GodotMcpError {
@@ -91,6 +93,7 @@ export async function executeTool(
         correlationId,
       }),
       ...(payload.image === undefined ? {} : { image: payload.image }),
+      ...(payload.images === undefined ? {} : { images: payload.images }),
     };
   } catch (error) {
     const normalized = normalizeError(error, correlationId);

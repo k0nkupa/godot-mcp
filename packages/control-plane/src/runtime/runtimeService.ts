@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 
-import type { ProjectIdentity, RuntimeHandle, RuntimeOperationInput } from "@godot-mcp/protocol";
+import type {
+  ProjectIdentity,
+  RuntimeCaptureFrameMetadata,
+  RuntimeCaptureInput,
+  RuntimeHandle,
+  RuntimeOperationInput,
+} from "@godot-mcp/protocol";
 
 import { GodotMcpException } from "../errors.js";
 import {
@@ -27,6 +33,11 @@ export interface RuntimeServiceDependencies {
   prepare(input: { descriptor: RuntimeDescriptorMaterial["descriptor"] }): Promise<{ debugPort: number }>;
   launchProcess?(input: RuntimeProcessLaunchInput): Promise<OwnedRuntimeProcess>;
   command(operation: string, input: Record<string, unknown>, timeoutMs?: number): Promise<unknown>;
+  capture?(input: Record<string, unknown>, timeoutMs?: number): Promise<{
+    data: RuntimeCaptureFrameMetadata;
+    binary?: Uint8Array;
+    binarySha256?: string;
+  }>;
 }
 
 export interface RuntimeSnapshot {
@@ -135,6 +146,30 @@ export class RuntimeService {
     if (input.operation === "pause") this.state = "paused";
     if (input.operation === "resume") this.state = "running";
     return result;
+  }
+
+  async capture(input: RuntimeCaptureInput): Promise<{
+    frames: Array<{ data: Uint8Array; metadata: RuntimeCaptureFrameMetadata }>;
+  }> {
+    this.assertHandle(input.handle);
+    if (!this.dependencies.capture) throw runtimeError("GODOT_RUNTIME_ERROR", "Runtime capture transport is unavailable");
+    const frames = [];
+    for (let frameIndex = 0; frameIndex < input.frameCount; frameIndex += 1) {
+      const response = await this.dependencies.capture({
+        operation: "capture",
+        handle: input.handle,
+        maxWidth: input.maxWidth,
+        maxHeight: input.maxHeight,
+        frameIndex,
+        waitFrames: frameIndex === 0 ? 0 : input.intervalFrames,
+        advancePaused: input.advancePaused,
+      }, 15_000);
+      if (!response.binary || response.binarySha256 !== response.data.sha256) {
+        throw runtimeError("GODOT_RUNTIME_ERROR", "Runtime capture omitted verified PNG bytes");
+      }
+      frames.push({ data: response.binary, metadata: response.data });
+    }
+    return { frames };
   }
 
   close(): Promise<void> {

@@ -30,6 +30,11 @@ it("serializes one runtime generation and rejects stale handles", async () => {
       calls.push(operation);
       return operation === "await_ready" ? { pid: 42, root: "." } : { ok: true };
     },
+    capture: async (input) => ({
+      data: { mimeType: "image/png", width: 1, height: 1, byteLength: 8, sha256: "c".repeat(64), frameIndex: Number(input.frameIndex) },
+      binary: new Uint8Array(8),
+      binarySha256: "c".repeat(64),
+    }),
   });
 
   const launched = await service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 });
@@ -41,6 +46,7 @@ it("serializes one runtime generation and rejects stale handles", async () => {
   expect(service.snapshot().state).toBe("paused");
   await service.execute({ operation: "resume", handle: launched.handle });
   expect(service.snapshot().state).toBe("running");
+  await expect(service.capture({ handle: launched.handle, maxWidth: 640, maxHeight: 360, frameCount: 2, intervalFrames: 3, advancePaused: false })).resolves.toMatchObject({ frames: [{ metadata: { frameIndex: 0 } }, { metadata: { frameIndex: 1 } }] });
   await service.execute({ operation: "stop", handle: launched.handle });
   expect(service.snapshot().state).toBe("stopped");
   await service.close();

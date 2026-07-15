@@ -1,10 +1,12 @@
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 
 import { startBridgeServer } from "@godot-mcp/bridge-client";
 import { initProject } from "@godot-mcp/cli";
 import { JsonlAuditSink, OwnedGodotProcess, readProjectIdentity, RuntimeService } from "@godot-mcp/control-plane";
+import type { RuntimeCaptureFrameMetadata } from "@godot-mcp/protocol";
 import { copyFixture, findGodotBinary, runGodot } from "@godot-mcp/testkit";
 import { expect, test } from "vitest";
 
@@ -54,6 +56,14 @@ test("launches, inspects, controls, and cleans one authenticated runtime", async
         },
         prepare: async ({ descriptor }) => (await session.request<{ debugPort: number }>("runtime.prepare", { descriptor }, { timeoutMs: 5_000 })).data,
         command: async (operation, input, timeoutMs = 10_000) => (await session.request<Record<string, unknown>>("runtime.command", { operation, ...input }, { timeoutMs })).data,
+        capture: async (input, timeoutMs = 15_000) => {
+          const response = await session.request<RuntimeCaptureFrameMetadata>("runtime.capture", input, { timeoutMs, maxResponseBytes: 8 * 1024 * 1024 });
+          return {
+            data: response.data,
+            ...(response.binary === undefined ? {} : { binary: response.binary }),
+            ...(response.binarySha256 === undefined ? {} : { binarySha256: response.binarySha256 }),
+          };
+        },
       });
       try {
         const launched = await runtime.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 15_000 });
@@ -67,6 +77,16 @@ test("launches, inspects, controls, and cleans one authenticated runtime", async
         expect(logs.records.map((record) => record.message).join("\n")).toContain("phase-3 runtime ready");
         await expect(runtime.execute({ operation: "wait", handle: launched.handle, timeoutMs: 5_000, condition: { type: "property_equals", nodePath: ".", property: "phase", value: "ready" } })).resolves.toMatchObject({ satisfied: true });
         await expect(runtime.execute({ operation: "wait", handle: launched.handle, timeoutMs: 5_000, condition: { type: "signal_emitted", nodePath: ".", signal: "milestone" } })).resolves.toMatchObject({ satisfied: true });
+        const captured = await runtime.capture({ handle: launched.handle, maxWidth: 640, maxHeight: 360, frameCount: 2, intervalFrames: 2, advancePaused: false });
+        expect(captured.frames).toHaveLength(2);
+        for (const [frameIndex, frame] of captured.frames.entries()) {
+          expect(Array.from(frame.data.subarray(0, 8))).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+          expect(frame.metadata).toMatchObject({ mimeType: "image/png", frameIndex });
+          expect(frame.metadata.width).toBeLessThanOrEqual(640);
+          expect(frame.metadata.height).toBeLessThanOrEqual(360);
+          expect(frame.metadata.sha256).toBe(createHash("sha256").update(frame.data).digest("hex"));
+        }
+        expect(captured.frames[0]?.metadata.sha256).not.toBe(captured.frames[1]?.metadata.sha256);
         await runtime.execute({ operation: "pause", handle: launched.handle });
         expect(runtime.snapshot().state).toBe("paused");
         const beforeStep = await runtime.execute({ operation: "node", handle: launched.handle, nodePath: ".", includeProperties: true, includeSignals: false }) as { properties: Array<{ name: string; value: unknown }> };

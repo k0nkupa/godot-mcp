@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { EditorCaptureInputSchema, EditorQueryInputSchema } from "./editor.js";
+import {
+  BridgeCommandResultSchema,
+  EditorCaptureInputSchema,
+  EditorQueryInputSchema,
+} from "./editor.js";
 
 describe("Phase 2 editor schemas", () => {
   it("accepts the six bounded query variants", () => {
@@ -85,4 +89,15 @@ describe("Phase 2 editor schemas", () => {
     expect(() => EditorCaptureInputSchema.parse({ viewport: "3d", viewportIndex: 4 })).toThrow();
     expect(() => EditorCaptureInputSchema.parse({ viewport: "2d", maxWidth: 2049 })).toThrow();
   });
+
+  it.each(["NOT_ATTACHED", "AUTHENTICATION_FAILED", "STALE_HANDLE", "PRECONDITION_FAILED"] as const)(
+    "preserves the %s runtime bridge error",
+    (code) => {
+      expect(BridgeCommandResultSchema.parse({
+        requestId: "00000000-0000-4000-8000-000000000000",
+        ok: false,
+        error: { code, message: "runtime rejected", retryable: false },
+      }).error?.code).toBe(code);
+    },
+  );
 });

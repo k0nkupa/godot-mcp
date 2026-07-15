@@ -4,6 +4,7 @@ extends Node
 const DescriptorReader = preload("res://addons/godot_mcp/bridge/descriptor_reader.gd")
 const SessionCrypto = preload("res://addons/godot_mcp/bridge/session_crypto.gd")
 const RuntimeControl = preload("res://addons/godot_mcp/runtime/runtime_control.gd")
+const RuntimeCapture = preload("res://addons/godot_mcp/runtime/runtime_capture.gd")
 const RuntimeLogger = preload("res://addons/godot_mcp/runtime/runtime_logger.gd")
 const RuntimeQuery = preload("res://addons/godot_mcp/runtime/runtime_query.gd")
 
@@ -15,6 +16,7 @@ var _game_scene: Node
 var _logger: Logger
 var _query: RefCounted
 var _control: RefCounted
+var _runtime_capture: RefCounted
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -55,6 +57,7 @@ func _exit_tree() -> void:
 	_logger = null
 	_query = null
 	_control = null
+	_runtime_capture = null
 	_secret.fill(0)
 	_secret = PackedByteArray()
 	_descriptor.clear()
@@ -89,6 +92,7 @@ func _load_game_scene() -> void:
 	get_tree().current_scene = _game_scene
 	_query = RuntimeQuery.new(_game_scene, _logger)
 	_control = RuntimeControl.new(_game_scene, _query, _logger)
+	_runtime_capture = RuntimeCapture.new(_game_scene, _control)
 	EngineDebugger.send_message("godot_mcp_runtime:ready", [{
 		"runId": String(_descriptor.runId),
 		"generation": int(_descriptor.generation),
@@ -119,6 +123,7 @@ func _execute_operation(operation: String, arguments: Dictionary, deadline_unix_
 	match operation:
 		"status", "tree", "node", "logs": return _query.execute(operation, arguments)
 		"wait", "pause", "resume", "step": return await _control.execute(operation, arguments, deadline_unix_ms)
+		"capture": return await _runtime_capture.execute(arguments, deadline_unix_ms)
 		"stop":
 			call_deferred("_cooperative_stop")
 			return {"ok": true, "data": {"stopping": true}}

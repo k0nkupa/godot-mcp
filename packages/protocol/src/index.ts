@@ -29,10 +29,12 @@ export {
 } from "./schemas.js";
 export {
   RuntimeCaptureInputSchema,
+  RuntimeCaptureFrameMetadataSchema,
   RuntimeCommandSchema,
   RuntimeHandleSchema,
   RuntimeOperationInputSchema,
   type RuntimeCaptureInput,
+  type RuntimeCaptureFrameMetadata,
   type RuntimeCommand,
   type RuntimeHandle,
   type RuntimeOperationInput,

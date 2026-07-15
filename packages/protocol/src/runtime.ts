@@ -142,6 +142,17 @@ export const RuntimeCaptureInputSchema = z
   })
   .strict();
 
+export const RuntimeCaptureFrameMetadataSchema = z
+  .object({
+    mimeType: z.literal("image/png"),
+    width: z.number().int().min(1).max(2048),
+    height: z.number().int().min(1).max(2048),
+    byteLength: z.number().int().min(1).max(8 * 1024 * 1024),
+    sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    frameIndex: z.number().int().min(0).max(7),
+  })
+  .strict();
+
 export const RuntimeCommandSchema = z
   .object({
     handle: RuntimeHandleSchema,
@@ -156,4 +167,5 @@ export const RuntimeCommandSchema = z
 export type RuntimeHandle = z.infer<typeof RuntimeHandleSchema>;
 export type RuntimeOperationInput = z.infer<typeof RuntimeOperationInputSchema>;
 export type RuntimeCaptureInput = z.infer<typeof RuntimeCaptureInputSchema>;
+export type RuntimeCaptureFrameMetadata = z.infer<typeof RuntimeCaptureFrameMetadataSchema>;
 export type RuntimeCommand = z.infer<typeof RuntimeCommandSchema>;

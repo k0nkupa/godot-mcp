@@ -2,12 +2,17 @@ import { startBridgeServer, type BridgeServer } from "@godot-mcp/bridge-client";
 import {
   JsonlAuditSink,
   EvidenceStore,
+  RuntimeService,
   SessionService,
   readProjectIdentity,
   type SessionGrants,
 } from "@godot-mcp/control-plane";
 import { createGodotMcpServer } from "@godot-mcp/mcp-server";
-import { PRODUCT_VERSION, type ProjectIdentity } from "@godot-mcp/protocol";
+import {
+  PRODUCT_VERSION,
+  type ProjectIdentity,
+  type RuntimeCaptureFrameMetadata,
+} from "@godot-mcp/protocol";
 
 import { readInstallManifest } from "../install/addonManifest.js";
 import { runDoctor } from "../install/doctor.js";
@@ -28,12 +33,14 @@ export class GodotMcpRuntime {
     readonly audit: JsonlAuditSink,
     readonly session: SessionService,
     readonly bridge: BridgeServer,
+    readonly runtime: RuntimeService,
     readonly mcp: GodotMcpServer,
   ) {}
 
   close(reason: string): Promise<void> {
     void reason;
     this.closePromise ??= (async () => {
+      await this.runtime.close().catch(() => undefined);
       await this.mcp.close().catch(() => undefined);
       await this.bridge.close().catch(() => undefined);
       this.session.close();
@@ -49,6 +56,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<GodotMcpRu
   const grants: SessionGrants = options.grants ?? { tiers: ["observe"], packs: ["core"] };
   const session = new SessionService(project, grants, () => runDoctor(project.rootRealPath));
   let bridge: BridgeServer | undefined;
+  let runtime: RuntimeService | undefined;
   let mcp: GodotMcpServer | undefined;
 
   try {
@@ -68,6 +76,43 @@ export async function createRuntime(options: RuntimeOptions): Promise<GodotMcpRu
       },
       onDisconnected: () => session.onDisconnected(),
     });
+    runtime = new RuntimeService({
+      project,
+      sessionId: () => bridge?.session?.sessionId ?? null,
+      ...(options.godotBin === undefined ? {} : { godotBin: options.godotBin }),
+      prepare: async ({ descriptor }) => {
+        const attached = bridge?.session;
+        if (!attached) throw new Error("Godot editor addon is not attached");
+        return (await attached.request<{ debugPort: number }>(
+          "runtime.prepare",
+          { descriptor },
+          { timeoutMs: 5_000 },
+        )).data;
+      },
+      command: async (operation, input, timeoutMs = 10_000) => {
+        const attached = bridge?.session;
+        if (!attached) throw new Error("Godot editor addon is not attached");
+        return (await attached.request<unknown>(
+          "runtime.command",
+          { operation, ...input },
+          { timeoutMs },
+        )).data;
+      },
+      capture: async (input, timeoutMs = 15_000) => {
+        const attached = bridge?.session;
+        if (!attached) throw new Error("Godot editor addon is not attached");
+        const response = await attached.request<RuntimeCaptureFrameMetadata>(
+          "runtime.capture",
+          input,
+          { timeoutMs, maxResponseBytes: 8 * 1024 * 1024 },
+        );
+        return {
+          data: response.data,
+          ...(response.binary === undefined ? {} : { binary: response.binary }),
+          ...(response.binarySha256 === undefined ? {} : { binarySha256: response.binarySha256 }),
+        };
+      },
+    });
     mcp = createGodotMcpServer({
       project,
       grants,
@@ -75,9 +120,11 @@ export async function createRuntime(options: RuntimeOptions): Promise<GodotMcpRu
       session,
       bridge: () => bridge?.session ?? null,
       evidence: new EvidenceStore(project.rootRealPath),
+      runtime,
     });
-    return new GodotMcpRuntime(project, audit, session, bridge, mcp);
+    return new GodotMcpRuntime(project, audit, session, bridge, runtime, mcp);
   } catch (error) {
+    await runtime?.close().catch(() => undefined);
     await mcp?.close().catch(() => undefined);
     await bridge?.close().catch(() => undefined);
     throw error;

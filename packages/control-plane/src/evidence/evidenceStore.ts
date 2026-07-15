@@ -13,6 +13,10 @@ export interface PngEvidenceMetadata {
   width: number;
   height: number;
   viewportIndex?: number;
+  source?: "editor" | "runtime";
+  runId?: string;
+  generation?: number;
+  frameIndex?: number;
 }
 
 export interface EvidenceReference {

@@ -13,6 +13,7 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	frame_counter += 1
+	$Accent.position.x = 80.0 + float(frame_counter % 120)
 	if frame_counter % 5 == 0:
 		milestone.emit(frame_counter)
 	if frame_counter >= 10:
