@@ -4,6 +4,7 @@ export { inspectPng, type PngInspection } from "./png.js";
 export {
   launchEditor,
   launchMcpClient,
+  reserveLoopbackPort,
   runCli,
   type CliRunResult,
   type EditorProcess,

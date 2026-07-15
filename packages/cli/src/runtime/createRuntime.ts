@@ -74,7 +74,10 @@ export async function createRuntime(options: RuntimeOptions): Promise<GodotMcpRu
           attachedAt: new Date().toISOString(),
         });
       },
-      onDisconnected: () => session.onDisconnected(),
+      onDisconnected: () => {
+        session.onDisconnected();
+        void runtime?.close();
+      },
     });
     runtime = new RuntimeService({
       project,
@@ -111,6 +114,11 @@ export async function createRuntime(options: RuntimeOptions): Promise<GodotMcpRu
           ...(response.binary === undefined ? {} : { binary: response.binary }),
           ...(response.binarySha256 === undefined ? {} : { binarySha256: response.binarySha256 }),
         };
+      },
+      cleanup: async () => {
+        const attached = bridge?.session;
+        if (!attached) return;
+        await attached.request("runtime.cleanup", {}, { timeoutMs: 5_000 });
       },
     });
     mcp = createGodotMcpServer({

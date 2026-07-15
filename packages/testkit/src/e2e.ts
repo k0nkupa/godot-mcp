@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { createServer } from "node:net";
 import { writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
@@ -87,6 +88,22 @@ export async function runCli(args: readonly string[], timeoutMs = 30_000): Promi
 export interface LaunchEditorOptions {
   scene?: string;
   headless?: boolean;
+  debugServerPort?: number;
+}
+
+export async function reserveLoopbackPort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolvePromise, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolvePromise);
+  });
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : 0;
+  await new Promise<void>((resolvePromise, reject) => {
+    server.close((error) => error ? reject(error) : resolvePromise());
+  });
+  if (port < 1) throw new Error("Failed to reserve a loopback debug port");
+  return port;
 }
 
 export async function launchEditor(
@@ -104,9 +121,15 @@ export async function launchEditor(
   const child = spawn(godot, [
     ...((options.headless ?? true) ? ["--headless"] : []),
     "--editor",
+    ...(options.debugServerPort === undefined
+      ? []
+      : ["--debug-server", `tcp://127.0.0.1:${options.debugServerPort}`]),
     "--path",
     project,
     ...(options.scene ? [options.scene] : []),
+    ...(options.debugServerPort === undefined
+      ? []
+      : ["--", `--godot-mcp-debug-port=${options.debugServerPort}`]),
   ], {
     env: process.env,
     stdio: ["ignore", "pipe", "pipe"],

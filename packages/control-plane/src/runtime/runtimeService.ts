@@ -38,6 +38,7 @@ export interface RuntimeServiceDependencies {
     binary?: Uint8Array;
     binarySha256?: string;
   }>;
+  cleanup?(): Promise<void>;
 }
 
 export interface RuntimeSnapshot {
@@ -69,6 +70,8 @@ export class RuntimeService {
   private processStopped = false;
   private descriptor: RuntimeDescriptorMaterial | null = null;
   private closePromise: Promise<void> | undefined;
+  private cleanupPromise: Promise<void> | undefined;
+  private debuggerCleaned = true;
 
   constructor(private readonly dependencies: RuntimeServiceDependencies) {}
 
@@ -89,6 +92,7 @@ export class RuntimeService {
     this.handle = { runId: randomUUID(), generation: this.generation };
     this.scenePath = input.scenePath;
     this.processStopped = false;
+    this.debuggerCleaned = false;
     try {
       this.state = "preparing";
       const descriptorInput: RuntimeDescriptorInput = {
@@ -111,6 +115,11 @@ export class RuntimeService {
         debugPort: prepared.debugPort,
         descriptorPath: this.descriptor.path,
       });
+      const ownedProcess = this.process;
+      void ownedProcess.wait().then(
+        () => this.onProcessExit(ownedProcess),
+        () => this.onProcessExit(ownedProcess),
+      );
       this.state = "authenticating";
       const ready = await this.dependencies.command("await_ready", { handle: this.handle }, input.startupTimeoutMs);
       if (
@@ -138,7 +147,7 @@ export class RuntimeService {
     if (input.operation === "stop") {
       this.state = "stopping";
       await this.dependencies.command("stop", { ...input });
-      await this.stopProcess();
+      await this.cleanup();
       this.state = "stopped";
       return this.snapshot();
     }
@@ -191,9 +200,28 @@ export class RuntimeService {
   }
 
   private async cleanup(): Promise<void> {
-    await this.descriptor?.cleanup().catch(() => undefined);
-    this.descriptor = null;
-    await this.stopProcess();
-    if (!["stopped", "idle"].includes(this.state)) this.state = "stopped";
+    if (this.cleanupPromise) return this.cleanupPromise;
+    const activeCleanup = (async () => {
+      await this.descriptor?.cleanup().catch(() => undefined);
+      this.descriptor = null;
+      if (!this.debuggerCleaned) {
+        await this.dependencies.cleanup?.().catch(() => undefined);
+        this.debuggerCleaned = true;
+      }
+      await this.stopProcess();
+      if (!["stopped", "idle"].includes(this.state)) this.state = "stopped";
+    })();
+    this.cleanupPromise = activeCleanup;
+    try {
+      await activeCleanup;
+    } finally {
+      if (this.cleanupPromise === activeCleanup) this.cleanupPromise = undefined;
+    }
+  }
+
+  private onProcessExit(process: OwnedRuntimeProcess): void {
+    if (this.process !== process || this.processStopped) return;
+    this.processStopped = true;
+    void this.cleanup();
   }
 }

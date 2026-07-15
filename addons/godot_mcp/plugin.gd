@@ -45,7 +45,7 @@ func _execute_command(command: Dictionary) -> Dictionary:
 	elif String(command.method) == "runtime.prepare":
 		outcome = runtime_debugger.prepare(
 			command.arguments.get("descriptor", {}),
-			int(get_editor_interface().get_editor_settings().get_setting("network/debug/remote_port")),
+			_runtime_debug_port(),
 		)
 	elif String(command.method) in ["runtime.command", "runtime.capture"]:
 		outcome = await runtime_debugger.execute(command)
@@ -79,6 +79,15 @@ func _deliver_command(command: Dictionary, outcome: Dictionary) -> void:
 
 func _on_command_failed(request_id: String, code: String, message: String, retryable: bool) -> void:
 	bridge.send_command_error(request_id, code, message, retryable)
+
+func _runtime_debug_port() -> int:
+	for argument in OS.get_cmdline_user_args():
+		var value := String(argument)
+		if value.begins_with("--godot-mcp-debug-port="):
+			var port := int(value.trim_prefix("--godot-mcp-debug-port="))
+			if port >= 1 and port <= 65535:
+				return port
+	return int(get_editor_interface().get_editor_settings().get_setting("network/debug/remote_port"))
 
 func _exit_tree() -> void:
 	if runtime_debugger != null:
