@@ -46,7 +46,7 @@ test("attached addon returns bounded editor state and the open scene tree", asyn
         );
         return state.data.editedScene === "res://main.tscn";
       }, 10_000, 100);
-      expect(state.data).toMatchObject({ operation: "editor_state", editedScene: "res://main.tscn" });
+      expect(state?.data).toMatchObject({ operation: "editor_state", editedScene: "res://main.tscn" });
       const tree = await session.request<{ nodes: Array<{ nodePath: string }> }>(
         "editor.query",
         { operation: "scene_tree", maxDepth: 4, maxNodes: 20 },

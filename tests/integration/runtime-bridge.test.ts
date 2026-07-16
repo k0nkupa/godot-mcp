@@ -7,7 +7,7 @@ import { startBridgeServer } from "@godot-mcp/bridge-client";
 import { initProject } from "@godot-mcp/cli";
 import { JsonlAuditSink, OwnedGodotProcess, readProjectIdentity, RuntimeService } from "@godot-mcp/control-plane";
 import type { RuntimeCaptureFrameMetadata } from "@godot-mcp/protocol";
-import { copyFixture, findGodotBinary, reserveLoopbackPort, runGodot } from "@godot-mcp/testkit";
+import { copyFixture, findGodotBinary, reserveLoopbackPort, runGodot, waitUntil } from "@godot-mcp/testkit";
 import { expect, test } from "vitest";
 
 test("launches, inspects, controls, and cleans one authenticated runtime", async () => {
@@ -109,6 +109,14 @@ test("launches, inspects, controls, and cleans one authenticated runtime", async
         await expect(runtime.execute({ operation: "pause", handle: { ...launched.handle, generation: launched.handle.generation + 1 } })).rejects.toMatchObject({ code: "STALE_HANDLE" });
         await runtime.execute({ operation: "resume", handle: launched.handle });
         await runtime.execute({ operation: "stop", handle: launched.handle });
+        const transitionRun = await runtime.launch({ scenePath: "res://runtime/runtime_transition_source.tscn", startupTimeoutMs: 15_000 });
+        let transitionedTree: { nodes: Array<{ nodePath: string }> } | undefined;
+        await waitUntil(async () => {
+          transitionedTree = await runtime.execute({ operation: "tree", handle: transitionRun.handle, root: ".", maxDepth: 2, maxNodes: 10 }) as { nodes: Array<{ nodePath: string }> };
+          return transitionedTree.nodes.some((entry) => entry.nodePath === "TransitionedMarker");
+        }, 5_000, 50);
+        expect(transitionedTree?.nodes.map((entry) => entry.nodePath)).toEqual([".", "TransitionedMarker"]);
+        await runtime.execute({ operation: "stop", handle: transitionRun.handle });
         expect(runtime.snapshot().state).toBe("stopped");
       } finally {
         await runtime.close();

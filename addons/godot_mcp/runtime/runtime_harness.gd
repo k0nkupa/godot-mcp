@@ -93,18 +93,28 @@ func _load_game_scene() -> void:
 		tree.quit(3)
 		return
 	await tree.scene_changed
-	_game_scene = tree.current_scene
+	_bind_game_scene()
 	if _game_scene == null:
 		tree.quit(3)
 		return
-	_query = RuntimeQuery.new(_game_scene, _logger)
-	_control = RuntimeControl.new(_game_scene, _query, _logger)
-	_runtime_capture = RuntimeCapture.new(_game_scene, _control)
+	if not tree.scene_changed.is_connected(_bind_game_scene):
+		tree.scene_changed.connect(_bind_game_scene)
 	EngineDebugger.send_message("godot_mcp_runtime:ready", [{
 		"runId": String(_descriptor.runId),
 		"generation": int(_descriptor.generation),
 		"pid": OS.get_process_id(),
 	}])
+
+func _bind_game_scene() -> void:
+	_game_scene = get_tree().current_scene
+	if _game_scene == null:
+		_query = null
+		_control = null
+		_runtime_capture = null
+		return
+	_query = RuntimeQuery.new(_game_scene, _logger)
+	_control = RuntimeControl.new(_game_scene, _query, _logger)
+	_runtime_capture = RuntimeCapture.new(_game_scene, _control)
 
 func _handle_command(command: Dictionary) -> void:
 	var request_id := String(command.get("requestId", ""))
@@ -118,6 +128,8 @@ func _handle_command(command: Dictionary) -> void:
 		outcome = _error("TIMEOUT", "Runtime command deadline expired", true)
 	elif not operation_is_allowed(operation):
 		outcome = _error("INVALID_REQUEST", "Runtime operation is not allowed")
+	elif operation != "stop" and (_query == null or _control == null or _runtime_capture == null):
+		outcome = _error("TARGET_NOT_FOUND", "Runtime scene is changing", true)
 	else:
 		_receive_sequence = sequence
 		outcome = await _execute_operation(operation, command.get("arguments", {}), deadline)
