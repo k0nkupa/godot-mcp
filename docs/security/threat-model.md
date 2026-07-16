@@ -43,7 +43,7 @@ Future project operations must stay inside approved `res://` roots and deny `.gi
 | Abuse case | Control |
 |---|---|
 | Runtime tools exposed accidentally | Both explicit tier and pack are required; default tool listing remains six |
-| Forged or cross-project runtime | One-use 0600 descriptor, project/session/run/generation/nonce binding, expiry, HMAC proof, authenticated PID equality |
+| Forged runtime, debugger-listener replacement, or cross-project attachment | One-use 0600 descriptor, project/session/run/generation/nonce binding, expiry, domain-separated client and server HMAC proofs over the hello transcript, constant-time verification, authenticated PID equality |
 | Replay, reorder, stale generation | Strict debugger command sequence, deadlines, one active handle, positive generation, stale-handle rejection |
 | Host process abuse | Exact Godot binary and fixed harness arguments, scrubbed environment, no shell, recorded PID/start fingerprint, no process-name kill |
 | Scene or node escape | Bounded `res://` scene paths, relative node paths, traversal and subname rejection, no caller-selected host paths |

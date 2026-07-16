@@ -18,7 +18,7 @@ The default connection still exposes six observe/core tools. Runtime is visible 
 
 ## Ownership and cleanup proof
 
-The server launches the exact configured Godot binary with a scrubbed environment and fixed harness scene. A one-use, owner-only descriptor binds project, MCP session, run ID, generation, owner heartbeat lease, nonce, expiry, and secret. The harness proves possession through Godot's loopback debugger channel, exits if the descriptor-bound heartbeat becomes stale, and the control plane requires the authenticated PID to equal its owned child PID.
+The server launches the exact configured Godot binary with a scrubbed environment and fixed harness scene. A one-use, owner-only descriptor binds project, MCP session, run ID, generation, owner heartbeat lease, nonce, expiry, and secret. The harness and editor plugin exchange domain-separated HMAC proofs over the complete hello transcript; neither enables the session until its peer proves possession, and the harness erases its secret only after constant-time server-proof verification. The harness exits if the descriptor-bound heartbeat becomes stale, and the control plane requires the mutually authenticated PID to equal its owned child PID.
 
 Explicit stop, runtime crash, editor disconnect, MCP shutdown, authentication failure, and timeout converge on idempotent cleanup. The harness removes its run lease on exit, and descriptor creation performs bounded pruning of expired descriptors, stale leases, and abandoned consuming files after abrupt owner death. Signaling is limited to the recorded PID after its process-start fingerprint is rechecked. Acceptance requires no descriptor, debugger binding, owned fixture process, or project diff after normal and failed runs.
 

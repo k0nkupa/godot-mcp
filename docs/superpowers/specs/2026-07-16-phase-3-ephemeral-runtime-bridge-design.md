@@ -84,7 +84,7 @@ The harness never changes `project.godot`, the configured main scene, autoloads,
 
 ## 4. Runtime authentication
 
-The harness reads the one-use secret, deletes the descriptor, and sends a hello message through `EngineDebugger` containing the run identifier, generation, project identity, launch nonce, runtime PID when available, and a keyed proof over the canonical hello fields.
+The harness reads the one-use secret, deletes the descriptor, and sends a hello message through `EngineDebugger` containing the run identifier, generation, project identity, launch nonce, runtime PID when available, and a keyed proof over the canonical hello fields. After verifying that proof, the editor plugin returns a domain-separated keyed proof over the full hello transcript. The harness verifies the server proof in constant time before enabling commands or erasing the secret, so debugger attachment is mutually authenticated rather than relying on loopback listener identity alone.
 
 The editor debugger plugin accepts the hello only when:
 

@@ -88,7 +88,19 @@ func _capture(message: String, data: Array) -> bool:
 		if (
 			String(payload.get("runId", "")) != String(_descriptor.runId)
 			or int(payload.get("generation", 0)) != int(_descriptor.generation)
+			or not payload.has("serverProof")
 		):
+			return true
+		var hello := {
+			"runId": String(_descriptor.runId),
+			"generation": int(_descriptor.generation),
+			"projectId": String(_descriptor.project.projectId),
+			"sessionId": String(_descriptor.sessionId),
+			"launchNonce": String(_descriptor.launchNonce),
+			"pid": OS.get_process_id(),
+		}
+		hello.proof = SessionCrypto.hmac_sha256(_secret, hello_signing_text(hello)).hex_encode()
+		if not valid_server_proof(_secret, hello, String(payload.serverProof)):
 			return true
 		_authenticated = true
 		_secret.fill(0)
@@ -253,6 +265,16 @@ static func hello_signing_text(payload: Dictionary) -> String:
 		String(payload.launchNonce),
 		str(int(payload.pid)),
 	]
+
+static func server_proof_signing_text(payload: Dictionary) -> String:
+	return "godot-mcp:runtime-server-proof:v1\n%s\n%s" % [
+		hello_signing_text(payload),
+		String(payload.proof),
+	]
+
+static func valid_server_proof(secret: PackedByteArray, hello: Dictionary, received: String) -> bool:
+	var expected := SessionCrypto.hmac_sha256(secret, server_proof_signing_text(hello)).hex_encode()
+	return SessionCrypto.constant_time_equal(received, expected)
 
 static func _now_ms() -> int:
 	return int(Time.get_unix_time_from_system() * 1000.0)

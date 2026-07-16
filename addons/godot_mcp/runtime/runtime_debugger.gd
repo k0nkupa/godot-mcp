@@ -118,17 +118,19 @@ func _accept_hello(payload: Dictionary, debugger_session_id: int) -> void:
 		or String(payload.launchNonce) != String(_prepared.launchNonce)
 	):
 		return
-	var expected := SessionCrypto.hmac_sha256(
-		SessionCrypto.base64url_decode(String(_prepared.secret)),
-		hello_signing_text(payload)
-	).hex_encode()
+	var secret := SessionCrypto.base64url_decode(String(_prepared.secret))
+	var expected := SessionCrypto.hmac_sha256(secret, hello_signing_text(payload)).hex_encode()
 	if not SessionCrypto.constant_time_equal(String(payload.proof), expected):
+		secret.fill(0)
 		return
+	var server_proof := SessionCrypto.hmac_sha256(secret, server_proof_signing_text(payload)).hex_encode()
+	secret.fill(0)
 	_bound_session_id = debugger_session_id
 	_prepared.secret = ""
 	get_session(debugger_session_id).send_message("godot_mcp_runtime:hello_ok", [{
 		"runId": String(payload.runId),
 		"generation": int(payload.generation),
+		"serverProof": server_proof,
 	}])
 
 func _accept_ready(payload: Dictionary, debugger_session_id: int) -> void:
@@ -166,6 +168,12 @@ static func hello_signing_text(payload: Dictionary) -> String:
 		String(payload.sessionId),
 		String(payload.launchNonce),
 		str(int(payload.pid)),
+	]
+
+static func server_proof_signing_text(payload: Dictionary) -> String:
+	return "godot-mcp:runtime-server-proof:v1\n%s\n%s" % [
+		hello_signing_text(payload),
+		String(payload.proof),
 	]
 
 static func _now_ms() -> int:
