@@ -7,6 +7,14 @@ const key = "019f6f52-6b15-7e21-bda3-101112131415";
 const digest = "a".repeat(64);
 
 describe("Phase 5 editor mutation schemas", () => {
+  it("accepts Phase 6 authoring steps without changing the top-level transaction", () => {
+    const parsed = EditorMutationInputSchema.parse({
+      operation: "preview",
+      steps: [{ operation: "create_shader", sourcePath: "res://authoring/generated.gdshader", content: "shader_type canvas_item;\n" }],
+    });
+    expect(parsed).toMatchObject({ operation: "preview", steps: [{ operation: "create_shader" }] });
+  });
+
   it("accepts preview and apply batches", () => {
     const steps = [{
       operation: "set_property",

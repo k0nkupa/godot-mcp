@@ -1,5 +1,14 @@
 export { canonicalJson } from "./canonicalJson.js";
 export {
+  AUTHORING_OPERATIONS,
+  EditorAuthoringStepSchema,
+  ExtendedEditorVariantSchema,
+  ImportExpectationSchema,
+  ResourceLocatorSchema,
+  type EditorAuthoringStep,
+  type ExtendedEditorVariant,
+} from "./editorAuthoring.js";
+export {
   EditorMutationInputSchema,
   EditorMutationResultSchema,
   EditorMutationStepSchema,

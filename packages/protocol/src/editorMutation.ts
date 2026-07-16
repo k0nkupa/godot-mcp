@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { AUTHORING_OPERATIONS, EditorAuthoringStepSchema } from "./editorAuthoring.js";
+
 const MAX_MUTATION_BYTES = 256 * 1024;
 const Sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 
@@ -115,10 +117,15 @@ const NodeStepSchemas = [
   z.object({ operation: z.literal("set_owner"), scenePath: ScenePathSchema, nodePath: NodePathSchema, ownerPath: NodePathSchema.nullable() }).strict(),
 ] as const;
 
-export const EditorMutationStepSchema = z.discriminatedUnion("operation", [
+const PhaseFiveMutationStepSchema = z.discriminatedUnion("operation", [
   ...SceneStepSchemas,
   ...ResourceStepSchemas,
   ...NodeStepSchemas,
+]);
+
+export const EditorMutationStepSchema = z.union([
+  PhaseFiveMutationStepSchema,
+  EditorAuthoringStepSchema,
 ]);
 
 const MutationStepsSchema = z.array(EditorMutationStepSchema).min(1).max(32);
@@ -140,12 +147,12 @@ export const EditorMutationInputSchema = z.discriminatedUnion("operation", [
 });
 
 const MutationTargetSchema = z.object({
-  kind: z.enum(["scene", "resource", "node", "property", "metadata", "group", "signal", "owner"]),
+  kind: z.enum(["scene", "resource", "node", "property", "metadata", "group", "signal", "owner", "source", "theme", "animation", "tile", "reference", "import"]),
   path: z.string().min(1).max(512),
   revision: Sha256Schema.nullable(),
 }).strict();
 
-const MutationOperationSchema = z.enum([
+const PhaseFiveMutationOperationSchema = z.enum([
   "create_scene",
   "duplicate_scene",
   "move_scene",
@@ -168,6 +175,11 @@ const MutationOperationSchema = z.enum([
   "connect_signal",
   "disconnect_signal",
   "set_owner",
+]);
+
+const MutationOperationSchema = z.union([
+  PhaseFiveMutationOperationSchema,
+  z.enum(AUTHORING_OPERATIONS),
 ]);
 
 const MutationChangeSchema = z.object({

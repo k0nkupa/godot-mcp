@@ -110,4 +110,19 @@ describe("editor MCP tool", () => {
     expect(audit).toContain('"stepOperations":{"set_property":1}');
     expect(audit).toContain('"idempotencyKeySha256"');
   });
+
+  it("keeps Phase 6 authoring inside the single editor tool", async () => {
+    const { client, execute } = await fixture({ tiers: ["observe", "project_mutate"], packs: ["core", "editor"] });
+    const output = await client.callTool({
+      name: "godot_editor",
+      arguments: {
+        operation: "preview",
+        steps: [{ operation: "create_shader", sourcePath: "res://authoring/generated.gdshader", content: "shader_type canvas_item;\n" }],
+      },
+    });
+    expect(output.isError).not.toBe(true);
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({
+      steps: [expect.objectContaining({ operation: "create_shader" })],
+    }), expect.any(String));
+  });
 });
