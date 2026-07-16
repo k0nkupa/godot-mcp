@@ -6,7 +6,7 @@ The authoritative Phase 3 gate is:
 GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-3
 ```
 
-It requires macOS with a visible WindowServer session, Node.js 22, pnpm 11.13.0, and exactly Godot `4.7.stable.official.5b4e0cb0f`. It runs 15 ordered stages: protocol drift, builds, lint, typecheck, package tests, disposable fixture import, cross-language proof parity, runtime contract units, the real authenticated debugger bridge, bounded capture/evidence, hostile inputs, crash/disconnect cleanup, published stdio E2E, the full regression suite, and `git diff --check`.
+It requires macOS with a visible WindowServer session, Node.js 22, pnpm 11.13.0, and exactly Godot `4.7.stable.official.5b4e0cb0f`. It runs 15 ordered stages: protocol drift, builds, lint, typecheck, package tests, disposable fixture import, cross-language proof parity, Godot harness deadline and runtime contract units, the real authenticated debugger bridge, bounded capture/evidence, hostile inputs, crash/disconnect cleanup, published stdio E2E, the full regression suite, and `git diff --check`.
 
 ## Authorized surface
 

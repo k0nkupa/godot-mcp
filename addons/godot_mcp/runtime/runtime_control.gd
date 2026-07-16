@@ -19,19 +19,23 @@ func execute(operation: String, arguments: Dictionary, deadline_unix_ms: int) ->
 			_root.get_tree().paused = false
 			return {"ok": true, "data": _frame_state()}
 		"step":
-			return await _step(clampi(int(arguments.get("frames", 1)), 1, 120))
+			return await _step(clampi(int(arguments.get("frames", 1)), 1, 120), deadline_unix_ms)
 		"wait":
 			return await _wait(arguments.get("condition", {}), mini(deadline_unix_ms, _now_ms() + clampi(int(arguments.get("timeoutMs", 10000)), 1, 30000)))
 		_: return _error("INVALID_REQUEST", "Runtime control operation is not allowed")
 
-func _step(frames: int) -> Dictionary:
+func _step(frames: int, deadline_unix_ms: int) -> Dictionary:
 	if not _root.get_tree().paused:
 		return _error("PRECONDITION_FAILED", "Runtime must be paused before frame stepping")
 	for _frame in frames:
+		if _now_ms() >= deadline_unix_ms:
+			return _error("TIMEOUT", "Runtime step deadline expired", true)
 		_root.get_tree().paused = false
 		await _root.get_tree().process_frame
 		await RenderingServer.frame_post_draw
 		_root.get_tree().paused = true
+		if _now_ms() >= deadline_unix_ms:
+			return _error("TIMEOUT", "Runtime step deadline expired", true)
 	return {"ok": true, "data": _frame_state()}
 
 func _wait(condition: Variant, deadline_unix_ms: int) -> Dictionary:

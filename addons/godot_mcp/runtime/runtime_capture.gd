@@ -21,10 +21,16 @@ func execute(arguments: Dictionary, deadline_unix_ms: int) -> Dictionary:
 					return stepped
 		else:
 			for _frame in wait_frames:
+				if _deadline_expired(deadline_unix_ms):
+					return _error("TIMEOUT", "Runtime capture deadline expired", true)
 				await _root.get_tree().process_frame
-	if int(Time.get_unix_time_from_system() * 1000.0) >= deadline_unix_ms:
+				if _deadline_expired(deadline_unix_ms):
+					return _error("TIMEOUT", "Runtime capture deadline expired", true)
+	if _deadline_expired(deadline_unix_ms):
 		return _error("TIMEOUT", "Runtime capture deadline expired", true)
 	await RenderingServer.frame_post_draw
+	if _deadline_expired(deadline_unix_ms):
+		return _error("TIMEOUT", "Runtime capture deadline expired", true)
 	var image := _root.get_viewport().get_texture().get_image()
 	if image == null or image.is_empty():
 		return _error("TARGET_NOT_FOUND", "Runtime viewport returned no image")
@@ -55,3 +61,6 @@ func execute(arguments: Dictionary, deadline_unix_ms: int) -> Dictionary:
 
 static func _error(code: String, message: String, retryable := false) -> Dictionary:
 	return {"ok": false, "code": code, "message": message, "retryable": retryable}
+
+static func _deadline_expired(deadline_unix_ms: int) -> bool:
+	return int(Time.get_unix_time_from_system() * 1000.0) >= deadline_unix_ms

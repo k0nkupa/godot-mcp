@@ -2,6 +2,8 @@ extends SceneTree
 
 const RuntimeDebugger = preload("res://addons/godot_mcp/runtime/runtime_debugger.gd")
 const RuntimeHarness = preload("res://addons/godot_mcp/runtime/runtime_harness.gd")
+const RuntimeCapture = preload("res://addons/godot_mcp/runtime/runtime_capture.gd")
+const RuntimeControl = preload("res://addons/godot_mcp/runtime/runtime_control.gd")
 
 func _init() -> void:
 	assert(RuntimeHarness.descriptor_argument(PackedStringArray(["--other=x", "--godot-mcp-runtime-descriptor=/tmp/godot-mcp/runtime-a.json"])) == "/tmp/godot-mcp/runtime-a.json")
@@ -12,5 +14,15 @@ func _init() -> void:
 	assert(not RuntimeHarness.operation_is_allowed("eval"))
 	var hello := {"runId": "run", "generation": 1, "projectId": "project", "sessionId": "session", "launchNonce": "nonce", "pid": 42}
 	assert(RuntimeHarness.hello_signing_text(hello) == RuntimeDebugger.hello_signing_text(hello))
+	await process_frame
+	var runtime_root := Node.new()
+	root.add_child(runtime_root)
+	paused = true
+	var expired_step: Dictionary = await RuntimeControl.new(runtime_root, null, null).execute("step", {"frames": 1}, 1)
+	assert(expired_step.get("code") == "TIMEOUT")
+	assert(paused)
+	paused = false
+	var expired_capture: Dictionary = await RuntimeCapture.new(runtime_root, null).execute({"waitFrames": 1}, 1)
+	assert(expired_capture.get("code") == "TIMEOUT")
 	print("GODOT_MCP_RUNTIME_HARNESS_UNIT_OK")
 	quit(0)

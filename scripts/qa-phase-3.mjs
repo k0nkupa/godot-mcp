@@ -94,6 +94,10 @@ try {
     await run("7/15 runtime descriptor and proof fixture parity setup", process.execPath, ["packages/cli/dist/bin.js", "init", "--project", project], environment);
     await run("7/15 runtime descriptor and proof fixture parity", godot, ["--headless", "--path", project, "--script", "res://tests/protocol_fixture_test.gd"], environment);
   });
+  await withFixture("godot-mcp-phase-3-harness-unit-", async ({ project, environment }) => {
+    await run("8/15 runtime harness unit setup", process.execPath, ["packages/cli/dist/bin.js", "init", "--project", project], environment);
+    await run("8/15 runtime harness deadline units", godot, ["--headless", "--path", project, "--script", "res://tests/runtime_harness_unit.gd"], environment);
+  });
   await run("8/15 runtime contracts and lifecycle units", pnpm, ["exec", "vitest", "run", "packages/protocol/src/runtime.test.ts", "packages/control-plane/src/runtime", "packages/bridge-client/src/bridgeSession.test.ts"]);
   await run("9/15 authenticated runtime bridge integration", pnpm, ["exec", "vitest", "run", "tests/integration/runtime-bridge.test.ts"]);
   await run("10/15 bounded runtime capture and MCP image evidence", pnpm, ["exec", "vitest", "run", "packages/mcp-server/src/registerRuntimeTools.test.ts"]);
