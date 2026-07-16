@@ -2,6 +2,7 @@ extends SceneTree
 
 const EditorMutation = preload("res://addons/godot_mcp/mutation/editor_mutation.gd")
 const VariantDecoder = preload("res://addons/godot_mcp/mutation/editor_variant_decoder.gd")
+const BridgeClient = preload("res://addons/godot_mcp/bridge/bridge_client.gd")
 
 class FakeEditor:
 	extends RefCounted
@@ -23,6 +24,15 @@ class FakeEditor:
 		return OK
 
 func _init() -> void:
+	var reconnect := BridgeClient.new()
+	reconnect._session_key = PackedByteArray([1, 2, 3])
+	reconnect._session_id = "old-session"
+	reconnect._send_sequence = 4
+	reconnect._receive_sequence = 5
+	reconnect._reset_session_state()
+	assert(reconnect._session_key.is_empty() and reconnect._session_id.is_empty())
+	assert(reconnect._send_sequence == 0 and reconnect._receive_sequence == 0)
+	reconnect.free()
 	var decoded := VariantDecoder.decode({"type": "vector2", "x": 1.5, "y": 2.25})
 	assert(decoded.ok and decoded.value == Vector2(1.5, 2.25))
 	assert(VariantDecoder.decode({"type": "color", "r": 0.1, "g": 0.2, "b": 0.3, "a": 1.0}).value is Color)

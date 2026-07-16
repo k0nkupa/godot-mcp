@@ -111,3 +111,59 @@ jobs:
             qa-failure-artifacts/**/*.json
             qa-failure-artifacts/**/*.log
           retention-days: 7
+
+  phase-5:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.13.0
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install checksum-pinned Godot 4.7
+        env:
+          GODOT_URL: https://github.com/godotengine/godot-builds/releases/download/4.7-stable/Godot_v4.7-stable_macos.universal.zip
+          GODOT_SHA512: 0d5d635e6d78d4c2b1286586ca62af249609c2f70815b35437049f08476714d08b913faaf8c10f37313c932ee24c4f87a829899c84fa248f788fb612b8f79229
+        run: |
+          curl --fail --location --retry 3 --output godot.zip "$GODOT_URL"
+          echo "$GODOT_SHA512  godot.zip" | shasum -a 512 -c -
+          mkdir -p "$RUNNER_TEMP/godot"
+          ditto -x -k godot.zip "$RUNNER_TEMP/godot"
+          GODOT_BIN="$RUNNER_TEMP/godot/Godot.app/Contents/MacOS/Godot"
+          test "$("$GODOT_BIN" --version)" = "4.7.stable.official.5b4e0cb0f"
+          echo "GODOT_BIN=$GODOT_BIN" >> "$GITHUB_ENV"
+          rm godot.zip
+
+      - name: Require visible macOS session
+        run: |
+          if ! launchctl print "gui/$(id -u)" >/dev/null 2>&1; then
+            echo "::error::Phase 5 requires a WindowServer-capable macOS runner"
+            exit 1
+          fi
+
+      - name: Certify Phase 5
+        env:
+          GODOT_MCP_FAILURE_ARTIFACT_DIR: ${{ github.workspace }}/qa-failure-artifacts
+        run: pnpm qa:phase-5
+
+      - name: Upload failure receipts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase-5-failure-receipts
+          if-no-files-found: ignore
+          path: |
+            qa-failure-artifacts/**/*.jsonl
+            qa-failure-artifacts/**/*.json
+            qa-failure-artifacts/**/*.log
+          retention-days: 7

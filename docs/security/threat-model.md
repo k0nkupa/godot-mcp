@@ -1,8 +1,8 @@
-# Phase 0–4 threat model
+# Phase 0–5 threat model
 
 ## Security boundary
 
-Phase 0–4 protects a Godot project from unauthenticated network clients, accidental cross-project attachment, replay, stale messages, and ordinary local clients that do not possess the short-lived secrets. It bounds editor metadata/evidence and an explicitly authorized instrumented runtime. It does not defend against a process that has already compromised the same operating-system user, and the runtime harness is not a sandbox for hostile game code.
+Phase 0–5 protects a Godot project from unauthenticated network clients, accidental cross-project attachment, replay, stale messages, and ordinary local clients that do not possess the short-lived secrets. It bounds editor metadata/evidence, an explicitly authorized instrumented runtime, and permission-scoped editor mutations. It does not defend against a process that has already compromised the same operating-system user, and the runtime harness is not a sandbox for hostile game code.
 
 The MCP process listens only on IPv4 loopback (`127.0.0.1`). The Godot addon never opens a listener; it reads the descriptor for its exact project identity and connects outward. Loopback is transport containment, not authentication.
 
@@ -17,7 +17,7 @@ The MCP process listens only on IPv4 loopback (`127.0.0.1`). The Godot addon nev
 
 ## Project and host containment
 
-Default sessions expose six observe-tier tools. Phase 3 adds two tools only when `runtime_control` and `runtime` are explicit; Phase 4 adds one input tool only when `runtime_control` and `input` are explicit. It exposes no arbitrary filesystem path, host shell, general process launcher, network client, GDScript evaluation, generic method invocation, or project mutation tool. Project discovery resolves real paths, rejects symlinked configuration files, and fingerprints `project.godot`. Addon install/uninstall uses a hash manifest and refuses to overwrite or remove independently changed files.
+Default sessions expose six observe-tier tools. Phase 3 adds two tools only when `runtime_control` and `runtime` are explicit; Phase 4 adds one input tool only when `runtime_control` and `input` are explicit; Phase 5 adds one editor tool only when `project_mutate` and `editor` are explicit. It exposes no arbitrary filesystem path, host shell, general process launcher, network client, GDScript evaluation, or generic method invocation. Project discovery resolves real paths, rejects symlinked configuration files, and fingerprints `project.godot`. Addon install/uninstall uses a hash manifest and refuses to overwrite or remove independently changed files.
 
 Editor queries inspect only roots already open in the editor and resources already indexed by `EditorFileSystem`. Caller paths must be bounded `res://` paths; no query loads a caller-supplied resource or reads source/file bytes. Node properties are encoded through a depth- and entry-limited Variant encoder. Project settings are limited to approved namespaces and secret-shaped names are omitted.
 
@@ -66,10 +66,27 @@ The child runtime opens no listener. Its harness communicates only through Godot
 | Passive surveillance or audit leakage | Recording captures only successfully injected MCP events; audit stores kind counts, frame range, and digest, not action/key/coordinate/trace payloads |
 | Stuck held state | MCP-held actions, keys, buttons, touches, and axes are tracked separately and neutralized on errors/timeouts when reachable, scene replacement, stop, exit, debugger loss, and owner shutdown |
 
+## Editor mutation abuse controls
+
+| Abuse case | Control |
+|---|---|
+| Accidental mutation exposure | Separate explicit `project_mutate` tier plus `editor` pack; default remains exactly six tools |
+| Replay or ambiguous retry | UUID idempotency key, canonical request digest, owner-only append-only ledger, completed replay, and unknown-outcome conflict |
+| Stale preview or human race | Main-thread target revisions and plan digest are recomputed before apply; stale targets return `CONFLICT` |
+| Cross-scene or mixed effects | One batch resolves to exactly one open-scene history or the global file history before the first effect |
+| Host/protected path escape | Canonical `res://` extensions, traversal/subname denial, real-parent containment checks, symlink rejection, protected `.git`/addon/`.godot` and secret-name denial |
+| Arbitrary code or object construction | Closed operation union, no method invocation or evaluation, instantiable `ClassDB` Node classes, and a narrow Resource allowlist |
+| Memory/disk pressure | 32 steps, 256 KiB request, eight files, 4 MiB preimages, bounded response and journal replay |
+| Partial or failed mutation | Native one-action Undo/Redo, reverse-order rollback, atomic file replacement/tombstones, explicit partial-effect and rollback receipts |
+| Undoing user work | MCP action ID/state tracking; undo/redo refuses when its action is not at the expected history position |
+| Audit secret leakage | Raw idempotency keys and sensitive property values omitted; target/precondition/change summaries retained |
+
+Phase 5 excludes script/shader authoring, imported assets, project settings/imports, runtime mutation, builds/exports, arbitrary methods, shell, host filesystem, and network access.
+
 ## Audit and redaction
 
 Receipts are append-only JSONL under `.godot/evidence/godot-mcp/`. Audit values recursively redact token-, secret-, key-, password-, credential-, and authorization-shaped fields. Tests build checks from the real pairing token and derived session key to prove neither appears in audit output. Pairing descriptors are never CI artifacts.
 
 ## Explicitly out of scope
 
-Unsafe fixture mode is not implemented in Phase 4. Project mutation, debugger stacks/breakpoints, profiling, build/export, arbitrary evidence retrieval, and arbitrary method invocation remain out of scope. When unsafe fixture mode is implemented, it will require a disposable registered fixture, separate process, scrubbed environment, short grant, and interactive approval. It will reduce accidental exposure but will not be described as a secure sandbox for hostile code running as the current user.
+Unsafe fixture mode is not implemented in Phase 5. Script/shader authoring, imported-asset mutation, project settings/imports, debugger stacks/breakpoints, profiling, build/export, arbitrary evidence retrieval, and arbitrary method invocation remain out of scope. When unsafe fixture mode is implemented, it will require a disposable registered fixture, separate process, scrubbed environment, short grant, and interactive approval. It will reduce accidental exposure but will not be described as a secure sandbox for hostile code running as the current user.

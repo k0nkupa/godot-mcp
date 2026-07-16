@@ -17,7 +17,8 @@
     "qa:phase-0-1": "node scripts/qa-phase-0-1.mjs",
     "qa:phase-2": "node scripts/qa-phase-2.mjs",
     "qa:phase-3": "node scripts/qa-phase-3.mjs",
-    "qa:phase-4": "node scripts/qa-phase-4.mjs"
+    "qa:phase-4": "node scripts/qa-phase-4.mjs",
+    "qa:phase-5": "node scripts/qa-phase-5.mjs"
   },
   "devDependencies": {
     "@types/node": "22.20.1",

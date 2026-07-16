@@ -41,4 +41,19 @@ describe("workspace package contract", () => {
     expect(readme).toContain("pnpm qa:phase-4");
     expect(readme).toContain("--grant runtime_control --pack runtime --pack input");
   });
+
+  it("defines the ordered Phase 5 certification gate and editor mutation documentation", async () => {
+	const packageJson = JSON.parse(await readFile("package.json", "utf8")) as { scripts?: Record<string, string> };
+	expect(packageJson.scripts?.["qa:phase-5"]).toBe("node scripts/qa-phase-5.mjs");
+	const gate = await readFile("scripts/qa-phase-5.mjs", "utf8");
+	expect(gate).toContain("4.7.stable.official.5b4e0cb0f");
+	for (let stage = 1; stage <= 13; stage += 1) expect(gate).toContain(`${stage}/13`);
+	expect(gate).toContain("tests/integration/editor-mutation.test.ts");
+	expect(gate).toContain("tests/security/editor-mutation-hostile.test.ts");
+	expect(gate).toContain("tests/end-to-end/phase-5.test.ts");
+	const readme = await readFile("README.md", "utf8");
+	expect(readme).toContain("pnpm qa:phase-5");
+	expect(readme).toContain("--grant project_mutate --pack editor");
+	expect(await readFile("docs/testing/phase-5.md", "utf8")).toContain("godot_editor");
+  });
 });

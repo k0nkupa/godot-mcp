@@ -1,6 +1,6 @@
 # Godot MCP bridge protocol v1
 
-The Phase 4 editor bridge is JSON over a loopback WebSocket at `ws://127.0.0.1:<ephemeral-port>/bridge`. The server writes the address and one-use authentication material to an owner-only pairing descriptor. The addon initiates the connection; it opens no port.
+The Phase 5 editor bridge is JSON over a loopback WebSocket at `ws://127.0.0.1:<ephemeral-port>/bridge`. The server writes the address and one-use authentication material to an owner-only pairing descriptor. The addon initiates the connection; it opens no port.
 
 ## Pair request
 
@@ -66,6 +66,16 @@ Input uses canonical JSON v1 safe integers. Strengths, pressure, tilt, magnifica
 Realtime sequences are marked non-deterministic. Deterministic sequences and replay require a paused runtime, process zero-based rendered frames through the shared frame clock, and leave the runtime paused. A trace records only successfully injected MCP events relative to its first delivery; no ambient OS event is observed. `record_stop` is the only operation returning a trace payload.
 
 Every success includes a summary receipt: run handle, operation, requested/delivered counts, event kinds, scheduled/delivered offsets, optional viewport/coordinate metadata, release kinds, deterministic and recording flags, and canonical trace SHA-256. Audit records replace raw arguments with kind counts, frame range, mode, and digest. Action names, keycodes, coordinates, and trace payloads are excluded. Held MCP input is neutralized on terminal paths when the harness remains reachable.
+
+## Phase 5 editor mutation
+
+An editor-authorized session may send `editor.mutate` only when both `project_mutate` and the `editor` pack are present. It carries one of four strict operations: side-effect-free `preview`, digest-bound `apply`, action-scoped `undo`, or action-scoped `redo`. The addon routes it through the bounded main-thread queue.
+
+A preview contains 1–32 closed-union steps and returns one history identity, ordered preconditions, target revisions, planned changes, and a SHA-256 plan digest. Apply repeats the exact steps and expected digest. Each apply/undo/redo carries a UUID idempotency key; the control plane hashes the key and canonical request into an owner-only append-only journal before dispatch. A completed record replays its receipt, while a crash-left started record returns `CONFLICT` and requires target reconciliation.
+
+One batch resolves to one already-open scene history or global project-file history. Scene actions use native `EditorUndoRedoManager`; undo/redo refuses when the requested MCP action is not at the expected top-of-history state. File actions recheck containment and preimage hashes immediately before effect, use same-directory atomic replacement or journal tombstones, refresh only touched editor filesystem entries, and retain at most eight files or 4 MiB of preimages.
+
+Mutation errors extend the bounded command error with `failedPhase`, `partialEffects`, `rollback`, and `safeRecovery`. Receipts and audit records include identities, preconditions, changes, warnings, and rollback state, but never raw idempotency keys or sensitive property values.
 
 ## Limits and closes
 

@@ -58,11 +58,10 @@ func _process(_delta: float) -> void:
 			return
 		_handle_message(packet.get_string_from_utf8())
 	if state == WebSocketPeer.STATE_CLOSED:
+		var was_paired := _paired
 		_socket = null
-		_pair_sent = false
-		if _paired:
-			_paired = false
-			disconnected.emit("socket_closed")
+		_reset_session_state()
+		if was_paired: disconnected.emit("socket_closed")
 
 func _try_descriptor() -> void:
 	_next_descriptor_check_ms = Time.get_ticks_msec() + 250
@@ -252,6 +251,18 @@ func send_command_error(request_id: String, code: String, message: String, retry
 			"safeRecovery": String(facts.get("safeRecovery", "Review the error and retry only after correcting the request")).left(1024),
 		}}, 5000)
 
+func _reset_session_state() -> void:
+	_pair_sent = false
+	_paired = false
+	_session_id = ""
+	_send_sequence = 0
+	_receive_sequence = 0
+	_token_bytes.fill(0)
+	_token_bytes = PackedByteArray()
+	_session_key.fill(0)
+	_session_key = PackedByteArray()
+	_descriptor = {}
+
 func close(reason: String = "closed") -> void:
 	if _closed:
 		return
@@ -260,10 +271,7 @@ func close(reason: String = "closed") -> void:
 	if _socket != null:
 		_socket.close(1000, reason)
 		_socket = null
-	_token_bytes.fill(0)
-	_token_bytes = PackedByteArray()
-	_session_key.fill(0)
-	_session_key = PackedByteArray()
+	_reset_session_state()
 	if _paired:
 		_paired = false
 		disconnected.emit(reason)

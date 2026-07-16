@@ -1,6 +1,6 @@
 # Godot MCP
 
-Godot MCP is an open-source, security-first MCP server and Godot editor addon. Phase 4 provides reversible installation, authenticated Godot 4.7 editor attachment, six default observe-only tools, an explicitly authorized two-tool ephemeral runtime surface, and one separately gated runtime-input tool.
+Godot MCP is an open-source, security-first MCP server and Godot editor addon. Phase 5 provides reversible installation, authenticated Godot 4.7 editor attachment, six default observe-only tools, explicitly gated runtime/input surfaces, and one permission-scoped editor mutation tool with native Undo/Redo.
 
 ## Requirements
 
@@ -38,6 +38,12 @@ To launch and automate the owned runtime, grant the input pack separately:
 codex mcp add godot-runtime-input -- node /absolute/path/to/godot-mcp/packages/cli/dist/bin.js connect --project /absolute/path/to/godot-project --grant runtime_control --pack runtime --pack input
 ```
 
+To preview and apply bounded editor mutations, explicitly grant both the mutation tier and editor pack:
+
+```bash
+codex mcp add godot-editor -- node /absolute/path/to/godot-mcp/packages/cli/dist/bin.js connect --project /absolute/path/to/godot-project --grant project_mutate --pack editor
+```
+
 Start a fresh Codex task after registration so the newly registered MCP server is exposed. To stop using the addon while retaining its files, or remove the verified installation completely:
 
 ```bash
@@ -61,6 +67,7 @@ The default six tools are read-only and closed-world. A runtime-authorized sessi
 - `godot_runtime` — launch, status, bounded tree/node/log queries, waits, pause, step, resume, and stop for one authenticated child runtime
 - `godot_runtime_capture` — one to eight ordered running-game PNG frames with verified evidence metadata
 - `godot_input` — bounded events, frame-indexed sequences, non-passive recording, and deterministic replay for the owned runtime
+- `godot_editor` — preview, apply, undo, and redo one bounded scene/node/resource mutation batch with durable idempotency and native editor history
 
 For example:
 
@@ -80,10 +87,11 @@ GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-0-1
 GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-2
 GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-3
 GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-4
+GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-5
 ```
 
-The Phase 4 gate additionally certifies the closed input union, coordinate routing, deterministic record/replay parity, hostile input rejection, audit redaction, release cleanup, exact nine-tool stdio surface, and zero fixture diff. Earlier gates remain required regressions. See [Phase 4 testing](docs/testing/phase-4.md), [Phase 3 testing](docs/testing/phase-3.md), [Phase 2 testing](docs/testing/phase-2.md), [Phase 0–1 testing](docs/testing/phase-0-1.md), the [threat model](docs/security/threat-model.md), the [bridge protocol](docs/protocol/bridge-v1.md), and the [master design](docs/superpowers/specs/2026-07-15-godot-mcp-master-design.md).
+The Phase 5 gate certifies explicit tool exposure, preview/apply digest binding, idempotent replay, save/reload persistence, action-scoped Undo/Redo, protected-path rejection, rollback reporting, stdio cleanup, and zero fixture diff. Earlier gates remain required regressions. See [Phase 5 testing](docs/testing/phase-5.md), [Phase 4 testing](docs/testing/phase-4.md), the [threat model](docs/security/threat-model.md), the [bridge protocol](docs/protocol/bridge-v1.md), and the [master design](docs/superpowers/specs/2026-07-15-godot-mcp-master-design.md).
 
 ## Roadmap
 
-Later phases add scene/resource authoring with Undo/Redo, debugger stacks and profiler integration, declarative playtests, imports/builds/exports, evidence retrieval, compatibility lanes, and explicitly gated disposable-fixture unsafe mode. None of those capabilities are claimed by Phase 4.
+Later phases add script/shader authoring, debugger stacks and profiler integration, declarative playtests, imports/builds/exports, evidence retrieval, compatibility lanes, and explicitly gated disposable-fixture unsafe mode. None of those capabilities are claimed by Phase 5.
