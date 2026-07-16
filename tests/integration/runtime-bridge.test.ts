@@ -74,6 +74,9 @@ test("launches, inspects, controls, and cleans one authenticated runtime", async
             ...(response.binarySha256 === undefined ? {} : { binarySha256: response.binarySha256 }),
           };
         },
+		cleanup: async () => {
+		  await session.request("runtime.cleanup", {}, { timeoutMs: 5_000 });
+		},
       });
       try {
         const launched = await runtime.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 15_000 });

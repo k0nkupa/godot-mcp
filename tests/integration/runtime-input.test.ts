@@ -74,6 +74,9 @@ test("injects, records, and deterministically replays bounded runtime input", as
         prepare: async ({ descriptor }) => (await session.request<{ debugPort: number }>("runtime.prepare", { descriptor }, { timeoutMs: 5_000 })).data,
         command: async (operation, input, timeoutMs = 10_000) => (await session.request<Record<string, unknown>>("runtime.command", { operation, ...input }, { timeoutMs })).data,
         capture: async () => { throw new Error("capture is not used by the input fixture"); },
+		cleanup: async () => {
+		  await session.request("runtime.cleanup", {}, { timeoutMs: 5_000 });
+		},
       });
       try {
         phase = "launch";
