@@ -90,6 +90,12 @@ export const INPUT_POLICY: CommandPolicy = {
   pack: "input",
   mutating: true,
 };
+export const EDITOR_POLICY: CommandPolicy = {
+  command: "godot_editor",
+  tier: "project_mutate",
+  pack: "editor",
+  mutating: true,
+};
 
 export const PHASE_ONE_POLICIES: readonly CommandPolicy[] = [
   CORE_CAPABILITIES_POLICY,
@@ -113,10 +119,11 @@ export const RUNTIME_POLICIES: readonly CommandPolicy[] = [
 ];
 
 export const INPUT_POLICIES: readonly CommandPolicy[] = [INPUT_POLICY];
+export const EDITOR_POLICIES: readonly CommandPolicy[] = [EDITOR_POLICY];
 
 export function visibleCapabilities(grants: SessionGrants): CommandPolicy[] {
   const tiers = expandPermissionTiers(grants.tiers);
-  return [...CORE_POLICIES, ...RUNTIME_POLICIES, ...INPUT_POLICIES].filter(
+  return [...CORE_POLICIES, ...RUNTIME_POLICIES, ...INPUT_POLICIES, ...EDITOR_POLICIES].filter(
     (policy) => tiers.includes(policy.tier) && grants.packs.includes(policy.pack),
   );
 }

@@ -4,6 +4,7 @@ import {
   authorize,
   CORE_SESSION_POLICY,
   expandPermissionTiers,
+  EDITOR_POLICY,
   INPUT_POLICY,
   RUNTIME_CAPTURE_POLICY,
   RUNTIME_POLICY,
@@ -96,6 +97,31 @@ describe("authorization policy", () => {
       command: "godot_input",
       tier: "runtime_control",
       pack: "input",
+      mutating: true,
+    });
+  });
+
+  it("requires project_mutate and editor independently", () => {
+    expect(visibleCapabilities({
+      tiers: ["observe", "project_mutate"],
+      packs: ["core", "editor"],
+    }).map((item) => item.command).sort()).toEqual([
+      "godot_capabilities",
+      "godot_capture",
+      "godot_doctor",
+      "godot_editor",
+      "godot_help",
+      "godot_query",
+      "godot_session",
+    ]);
+    expect(visibleCapabilities({ tiers: ["observe"], packs: ["core", "editor"] })
+      .map((item) => item.command)).not.toContain("godot_editor");
+    expect(visibleCapabilities({ tiers: ["observe", "project_mutate"], packs: ["core"] })
+      .map((item) => item.command)).not.toContain("godot_editor");
+    expect(EDITOR_POLICY).toEqual({
+      command: "godot_editor",
+      tier: "project_mutate",
+      pack: "editor",
       mutating: true,
     });
   });

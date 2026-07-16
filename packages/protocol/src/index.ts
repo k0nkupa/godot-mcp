@@ -1,5 +1,15 @@
 export { canonicalJson } from "./canonicalJson.js";
 export {
+  EditorMutationInputSchema,
+  EditorMutationResultSchema,
+  EditorMutationStepSchema,
+  EditorVariantSchema,
+  type EditorMutationInput,
+  type EditorMutationResult,
+  type EditorMutationStep,
+  type EditorVariant,
+} from "./editorMutation.js";
+export {
   InputEventSchema,
   InputOperationInputSchema,
   InputOperationResultSchema,
