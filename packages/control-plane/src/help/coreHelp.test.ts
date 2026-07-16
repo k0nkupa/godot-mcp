@@ -8,4 +8,9 @@ it("documents the explicitly granted runtime tools", () => {
     tool: "godot_runtime_capture",
     readOnly: false,
   });
+  expect(getCoreHelp("input")).toMatchObject({
+    tool: "godot_input",
+    readOnly: false,
+    summary: expect.stringContaining("non-passive"),
+  });
 });

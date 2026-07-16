@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { GodotMcpException } from "../errors.js";
 
-export type CoreHelpTopic = "session" | "capabilities" | "doctor" | "help" | "query" | "capture" | "runtime" | "runtime_capture";
+export type CoreHelpTopic = "session" | "capabilities" | "doctor" | "help" | "query" | "capture" | "runtime" | "runtime_capture" | "input";
 
 export interface CoreHelp {
   topic: CoreHelpTopic;
@@ -67,6 +67,13 @@ const HELP: Record<CoreHelpTopic, CoreHelp> = {
     title: "Capture an ephemeral Godot runtime",
     summary: "Returns one to eight bounded running-game PNG frames from the authenticated MCP-owned runtime.",
     tool: "godot_runtime_capture",
+    readOnly: false,
+  },
+  input: {
+    topic: "input",
+    title: "Automate owned runtime input",
+    summary: "Injects bounded events and frame-indexed sequences into an authenticated owned runtime, with non-passive recording limited to MCP-injected events.",
+    tool: "godot_input",
     readOnly: false,
   },
 };

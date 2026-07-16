@@ -4,6 +4,7 @@ import {
   authorize,
   CORE_SESSION_POLICY,
   expandPermissionTiers,
+  INPUT_POLICY,
   RUNTIME_CAPTURE_POLICY,
   RUNTIME_POLICY,
   visibleCapabilities,
@@ -70,5 +71,32 @@ describe("authorization policy", () => {
     expect(() => authorize({ tiers: ["observe", "runtime_control"], packs: ["core"] }, RUNTIME_CAPTURE_POLICY)).toThrowError(expect.objectContaining({ code: "PERMISSION_REQUIRED" }));
     expect(RUNTIME_POLICY.mutating).toBe(true);
     expect(RUNTIME_CAPTURE_POLICY.mutating).toBe(true);
+  });
+
+  it("requires the input pack independently from runtime launch tools", () => {
+    expect(
+      visibleCapabilities({
+        tiers: ["observe", "runtime_control"],
+        packs: ["core", "input"],
+      }).map((item) => item.command).sort(),
+    ).toEqual([
+      "godot_capabilities",
+      "godot_capture",
+      "godot_doctor",
+      "godot_help",
+      "godot_input",
+      "godot_query",
+      "godot_session",
+    ]);
+    expect(() => authorize(
+      { tiers: ["observe", "runtime_control"], packs: ["core", "runtime"] },
+      INPUT_POLICY,
+    )).toThrowError(expect.objectContaining({ code: "PERMISSION_REQUIRED" }));
+    expect(INPUT_POLICY).toEqual({
+      command: "godot_input",
+      tier: "runtime_control",
+      pack: "input",
+      mutating: true,
+    });
   });
 });

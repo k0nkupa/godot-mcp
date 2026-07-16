@@ -1,5 +1,19 @@
 export { canonicalJson } from "./canonicalJson.js";
 export {
+  InputEventSchema,
+  InputOperationInputSchema,
+  InputOperationResultSchema,
+  InputReceiptSchema,
+  InputTraceEventSchema,
+  InputTraceSchema,
+  type InputEvent,
+  type InputOperationInput,
+  type InputOperationResult,
+  type InputReceipt,
+  type InputTrace,
+  type InputTraceEvent,
+} from "./input.js";
+export {
   BridgeCommandChunkSchema,
   BridgeCommandResultSchema,
   EditorCaptureInputSchema,

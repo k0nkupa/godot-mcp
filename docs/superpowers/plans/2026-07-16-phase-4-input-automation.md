@@ -43,12 +43,12 @@
 - `InputEventSchema` is a strict discriminated union for `action`, `key`, `mouse_button`, `mouse_motion`, `scroll`, `touch`, `touch_drag`, `pan_gesture`, `magnify_gesture`, `joypad_button`, and `joypad_motion`.
 - `InputOperationInputSchema` is a strict union for `send`, `sequence`, `record_start`, `record_stop`, and `replay`.
 - `InputTraceSchema` is `{ schemaVersion: 1; events: InputTraceEvent[] }`, where every trace event contains a nondecreasing `frameOffset` and an `InputEvent`.
-- `InputReceiptSchema` contains no caller text or raw event payloads; it reports handle, operation, event kinds/count, requested and delivered frame offsets, coordinate-space metadata, releases, deterministic status, and canonical trace SHA-256.
+- `InputReceiptSchema` contains no caller text or raw event payloads; it reports handle, operation, event kinds/count, requested and delivered frame offsets, coordinate-space metadata, releases, deterministic status, and canonical trace SHA-256. `InputOperationResultSchema` wraps the receipt and carries a trace only for `record_stop`.
 - `INPUT_POLICY` is `{ command: "godot_input", tier: "runtime_control", pack: "input", mutating: true }`.
 
 - [ ] **Step 1: Write failing protocol tests for every supported event and operation**
 
-Use one valid case per event kind, simultaneous touch indices, same-frame sequence events, a deterministic replay trace, and defaults for root viewport, viewport coordinate space, realtime sequence mode, and 10-second timeout. Assert rejection of unknown keys, nonexistent operation variants, text payloads, NaN/infinity, out-of-range normalized coordinates, traversal/subname viewport paths, duplicate or decreasing trace offsets, more than 256 events, offsets over 1,800, more than ten active touch indices in one sequence, invalid strengths, and traces over 256 KiB canonical JSON.
+Use one valid case per event kind, simultaneous touch indices, same-frame sequence events, a deterministic replay trace, and defaults for root viewport, viewport coordinate space, realtime sequence mode, and 10-second timeout. Assert rejection of unknown keys, nonexistent operation variants, text payloads, NaN/infinity, out-of-range normalized coordinates, traversal/subname viewport paths, decreasing trace offsets, more than 256 events, offsets over 1,800, more than ten active touch indices in one sequence, invalid strengths, and traces over 256 KiB canonical JSON.
 
 ```ts
 const trace = {
@@ -121,7 +121,7 @@ git commit -m "feat: define bounded runtime input contracts"
 - Modify: `packages/mcp-server/src/executeTool.test.ts`
 
 **Interfaces:**
-- `RuntimeService.input(input: InputOperationInput): Promise<InputReceipt>` uses the same `operationTail` as launch, observation, pause/step, capture, stop, disconnect, and close.
+- `RuntimeService.input(input: InputOperationInput): Promise<InputOperationResult>` uses the same `operationTail` as launch, observation, pause/step, capture, stop, disconnect, and close.
 - `summarizeInputForAudit(input)` returns handle, operation, mode, event count, event-kind counts, frame range, and trace digest only.
 - `executeTool(..., options?: { auditArguments?: unknown })` preserves existing behavior when omitted and writes the supplied summary when present.
 
@@ -297,7 +297,7 @@ git commit -m "feat: execute deterministic runtime input traces"
 - Modify: `packages/control-plane/src/help/coreHelp.ts`
 
 **Interfaces:**
-- `InputController.input(input: InputOperationInput): Promise<InputReceipt>`.
+- `InputController.input(input: InputOperationInput): Promise<InputOperationResult>`.
 - `registerInputTools(server, dependencies)` registers only `godot_input`.
 - `createGodotMcpServer` registers input tools only when policy visibility contains `INPUT_POLICY`.
 
