@@ -39,6 +39,11 @@ func _wait(condition: Variant, deadline_unix_ms: int) -> Dictionary:
 		return _error("INVALID_REQUEST", "Runtime wait condition is invalid")
 	if String(condition.get("type", "")) == "signal_emitted":
 		return await _wait_signal(condition, deadline_unix_ms)
+	if String(condition.get("type", "")) in ["property_equals", "property_matches"]:
+		var node: Node = _query.resolve_node(String(condition.get("nodePath", ".")))
+		var property := String(condition.get("property", ""))
+		if node == null or not _has_property(node, property):
+			return _error("TARGET_NOT_FOUND", "Runtime wait property was not found")
 	var started_process_frame := Engine.get_process_frames()
 	while _now_ms() < deadline_unix_ms:
 		var observed := _condition_state(condition, started_process_frame)
@@ -112,6 +117,12 @@ func _frame_state() -> Dictionary:
 
 static func _now_ms() -> int:
 	return int(Time.get_unix_time_from_system() * 1000.0)
+
+static func _has_property(node: Node, property: String) -> bool:
+	for property_info in node.get_property_list():
+		if String(property_info.get("name", "")) == property:
+			return true
+	return false
 
 static func _error(code: String, message: String, retryable := false) -> Dictionary:
 	return {"ok": false, "code": code, "message": message, "retryable": retryable}

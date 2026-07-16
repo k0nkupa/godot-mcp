@@ -87,9 +87,16 @@ func _load_game_scene() -> void:
 	if resource == null or not resource is PackedScene:
 		get_tree().quit(3)
 		return
-	_game_scene = resource.instantiate()
-	get_tree().root.add_child(_game_scene)
-	get_tree().current_scene = _game_scene
+	var tree := get_tree()
+	tree.current_scene = null
+	if tree.change_scene_to_packed(resource) != OK:
+		tree.quit(3)
+		return
+	await tree.scene_changed
+	_game_scene = tree.current_scene
+	if _game_scene == null:
+		tree.quit(3)
+		return
 	_query = RuntimeQuery.new(_game_scene, _logger)
 	_control = RuntimeControl.new(_game_scene, _query, _logger)
 	_runtime_capture = RuntimeCapture.new(_game_scene, _control)

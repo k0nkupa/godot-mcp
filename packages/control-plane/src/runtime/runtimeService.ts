@@ -146,9 +146,19 @@ export class RuntimeService {
     this.assertHandle(input.handle);
     if (input.operation === "stop") {
       this.state = "stopping";
-      await this.dependencies.command("stop", { ...input });
-      await this.cleanup();
+      let stopError: unknown;
+      try {
+        await this.dependencies.command("stop", { ...input });
+      } catch (error) {
+        stopError = error;
+      }
+      try {
+        await this.cleanup();
+      } catch (error) {
+        stopError ??= error;
+      }
       this.state = "stopped";
+      if (stopError) throw stopError;
       return this.snapshot();
     }
     const timeoutMs = input.operation === "wait" ? input.timeoutMs + 1_000 : undefined;

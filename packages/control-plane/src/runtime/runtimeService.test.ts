@@ -109,3 +109,26 @@ it("reconciles an unexpected owned-process exit exactly once", async () => {
   await service.close();
   expect(cleanupCalls).toBe(1);
 });
+
+it("cleans the owned process when cooperative stop fails", async () => {
+  let stopped = false;
+  const service = new RuntimeService({
+    project,
+    sessionId: () => "session_12345678",
+    createDescriptor: async (input) => ({
+      path: "/private/runtime/descriptor.json",
+      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001 },
+      secret: Buffer.alloc(32), cleanup: async () => undefined,
+    }),
+    prepare: async () => ({ debugPort: 6007 }),
+    launchProcess: async () => ({ pid: 42, fingerprint: "42:start", stop: async () => { stopped = true; }, wait: async () => new Promise<number>(() => undefined) }),
+    command: async (operation) => {
+      if (operation === "await_ready") return { pid: 42 };
+      throw new Error("cooperative stop failed");
+    },
+  });
+  const launched = await service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 });
+  await expect(service.execute({ operation: "stop", handle: launched.handle })).rejects.toThrow("cooperative stop failed");
+  expect(stopped).toBe(true);
+  expect(service.snapshot().state).toBe("stopped");
+});

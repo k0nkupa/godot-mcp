@@ -76,10 +76,12 @@ test("launches, inspects, controls, and cleans one authenticated runtime", async
         expect(tree.nodes.map((node) => node.nodePath)).toEqual([".", "Backdrop", "Accent", "Status", "Nested", "Nested/Marker"]);
         const node = await runtime.execute({ operation: "node", handle: launched.handle, nodePath: ".", includeProperties: true, includeSignals: true }) as { properties: Array<{ name: string; value: unknown }>; signals: unknown[] };
         expect(node.properties).toEqual(expect.arrayContaining([expect.objectContaining({ name: "fixture_name", value: "phase-3-runtime" })]));
+        expect(node.properties).toEqual(expect.arrayContaining([expect.objectContaining({ name: "ready_current_scene_matches", value: true })]));
         expect(JSON.stringify(node.signals)).toContain("milestone");
         const logs = await runtime.execute({ operation: "logs", handle: launched.handle, afterSequence: 0, levels: ["log"], limit: 20 }) as { records: Array<{ message: string }> };
         expect(logs.records.map((record) => record.message).join("\n")).toContain("phase-3 runtime ready");
         await expect(runtime.execute({ operation: "wait", handle: launched.handle, timeoutMs: 5_000, condition: { type: "property_equals", nodePath: ".", property: "phase", value: "ready" } })).resolves.toMatchObject({ satisfied: true });
+        await expect(runtime.execute({ operation: "wait", handle: launched.handle, timeoutMs: 1_000, condition: { type: "property_equals", nodePath: ".", property: "missing_property", value: null } })).rejects.toMatchObject({ code: "TARGET_NOT_FOUND" });
         await expect(runtime.execute({ operation: "wait", handle: launched.handle, timeoutMs: 5_000, condition: { type: "signal_emitted", nodePath: ".", signal: "milestone" } })).resolves.toMatchObject({ satisfied: true });
         const captured = await runtime.capture({ handle: launched.handle, maxWidth: 640, maxHeight: 360, frameCount: 2, intervalFrames: 2, advancePaused: false });
         expect(captured.frames).toHaveLength(2);

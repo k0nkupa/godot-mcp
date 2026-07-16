@@ -6,8 +6,10 @@ signal milestone(value: int)
 @export var frame_counter := 0
 @export var physics_counter := 0
 @export var phase := "starting"
+@export var ready_current_scene_matches := false
 
 func _ready() -> void:
+	ready_current_scene_matches = get_tree().current_scene == self
 	add_to_group("runtime_fixture")
 	print("phase-3 runtime ready")
 

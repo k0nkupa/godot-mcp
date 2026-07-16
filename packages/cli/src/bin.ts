@@ -43,6 +43,7 @@ async function main(): Promise<number> {
     await connectProject(
       parsed.values.project,
       parseConnectGrants(parsed.values.grant, parsed.values.pack),
+      parsed.values.godot,
     );
     return 0;
   }

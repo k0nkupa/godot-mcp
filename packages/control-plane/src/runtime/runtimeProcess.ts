@@ -42,8 +42,12 @@ async function processFingerprint(pid: number): Promise<string> {
   return `${pid}:${started}`;
 }
 
+export function childHasExited(child: Pick<ChildProcess, "exitCode" | "signalCode">): boolean {
+  return child.exitCode !== null || child.signalCode !== null;
+}
+
 function waitForExit(child: ChildProcess): Promise<number> {
-  if (child.exitCode !== null) return Promise.resolve(child.exitCode);
+  if (childHasExited(child)) return Promise.resolve(child.exitCode ?? 1);
   return new Promise((resolve, reject) => {
     child.once("error", reject);
     child.once("close", (code) => resolve(code ?? 1));
@@ -98,7 +102,7 @@ export class OwnedGodotProcess implements OwnedRuntimeProcess {
 
   stop(graceMs = 2_000): Promise<void> {
     this.stopPromise ??= (async () => {
-      if (this.child.exitCode !== null) return;
+      if (childHasExited(this.child)) return;
       const current = await processFingerprint(this.pid).catch(() => "");
       if (current !== this.fingerprint) {
         throw new GodotMcpException({
@@ -115,7 +119,7 @@ export class OwnedGodotProcess implements OwnedRuntimeProcess {
         waitForExit(this.child).then(() => true),
         new Promise<boolean>((resolve) => setTimeout(() => resolve(false), graceMs)),
       ]);
-      if (!stopped && this.child.exitCode === null) {
+      if (!stopped && !childHasExited(this.child)) {
         const beforeKill = await processFingerprint(this.pid).catch(() => "");
         if (beforeKill !== this.fingerprint) throw new Error("Owned runtime fingerprint changed before escalation");
         this.child.kill("SIGKILL");

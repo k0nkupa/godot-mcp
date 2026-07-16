@@ -21,12 +21,16 @@ export function parseConnectGrants(grants: readonly string[], packs: readonly st
     : { tiers: ["observe"], packs: ["core"] };
 }
 
-export async function connectProject(project: string, grants: SessionGrants = parseConnectGrants([], [])): Promise<void> {
+export async function connectProject(
+  project: string,
+  grants: SessionGrants = parseConnectGrants([], []),
+  godotBin?: string,
+): Promise<void> {
   const doctor = await runDoctor(project);
   if (!doctor.healthy) {
     throw new Error("Godot MCP installation is unhealthy; run godot-mcp doctor before connect");
   }
-  const runtime = await createRuntime({ project, grants });
+  const runtime = await createRuntime({ project, grants, ...(godotBin === undefined ? {} : { godotBin }) });
   process.stderr.write(
     `Godot MCP waiting for project ${runtime.project.projectId} on loopback port ${runtime.bridge.port}\n`,
   );
