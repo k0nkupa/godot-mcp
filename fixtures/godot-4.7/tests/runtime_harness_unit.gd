@@ -5,6 +5,7 @@ const RuntimeHarness = preload("res://addons/godot_mcp/runtime/runtime_harness.g
 const RuntimeCapture = preload("res://addons/godot_mcp/runtime/runtime_capture.gd")
 const RuntimeControl = preload("res://addons/godot_mcp/runtime/runtime_control.gd")
 const SessionCrypto = preload("res://addons/godot_mcp/bridge/session_crypto.gd")
+const RuntimeQuery = preload("res://addons/godot_mcp/runtime/runtime_query.gd")
 
 func _init() -> void:
 	assert(RuntimeHarness.descriptor_argument(PackedStringArray(["--other=x", "--godot-mcp-runtime-descriptor=/tmp/godot-mcp/runtime-a.json"])) == "/tmp/godot-mcp/runtime-a.json")
@@ -30,9 +31,22 @@ func _init() -> void:
 	assert(not RuntimeCapture.source_dimensions_allowed(4096, 4097))
 	assert(RuntimeControl.safe_property_pattern("^ready.*$"))
 	assert(not RuntimeControl.safe_property_pattern("(a+)+$"))
+	assert(not RuntimeControl.bounded_primitive_subject(["large", "container"]).valid)
+	assert(String(RuntimeControl.bounded_primitive_subject("x".repeat(5000)).subject).length() == 4096)
 	await process_frame
 	var runtime_root := Node.new()
 	root.add_child(runtime_root)
+	for index in 100:
+		var child := Node.new()
+		child.name = "Child%d" % index
+		runtime_root.add_child(child)
+	for index in 40:
+		runtime_root.add_to_group("group_%02d_%s" % [index, "x".repeat(140)])
+	var bounded_tree: Dictionary = RuntimeQuery.new(runtime_root, null).execute("tree", {"root": ".", "maxDepth": 4, "maxNodes": 1})
+	assert(bounded_tree.ok and bounded_tree.data.nodes.size() == 1 and bounded_tree.data.truncated)
+	var bounded_node: Dictionary = RuntimeQuery.new(runtime_root, null).execute("node", {"nodePath": ".", "includeProperties": false, "includeSignals": false})
+	assert(bounded_node.ok and bounded_node.data.groups.size() == 32 and bounded_node.data.groupsTruncated)
+	assert(String(bounded_node.data.groups[0]).length() <= 128)
 	paused = true
 	var expired_step: Dictionary = await RuntimeControl.new(runtime_root, null, null).execute("step", {"frames": 1}, 1)
 	assert(expired_step.get("code") == "TIMEOUT")

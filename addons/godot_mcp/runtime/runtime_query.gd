@@ -5,6 +5,8 @@ const VariantEncoder = preload("res://addons/godot_mcp/observation/variant_encod
 const MAX_JSON_BYTES := 512 * 1024
 const MAX_PROPERTIES := 128
 const MAX_SIGNALS := 128
+const MAX_GROUPS := 32
+const MAX_GROUP_NAME_CHARS := 128
 
 var _root: Node
 var _logger: Logger
@@ -57,7 +59,12 @@ func _tree(arguments: Dictionary) -> Dictionary:
 		if depth >= max_depth:
 			truncated = truncated or node.get_child_count() > 0
 			continue
-		for index in range(node.get_child_count() - 1, -1, -1):
+		var child_count := node.get_child_count()
+		var available_slots := maxi(0, max_nodes - nodes.size() - stack.size())
+		var scheduled_children := mini(child_count, available_slots)
+		if scheduled_children < child_count:
+			truncated = true
+		for index in range(scheduled_children - 1, -1, -1):
 			stack.append({"node": node.get_child(index), "depth": depth + 1})
 	return {"nodes": nodes, "truncated": truncated}
 
@@ -94,14 +101,26 @@ func _logs(arguments: Dictionary) -> Dictionary:
 
 func _summary(node: Node) -> Dictionary:
 	var script: Script = node.get_script()
-	return {
+	var group_data := bounded_groups(node)
+	var summary := {
 		"nodePath": String(_root.get_path_to(node)),
 		"name": String(node.name),
 		"className": node.get_class(),
 		"childCount": node.get_child_count(),
-		"groups": Array(node.get_groups()),
+		"groups": group_data.groups,
 		"script": null if script == null else {"className": script.get_class(), "path": script.resource_path},
 	}
+	if bool(group_data.truncated):
+		summary.groupsTruncated = true
+	return summary
+
+static func bounded_groups(node: Node) -> Dictionary:
+	var source := node.get_groups()
+	var groups: Array[String] = []
+	var count := mini(source.size(), MAX_GROUPS)
+	for index in count:
+		groups.append(String(source[index]).left(MAX_GROUP_NAME_CHARS))
+	return {"groups": groups, "truncated": source.size() > MAX_GROUPS}
 
 static func valid_node_path(path: String) -> bool:
 	return not path.is_empty() and not path.begins_with("/") and ":" not in path and ".." not in path.split("/")

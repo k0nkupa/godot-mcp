@@ -80,6 +80,8 @@ func _wait(condition: Variant, deadline_unix_ms: int) -> Dictionary:
 		var observed := _condition_state(condition, started_process_frame, property_regex)
 		if bool(observed.get("targetMissing", false)):
 			return _error("TARGET_NOT_FOUND", "Runtime wait property was not found")
+		if bool(observed.get("invalidValue", false)):
+			return _error("INVALID_REQUEST", "Runtime property pattern requires a primitive value")
 		if bool(observed.get("satisfied", false)):
 			return {"ok": true, "data": observed}
 		await tree.process_frame
@@ -140,8 +142,10 @@ func _condition_state(condition: Dictionary, started_process_frame: int, propert
 			var property := String(condition.get("property", ""))
 			if node == null or not _has_property(node, property):
 				return {"satisfied": false, "targetMissing": true}
-			var subject := str(node.get(property)).left(4096)
-			return {"satisfied": property_regex != null and property_regex.search(subject) != null}
+			var bounded := bounded_primitive_subject(node.get(property))
+			if not bool(bounded.valid):
+				return {"satisfied": false, "invalidValue": true}
+			return {"satisfied": property_regex != null and property_regex.search(String(bounded.subject)) != null}
 		"log_matches":
 			var levels: Array = [String(condition.level)] if condition.has("level") else ["log", "warning", "error", "script", "shader"]
 			var records: Array[Dictionary] = _logger.read_after(0, levels, 500)
@@ -175,6 +179,11 @@ static func safe_property_pattern(pattern: String) -> bool:
 		if forbidden in pattern:
 			return false
 	return pattern.count("*") <= 1 and "**" not in pattern and "*?" not in pattern and "?*" not in pattern
+
+static func bounded_primitive_subject(value: Variant) -> Dictionary:
+	if typeof(value) not in [TYPE_NIL, TYPE_BOOL, TYPE_INT, TYPE_FLOAT, TYPE_STRING, TYPE_STRING_NAME]:
+		return {"valid": false, "subject": ""}
+	return {"valid": true, "subject": String(value).left(4096)}
 
 static func _error(code: String, message: String, retryable := false) -> Dictionary:
 	return {"ok": false, "code": code, "message": message, "retryable": retryable}
