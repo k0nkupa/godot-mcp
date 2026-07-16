@@ -231,6 +231,9 @@ func _execute_operation(operation: String, arguments: Dictionary, deadline_unix_
 func _cooperative_stop() -> void:
 	_release_runtime_input("runtime_stop")
 	EngineDebugger.send_message("godot_mcp_runtime:stopped", [{"runId": String(_descriptor.runId)}])
+	# Let both the command result and stopped notification reach the editor before
+	# terminating the debugger transport.
+	await get_tree().process_frame
 	get_tree().quit(0)
 
 func _release_runtime_input(reason: String) -> void:
