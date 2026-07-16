@@ -36,6 +36,17 @@ describe("Phase 4 input schemas", () => {
     })).toMatchObject({ viewportPath: ".", coordinateSpace: "viewport" });
   });
 
+  it("accepts normalized millionths independently from pixel bounds", () => {
+    expect(InputEventSchema.parse({
+      type: "touch",
+      index: 0,
+      pressed: true,
+      position: { x: 250_000, y: 750_000 },
+      coordinateSpace: "normalized",
+    })).toMatchObject({ position: { x: 250_000, y: 750_000 }, coordinateSpace: "normalized" });
+    expect(() => InputEventSchema.parse({ type: "touch", index: 0, pressed: true, position: { x: 8_193, y: 0 } })).toThrow();
+  });
+
   it("accepts simultaneous events and deterministic replay", () => {
     const events = [
       { frameOffset: 0, event: { type: "touch", index: 0, position: point, pressed: true } },

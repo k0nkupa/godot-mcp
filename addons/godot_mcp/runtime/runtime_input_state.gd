@@ -13,7 +13,9 @@ func observe(spec: Dictionary) -> void:
 		"action": _set_or_erase(_actions, String(spec.get("action", "")), spec, bool(spec.get("pressed", false)))
 		"key": _set_or_erase(_keys, "%s:%s" % [spec.get("keycode", 0), spec.get("physicalKeycode", 0)], spec, bool(spec.get("pressed", false)))
 		"mouse_button": _set_or_erase(_mouse_buttons, "%s:%s" % [spec.get("viewportPath", "."), spec.get("buttonIndex", 0)], spec, bool(spec.get("pressed", false)))
+		"mouse_motion": _update_mouse_positions(spec)
 		"touch": _set_or_erase(_touches, str(spec.get("index", -1)), spec, bool(spec.get("pressed", false)))
+		"touch_drag": _update_touch_position(spec)
 		"joypad_button": _set_or_erase(_joy_buttons, "%s:%s" % [spec.get("device", 0), spec.get("buttonIndex", 0)], spec, bool(spec.get("pressed", false)))
 		"joypad_motion": _set_or_erase(_joy_axes, "%s:%s" % [spec.get("device", 0), spec.get("axis", 0)], spec, int(spec.get("axisValueMillionths", 0)) != 0)
 
@@ -58,3 +60,21 @@ static func _set_or_erase(held: Dictionary, key: String, spec: Dictionary, activ
 		held[key] = spec.duplicate(true)
 	else:
 		held.erase(key)
+
+func _update_mouse_positions(spec: Dictionary) -> void:
+	for key: Variant in _mouse_buttons.keys():
+		var held: Dictionary = _mouse_buttons[key]
+		if String(held.get("viewportPath", ".")) != String(spec.get("viewportPath", ".")):
+			continue
+		held.position = spec.position.duplicate(true)
+		held.coordinateSpace = String(spec.coordinateSpace)
+		_mouse_buttons[key] = held
+
+func _update_touch_position(spec: Dictionary) -> void:
+	var key := str(spec.get("index", -1))
+	if not _touches.has(key): return
+	var held: Dictionary = _touches[key]
+	held.position = spec.position.duplicate(true)
+	held.viewportPath = String(spec.viewportPath)
+	held.coordinateSpace = String(spec.coordinateSpace)
+	_touches[key] = held

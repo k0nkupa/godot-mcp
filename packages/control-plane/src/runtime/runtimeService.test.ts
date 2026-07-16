@@ -425,6 +425,7 @@ it("serializes bounded input with runtime operations and rejects stale receipts"
   const inputEntered = new Promise<void>((resolve) => { inputStarted = resolve; });
   const calls: Array<{ operation: string; timeoutMs?: number }> = [];
   let corruptReceipt = false;
+  let corruptRecordStop = false;
   const service = new RuntimeService({
     project,
     sessionId: () => "session_12345678",
@@ -442,6 +443,23 @@ it("serializes bounded input with runtime operations and rejects stale receipts"
         inputStarted?.();
         await inputBlocked;
         const operationInput = (input as { input: ReturnType<typeof InputOperationInputSchema.parse> }).input;
+        if (operationInput.operation === "record_stop") {
+          const trace = { schemaVersion: 1 as const, events: [{ frameOffset: 0, event: { type: "action" as const, action: "jump", pressed: true, strengthMillionths: 1_000_000 } }] };
+          return {
+            receipt: {
+              handle: operationInput.handle,
+              operation: "record_stop",
+              eventCount: 1,
+              deliveredCount: 1,
+              deterministic: false,
+              events: [{ index: 0, kind: "action", scheduledFrame: 0, deliveredFrame: 0 }],
+              releases: [],
+              traceSha256: corruptRecordStop ? "f".repeat(64) : traceSha256(trace),
+              recording: false,
+            },
+            trace,
+          };
+        }
         const events = operationInput.operation === "sequence" ? operationInput.events : [];
         return {
           receipt: {
@@ -484,5 +502,9 @@ it("serializes bounded input with runtime operations and rejects stale receipts"
   corruptReceipt = true;
   const realtimeInput = InputOperationInputSchema.parse({ ...input, mode: "realtime" });
   await expect(service.input(realtimeInput)).rejects.toMatchObject({ code: "GODOT_RUNTIME_ERROR" });
+  corruptReceipt = false;
+  await expect(service.input({ operation: "record_stop", handle: launched.handle })).resolves.toMatchObject({ trace: { events: [{ event: { type: "action" } }] } });
+  corruptRecordStop = true;
+  await expect(service.input({ operation: "record_stop", handle: launched.handle })).rejects.toMatchObject({ code: "GODOT_RUNTIME_ERROR" });
   await service.close();
 });

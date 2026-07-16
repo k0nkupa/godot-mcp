@@ -29,10 +29,15 @@ func execute(input: Variant, deadline_unix_ms: int) -> Dictionary:
 			var trace: Variant = input.get("trace", null)
 			if typeof(trace) != TYPE_DICTIONARY or int(trace.get("schemaVersion", 0)) != 1:
 				return _error("INVALID_REQUEST", "Input replay trace is invalid")
-			return await _execute_events(input, trace.get("events", null), true, deadline_unix_ms)
+			return await _execute_events(input, trace.get("events", null), true, deadline_unix_ms, true)
 		_: return _error("INVALID_REQUEST", "Input operation is not allowed")
 
 func release_all(_reason: String) -> Dictionary:
+	var released := _release_held_state()
+	_trace.clear()
+	return released
+
+func _release_held_state() -> Dictionary:
 	var released_kinds: Array[String] = []
 	for spec: Dictionary in _state.release_specs():
 		var delivered := _deliver_spec(spec)
@@ -41,7 +46,6 @@ func release_all(_reason: String) -> Dictionary:
 		var kind := String(spec.type)
 		if kind not in released_kinds:
 			released_kinds.append(kind)
-	_trace.clear()
 	return {"ok": true, "releases": released_kinds}
 
 func _record_start(input: Dictionary) -> Dictionary:
@@ -67,10 +71,10 @@ func _record_stop(input: Dictionary) -> Dictionary:
 		"trace": trace,
 	}}
 
-func _execute_events(input: Dictionary, value: Variant, deterministic: bool, deadline_unix_ms: int) -> Dictionary:
+func _execute_events(input: Dictionary, value: Variant, deterministic: bool, deadline_unix_ms: int, allow_empty := false) -> Dictionary:
 	var handle := _handle(input)
 	if not handle.ok: return handle
-	if typeof(value) != TYPE_ARRAY or value.is_empty() or value.size() > 256:
+	if typeof(value) != TYPE_ARRAY or (value.is_empty() and not allow_empty) or value.size() > 256:
 		return _error("INVALID_REQUEST", "Input sequence size is invalid")
 	var tree := _root.get_tree() if is_instance_valid(_root) else null
 	if tree == null: return _error("TARGET_NOT_FOUND", "Runtime scene changed", true)
@@ -80,6 +84,9 @@ func _execute_events(input: Dictionary, value: Variant, deterministic: bool, dea
 		return _error("PRECONDITION_FAILED", "Realtime input requires a running runtime")
 	if not _trace.can_append(value.size()):
 		return _error("PAYLOAD_TOO_LARGE", "Input recording would exceed 256 events")
+	if value.is_empty():
+		var empty_trace := {"schemaVersion": 1, "events": []}
+		return {"ok": true, "data": {"receipt": _receipt(handle.value, String(input.operation), [], deterministic, _trace.is_active(), [], empty_trace)}}
 	var previous_offset := 0
 	for index in value.size():
 		var item: Variant = value[index]
@@ -96,7 +103,7 @@ func _execute_events(input: Dictionary, value: Variant, deterministic: bool, dea
 	var current_offset := 0
 	for index in value.size():
 		if _now_ms() >= deadline_unix_ms:
-			release_all("timeout")
+			_release_held_state()
 			return _error("TIMEOUT", "Input sequence deadline expired", true)
 		var item: Dictionary = value[index]
 		var target_offset := int(item.frameOffset)
@@ -104,22 +111,22 @@ func _execute_events(input: Dictionary, value: Variant, deterministic: bool, dea
 		if delta > 0:
 			var advanced := await _advance(delta, deterministic, deadline_unix_ms)
 			if not advanced.ok:
-				release_all("advance_failed")
+				_release_held_state()
 				return advanced
 			current_offset = target_offset
 		var delivered := _deliver_spec(item.event, not deterministic)
 		if not delivered.ok:
-			release_all("delivery_failed")
+			_release_held_state()
 			return delivered
 		var recorded := _trace.append(item.event, Engine.get_process_frames())
 		if not recorded.ok:
-			release_all("recording_failed")
+			_release_held_state()
 			return recorded
 		receipts.append(_event_receipt(index, item.event, target_offset, current_offset))
 	if deterministic:
 		var final_advance := await _advance(1, true, deadline_unix_ms)
 		if not final_advance.ok:
-			release_all("final_advance_failed")
+			_release_held_state()
 			return final_advance
 	var trace := {"schemaVersion": 1, "events": value.duplicate(true)}
 	return {"ok": true, "data": {"receipt": _receipt(handle.value, String(input.operation), receipts, deterministic, _trace.is_active(), [], trace)}}

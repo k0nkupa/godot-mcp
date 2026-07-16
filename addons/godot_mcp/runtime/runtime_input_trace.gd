@@ -25,6 +25,8 @@ func append(spec: Dictionary, delivered_process_frame: int) -> Dictionary:
 		return _error("PAYLOAD_TOO_LARGE", "Input recording reached 256 events")
 	if _first_delivered_process_frame < 0:
 		_first_delivered_process_frame = delivered_process_frame
+	if delivered_process_frame - _first_delivered_process_frame > 1800:
+		return _error("PAYLOAD_TOO_LARGE", "Input recording exceeded 1800 frames")
 	_events.append({
 		"frameOffset": maxi(0, delivered_process_frame - _first_delivered_process_frame),
 		"event": spec.duplicate(true),

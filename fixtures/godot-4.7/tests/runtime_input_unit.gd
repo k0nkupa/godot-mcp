@@ -96,11 +96,16 @@ func _init() -> void:
 	state.observe({"type": "action", "action": "phase_4_accept", "pressed": true, "strengthMillionths": 1000000})
 	state.observe({"type": "key", "keycode": 65, "physicalKeycode": 0, "unicode": 0, "pressed": true, "echo": false, "modifiers": {"alt": false, "ctrl": false, "meta": false, "shift": false}})
 	state.observe({"type": "touch", "position": {"x": 10, "y": 20}, "viewportPath": ".", "coordinateSpace": "viewport", "index": 2, "pressed": true, "canceled": false, "doubleTap": false})
+	state.observe({"type": "touch_drag", "position": {"x": 30, "y": 40}, "viewportPath": ".", "coordinateSpace": "viewport", "index": 2, "relative": {"x": 20, "y": 20}, "velocity": {"x": 0, "y": 0}, "pressureMillionths": 0, "tiltMillionths": {"x": 0, "y": 0}})
+	state.observe({"type": "mouse_button", "position": {"x": 10, "y": 20}, "viewportPath": ".", "coordinateSpace": "viewport", "buttonIndex": 1, "pressed": true, "doubleClick": false, "factorMillionths": 1000000, "modifiers": {"alt": false, "ctrl": false, "meta": false, "shift": false}})
+	state.observe({"type": "mouse_motion", "position": {"x": 50, "y": 60}, "viewportPath": ".", "coordinateSpace": "viewport", "relative": {"x": 40, "y": 40}, "velocity": {"x": 0, "y": 0}, "pressureMillionths": 0, "tiltMillionths": {"x": 0, "y": 0}, "modifiers": {"alt": false, "ctrl": false, "meta": false, "shift": false}})
 	state.observe({"type": "joypad_motion", "device": 0, "axis": 1, "axisValueMillionths": -500000})
 	var releases: Array[Dictionary] = state.release_specs()
-	assert(releases.size() == 4)
+	assert(releases.size() == 5)
 	assert(releases.any(func(spec: Dictionary) -> bool: return spec.type == "action" and not spec.pressed and spec.strengthMillionths == 0))
 	assert(releases.any(func(spec: Dictionary) -> bool: return spec.type == "joypad_motion" and spec.axisValueMillionths == 0))
+	assert(releases.any(func(spec: Dictionary) -> bool: return spec.type == "touch" and spec.position == {"x": 30, "y": 40}))
+	assert(releases.any(func(spec: Dictionary) -> bool: return spec.type == "mouse_button" and spec.position == {"x": 50, "y": 60}))
 	assert(state.release_specs().is_empty())
 
 	var trace := RuntimeInputTrace.new()
@@ -112,6 +117,10 @@ func _init() -> void:
 	var stopped_trace: Dictionary = trace.stop()
 	assert(stopped_trace.ok and stopped_trace.trace.events.size() == 256 and not trace.is_active())
 	assert(stopped_trace.trace.events[0].frameOffset == 0 and stopped_trace.trace.events[255].frameOffset == 255)
+	assert(trace.start(0).ok)
+	assert(trace.append({"type": "action", "action": "phase_4_accept", "pressed": true, "strengthMillionths": 1000000}, 100).ok)
+	assert(trace.append({"type": "action", "action": "phase_4_accept", "pressed": false, "strengthMillionths": 0}, 1901).code == "PAYLOAD_TOO_LARGE")
+	assert(trace.stop().trace.events.size() == 1)
 
 	var runtime_input := RuntimeInput.new(game_root, UnitFrameClock.new(game_root))
 	var handle := {"runId": "019f644c-1379-79c0-825e-66a4b7653bd1", "generation": 1}
@@ -122,14 +131,25 @@ func _init() -> void:
 		"event": {"type": "action", "action": "phase_4_accept", "pressed": true, "strengthMillionths": 1000000},
 	}, _now_ms() + 5000)
 	assert(sent.ok and sent.data.receipt.eventCount == 1 and Input.is_action_pressed("phase_4_accept"))
+	var rejected_while_recording: Dictionary = await runtime_input.execute({
+		"operation": "send", "handle": handle,
+		"event": {"type": "action", "action": "missing_action", "pressed": true, "strengthMillionths": 1000000},
+	}, _now_ms() + 5000)
+	assert(rejected_while_recording.code == "TARGET_NOT_FOUND")
+	assert(not Input.is_action_pressed("phase_4_accept"))
 	var recording_stopped: Dictionary = await runtime_input.execute({"operation": "record_stop", "handle": handle}, _now_ms() + 5000)
 	assert(recording_stopped.ok and recording_stopped.data.trace.events.size() == 1)
 	assert(recording_stopped.data.receipt.traceSha256 == RuntimeInput.trace_sha256(recording_stopped.data.trace))
 	var released: Dictionary = runtime_input.release_all("unit")
-	assert(released.ok and released.releases == ["action"] and not Input.is_action_pressed("phase_4_accept"))
+	assert(released.ok and released.releases.is_empty())
 	assert(runtime_input.release_all("again").releases.is_empty())
 
 	paused = true
+	var empty_replay: Dictionary = await runtime_input.execute({
+		"operation": "replay", "handle": handle, "mode": "deterministic", "timeoutMs": 5000,
+		"trace": {"schemaVersion": 1, "events": []},
+	}, _now_ms() + 5000)
+	assert(empty_replay.ok and empty_replay.data.receipt.eventCount == 0 and empty_replay.data.receipt.deterministic)
 	var before_frames := Engine.get_process_frames()
 	var deterministic: Dictionary = await runtime_input.execute({
 		"operation": "sequence", "handle": handle, "mode": "deterministic", "timeoutMs": 5000,

@@ -252,17 +252,27 @@ export class RuntimeService {
       result.receipt.handle.generation !== input.handle.generation ||
       result.receipt.operation !== input.operation
     ) throw runtimeError("GODOT_RUNTIME_ERROR", "Runtime input receipt identity does not match the request");
-    if (input.operation !== "record_stop") {
-      const events = inputTraceEvents(input);
-      const expectedDeterministic = input.operation === "replay" || (input.operation === "sequence" && input.mode === "deterministic");
-      if (
-        result.receipt.eventCount !== events.length ||
-        result.receipt.deliveredCount !== events.length ||
-        result.receipt.events.length !== events.length ||
-        result.receipt.deterministic !== expectedDeterministic ||
-        result.receipt.traceSha256 !== traceSha256({ schemaVersion: 1, events })
-      ) throw runtimeError("GODOT_RUNTIME_ERROR", "Runtime input receipt does not match the requested trace");
-    }
+    const events = input.operation === "record_stop" ? result.trace!.events : inputTraceEvents(input);
+    const expectedDeterministic = input.operation === "replay" || (input.operation === "sequence" && input.mode === "deterministic");
+    const recordingMismatch = input.operation === "record_start"
+      ? !result.receipt.recording
+      : input.operation === "record_stop" && result.receipt.recording;
+    const eventReceiptsMatch = result.receipt.events.every((eventReceipt, index) => {
+      const event = events[index];
+      return event !== undefined &&
+        eventReceipt.index === index &&
+        eventReceipt.kind === event.event.type &&
+        eventReceipt.scheduledFrame === event.frameOffset;
+    });
+    if (
+      result.receipt.eventCount !== events.length ||
+      result.receipt.deliveredCount !== events.length ||
+      result.receipt.events.length !== events.length ||
+      result.receipt.deterministic !== expectedDeterministic ||
+      recordingMismatch ||
+      result.receipt.traceSha256 !== traceSha256({ schemaVersion: 1, events }) ||
+      !eventReceiptsMatch
+    ) throw runtimeError("GODOT_RUNTIME_ERROR", "Runtime input receipt does not match the requested trace");
     return result;
   }
 

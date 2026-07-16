@@ -16,6 +16,11 @@ const NormalizedVectorSchema = z.object({
   y: z.number().int().min(0).max(ONE_MILLION),
 }).strict();
 
+const PositionedVectorSchema = z.object({
+  x: z.number().int().min(-MAX_COORDINATE).max(ONE_MILLION),
+  y: z.number().int().min(-MAX_COORDINATE).max(ONE_MILLION),
+}).strict();
+
 const DeltaVectorSchema = z.object({
   x: z.number().int().min(-100).max(100),
   y: z.number().int().min(-100).max(100),
@@ -42,7 +47,7 @@ const ModifiersSchema = z.object({
 }).strict().default({ alt: false, ctrl: false, meta: false, shift: false });
 
 const positionedFields = {
-  position: BoundedVectorSchema,
+  position: PositionedVectorSchema,
   viewportPath: ViewportPathSchema.default("."),
   coordinateSpace: z.enum(["viewport", "normalized", "embedder"]).default("viewport"),
 };
@@ -158,10 +163,16 @@ export const InputEventSchema = z.discriminatedUnion("type", [
   JoypadButtonEventSchema,
   JoypadMotionEventSchema,
 ]).superRefine((event, context) => {
-  if (!("position" in event) || event.coordinateSpace !== "normalized") return;
-  const parsed = NormalizedVectorSchema.safeParse(event.position);
+  if (!("position" in event)) return;
+  const parsed = (event.coordinateSpace === "normalized" ? NormalizedVectorSchema : BoundedVectorSchema).safeParse(event.position);
   if (!parsed.success) {
-    context.addIssue({ code: "custom", message: "Normalized coordinates must be integer millionths between zero and one million", path: ["position"] });
+    context.addIssue({
+      code: "custom",
+      message: event.coordinateSpace === "normalized"
+        ? "Normalized coordinates must be integer millionths between zero and one million"
+        : "Viewport coordinates must be bounded pixels",
+      path: ["position"],
+    });
   }
 });
 
