@@ -7,7 +7,7 @@ import { startBridgeServer, type BridgeSession } from "@godot-mcp/bridge-client"
 import { initProject } from "@godot-mcp/cli";
 import { JsonlAuditSink, readProjectIdentity } from "@godot-mcp/control-plane";
 import type { EditorMutationResult, EditorMutationStep } from "@godot-mcp/protocol";
-import { copyFixture, findGodotBinary, runGodot } from "@godot-mcp/testkit";
+import { copyFixture, findGodotBinary, runGodot, waitUntil } from "@godot-mcp/testkit";
 import { expect, test } from "vitest";
 
 const scene = "res://mutation/editor_mutation.tscn";
@@ -45,6 +45,10 @@ test("applies, persists, undoes, and redoes one authenticated editor mutation ac
       editor.stdout?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
       editor.stderr?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
       session = await server.waitForAttachment(15_000);
+	  await waitUntil(async () => {
+		const state = await session?.request<{ editedScene?: string }>("editor.query", { operation: "editor_state" });
+		return state?.data.editedScene === scene;
+	  }, 10_000, 100);
       await project.snapshot();
       const scenePath = join(project.root, "mutation/editor_mutation.tscn");
       const initial = await readFile(scenePath);
