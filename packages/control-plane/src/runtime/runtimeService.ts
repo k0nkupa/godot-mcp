@@ -1,12 +1,15 @@
 import { randomUUID } from "node:crypto";
 
 import type {
+  InputOperationInput,
+  InputOperationResult,
   ProjectIdentity,
   RuntimeCaptureFrameMetadata,
   RuntimeCaptureInput,
   RuntimeHandle,
   RuntimeOperationInput,
 } from "@godot-mcp/protocol";
+import { InputOperationResultSchema } from "@godot-mcp/protocol";
 
 import { GodotMcpException } from "../errors.js";
 import {
@@ -19,6 +22,7 @@ import {
   OwnedGodotProcess,
   type OwnedRuntimeProcess,
 } from "./runtimeProcess.js";
+import { inputTraceEvents, traceSha256 } from "./inputReceipt.js";
 
 export type RuntimeState = "idle" | "preparing" | "launching" | "authenticating" | "running" | "paused" | "stopping" | "stopped" | "failed";
 
@@ -55,7 +59,7 @@ export interface RuntimeSnapshot {
 
 type LaunchInput = Extract<RuntimeOperationInput, { operation: "launch" }>;
 
-function runtimeError(code: "NOT_ATTACHED" | "AUTHENTICATION_FAILED" | "CONFLICT" | "STALE_HANDLE" | "GODOT_RUNTIME_ERROR", message: string, retryable = false): GodotMcpException {
+function runtimeError(code: "NOT_ATTACHED" | "AUTHENTICATION_FAILED" | "CONFLICT" | "STALE_HANDLE" | "PRECONDITION_FAILED" | "GODOT_RUNTIME_ERROR", message: string, retryable = false): GodotMcpException {
   return new GodotMcpException({
     code,
     message,
@@ -224,6 +228,42 @@ export class RuntimeService {
     frames: Array<{ data: Uint8Array; metadata: RuntimeCaptureFrameMetadata }>;
   }> {
     return this.runExclusive(() => this.captureExclusive(input));
+  }
+
+  input(input: InputOperationInput): Promise<InputOperationResult> {
+    return this.runExclusive(() => this.inputExclusive(input));
+  }
+
+  private async inputExclusive(input: InputOperationInput): Promise<InputOperationResult> {
+    this.assertHandle(input.handle);
+    if ((input.operation === "replay" || (input.operation === "sequence" && input.mode === "deterministic")) && this.state !== "paused") {
+      throw runtimeError("PRECONDITION_FAILED", "Deterministic input requires a paused runtime");
+    }
+    if (input.operation === "sequence" && input.mode === "realtime" && this.state !== "running") {
+      throw runtimeError("PRECONDITION_FAILED", "Realtime input requires a running runtime");
+    }
+    const timeoutMs = input.operation === "sequence" || input.operation === "replay"
+      ? input.timeoutMs + 1_000
+      : undefined;
+    const raw = await this.dependencies.command("input", { handle: input.handle, input }, timeoutMs);
+    const result = InputOperationResultSchema.parse(raw);
+    if (
+      result.receipt.handle.runId !== input.handle.runId ||
+      result.receipt.handle.generation !== input.handle.generation ||
+      result.receipt.operation !== input.operation
+    ) throw runtimeError("GODOT_RUNTIME_ERROR", "Runtime input receipt identity does not match the request");
+    if (input.operation !== "record_stop") {
+      const events = inputTraceEvents(input);
+      const expectedDeterministic = input.operation === "replay" || (input.operation === "sequence" && input.mode === "deterministic");
+      if (
+        result.receipt.eventCount !== events.length ||
+        result.receipt.deliveredCount !== events.length ||
+        result.receipt.events.length !== events.length ||
+        result.receipt.deterministic !== expectedDeterministic ||
+        result.receipt.traceSha256 !== traceSha256({ schemaVersion: 1, events })
+      ) throw runtimeError("GODOT_RUNTIME_ERROR", "Runtime input receipt does not match the requested trace");
+    }
+    return result;
   }
 
   private async captureExclusive(input: RuntimeCaptureInput): Promise<{

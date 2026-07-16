@@ -4,20 +4,21 @@ import { RuntimeHandleSchema } from "./runtime.js";
 
 const MAX_COORDINATE = 8_192;
 const MAX_TRACE_BYTES = 256 * 1024;
+const ONE_MILLION = 1_000_000;
 
 const BoundedVectorSchema = z.object({
-  x: z.number().finite().min(-MAX_COORDINATE).max(MAX_COORDINATE),
-  y: z.number().finite().min(-MAX_COORDINATE).max(MAX_COORDINATE),
+  x: z.number().int().min(-MAX_COORDINATE).max(MAX_COORDINATE),
+  y: z.number().int().min(-MAX_COORDINATE).max(MAX_COORDINATE),
 }).strict();
 
 const NormalizedVectorSchema = z.object({
-  x: z.number().finite().min(0).max(1),
-  y: z.number().finite().min(0).max(1),
+  x: z.number().int().min(0).max(ONE_MILLION),
+  y: z.number().int().min(0).max(ONE_MILLION),
 }).strict();
 
 const DeltaVectorSchema = z.object({
-  x: z.number().finite().min(-100).max(100),
-  y: z.number().finite().min(-100).max(100),
+  x: z.number().int().min(-100).max(100),
+  y: z.number().int().min(-100).max(100),
 }).strict();
 
 const ViewportPathSchema = z
@@ -50,7 +51,7 @@ const ActionEventSchema = z.object({
   type: z.literal("action"),
   action: z.string().min(1).max(128).refine((value) => !value.includes("\0")),
   pressed: z.boolean(),
-  strength: z.number().finite().min(0).max(1).default(1),
+  strengthMillionths: z.number().int().min(0).max(ONE_MILLION).default(ONE_MILLION),
 }).strict();
 
 const KeyEventSchema = z.object({
@@ -69,7 +70,7 @@ const MouseButtonEventSchema = z.object({
   buttonIndex: z.number().int().min(1).max(9),
   pressed: z.boolean(),
   doubleClick: z.boolean().default(false),
-  factor: z.number().finite().min(0).max(100).default(1),
+  factorMillionths: z.number().int().min(0).max(100 * ONE_MILLION).default(ONE_MILLION),
   modifiers: ModifiersSchema,
 }).strict();
 
@@ -78,11 +79,11 @@ const MouseMotionEventSchema = z.object({
   ...positionedFields,
   relative: BoundedVectorSchema.default({ x: 0, y: 0 }),
   velocity: BoundedVectorSchema.default({ x: 0, y: 0 }),
-  pressure: z.number().finite().min(0).max(1).default(0),
-  tilt: NormalizedVectorSchema.extend({
-    x: z.number().finite().min(-1).max(1),
-    y: z.number().finite().min(-1).max(1),
-  }).default({ x: 0, y: 0 }),
+  pressureMillionths: z.number().int().min(0).max(ONE_MILLION).default(0),
+  tiltMillionths: z.object({
+    x: z.number().int().min(-ONE_MILLION).max(ONE_MILLION),
+    y: z.number().int().min(-ONE_MILLION).max(ONE_MILLION),
+  }).strict().default({ x: 0, y: 0 }),
   modifiers: ModifiersSchema,
 }).strict();
 
@@ -110,10 +111,10 @@ const TouchDragEventSchema = z.object({
   index: z.number().int().min(0).max(9),
   relative: BoundedVectorSchema.default({ x: 0, y: 0 }),
   velocity: BoundedVectorSchema.default({ x: 0, y: 0 }),
-  pressure: z.number().finite().min(0).max(1).default(0),
-  tilt: z.object({
-    x: z.number().finite().min(-1).max(1),
-    y: z.number().finite().min(-1).max(1),
+  pressureMillionths: z.number().int().min(0).max(ONE_MILLION).default(0),
+  tiltMillionths: z.object({
+    x: z.number().int().min(-ONE_MILLION).max(ONE_MILLION),
+    y: z.number().int().min(-ONE_MILLION).max(ONE_MILLION),
   }).strict().default({ x: 0, y: 0 }),
 }).strict();
 
@@ -126,7 +127,7 @@ const PanGestureEventSchema = z.object({
 const MagnifyGestureEventSchema = z.object({
   type: z.literal("magnify_gesture"),
   ...positionedFields,
-  factor: z.number().finite().min(0.01).max(16),
+  factorMillionths: z.number().int().min(10_000).max(16 * ONE_MILLION),
 }).strict();
 
 const JoypadButtonEventSchema = z.object({
@@ -134,14 +135,14 @@ const JoypadButtonEventSchema = z.object({
   device: z.number().int().min(0).max(7),
   buttonIndex: z.number().int().min(0).max(127),
   pressed: z.boolean(),
-  pressure: z.number().finite().min(0).max(1).default(0),
+  pressureMillionths: z.number().int().min(0).max(ONE_MILLION).default(0),
 }).strict();
 
 const JoypadMotionEventSchema = z.object({
   type: z.literal("joypad_motion"),
   device: z.number().int().min(0).max(7),
   axis: z.number().int().min(0).max(9),
-  axisValue: z.number().finite().min(-1).max(1),
+  axisValueMillionths: z.number().int().min(-ONE_MILLION).max(ONE_MILLION),
 }).strict();
 
 export const InputEventSchema = z.discriminatedUnion("type", [
@@ -160,7 +161,7 @@ export const InputEventSchema = z.discriminatedUnion("type", [
   if (!("position" in event) || event.coordinateSpace !== "normalized") return;
   const parsed = NormalizedVectorSchema.safeParse(event.position);
   if (!parsed.success) {
-    context.addIssue({ code: "custom", message: "Normalized coordinates must be between zero and one", path: ["position"] });
+    context.addIssue({ code: "custom", message: "Normalized coordinates must be integer millionths between zero and one million", path: ["position"] });
   }
 });
 
@@ -169,7 +170,7 @@ export const InputTraceEventSchema = z.object({
   event: InputEventSchema,
 }).strict();
 
-const InputTraceEventsSchema = z.array(InputTraceEventSchema).min(1).max(256).superRefine((events, context) => {
+const InputTraceEventsSchema = z.array(InputTraceEventSchema).max(256).superRefine((events, context) => {
   for (let index = 1; index < events.length; index += 1) {
     if (events[index]!.frameOffset < events[index - 1]!.frameOffset) {
       context.addIssue({ code: "custom", message: "Input trace frame offsets must be nondecreasing", path: [index, "frameOffset"] });
@@ -193,7 +194,7 @@ export const InputOperationInputSchema = z.discriminatedUnion("operation", [
     handle: RuntimeHandleSchema,
     mode: z.enum(["realtime", "deterministic"]).default("realtime"),
     timeoutMs: z.number().int().min(1).max(30_000).default(10_000),
-    events: InputTraceEventsSchema,
+    events: InputTraceEventsSchema.min(1),
   }).strict(),
   z.object({ operation: z.literal("record_start"), handle: RuntimeHandleSchema }).strict(),
   z.object({ operation: z.literal("record_stop"), handle: RuntimeHandleSchema }).strict(),

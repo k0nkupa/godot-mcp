@@ -1,5 +1,8 @@
 import { expect, it } from "vitest";
 
+import { InputOperationInputSchema } from "@godot-mcp/protocol";
+
+import { traceSha256 } from "./inputReceipt.js";
 import { RuntimeService } from "./runtimeService.js";
 
 const project = {
@@ -412,5 +415,74 @@ it("serializes overlapping runtime controls before committing lifecycle state", 
   await Promise.all([stepping, resuming]);
   expect(calls.slice(-2)).toEqual(["step", "resume"]);
   expect(service.snapshot().state).toBe("running");
+  await service.close();
+});
+
+it("serializes bounded input with runtime operations and rejects stale receipts", async () => {
+  let releaseInput: (() => void) | undefined;
+  const inputBlocked = new Promise<void>((resolve) => { releaseInput = resolve; });
+  let inputStarted: (() => void) | undefined;
+  const inputEntered = new Promise<void>((resolve) => { inputStarted = resolve; });
+  const calls: Array<{ operation: string; timeoutMs?: number }> = [];
+  let corruptReceipt = false;
+  const service = new RuntimeService({
+    project,
+    sessionId: () => "session_12345678",
+    createDescriptor: async (descriptorInput) => ({
+      path: "/private/runtime/descriptor.json",
+      descriptor: { ...descriptorInput, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001, ownerLeasePath: "/private/runtime/runtime-owner.lease" },
+      secret: Buffer.alloc(32), cleanup: async () => undefined,
+    }),
+    prepare: async () => ({ debugPort: 6007 }),
+    launchProcess: async () => ({ pid: 42, fingerprint: "42:start", stop: async () => undefined, wait: async () => new Promise<number>(() => undefined) }),
+    command: async (operation, input, timeoutMs) => {
+      calls.push({ operation, ...(timeoutMs === undefined ? {} : { timeoutMs }) });
+      if (operation === "await_ready") return { pid: 42 };
+      if (operation === "input") {
+        inputStarted?.();
+        await inputBlocked;
+        const operationInput = (input as { input: ReturnType<typeof InputOperationInputSchema.parse> }).input;
+        const events = operationInput.operation === "sequence" ? operationInput.events : [];
+        return {
+          receipt: {
+            handle: operationInput.handle,
+            operation: operationInput.operation,
+            eventCount: events.length,
+            deliveredCount: corruptReceipt ? 0 : events.length,
+            deterministic: operationInput.operation === "sequence" && operationInput.mode === "deterministic",
+            events: events.map((event, index) => ({ index, kind: event.event.type, scheduledFrame: event.frameOffset, deliveredFrame: event.frameOffset })),
+            releases: [],
+            traceSha256: traceSha256({ schemaVersion: 1, events }),
+            recording: false,
+          },
+        };
+      }
+      return { ok: true };
+    },
+  });
+
+  const launched = await service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 });
+  await service.execute({ operation: "pause", handle: launched.handle });
+  const input = InputOperationInputSchema.parse({
+    operation: "sequence",
+    handle: launched.handle,
+    mode: "deterministic",
+    timeoutMs: 30_000,
+    events: [{ frameOffset: 0, event: { type: "action", action: "jump", pressed: true } }],
+  });
+  const sending = service.input(input);
+  await inputEntered;
+  const resuming = service.execute({ operation: "resume", handle: launched.handle });
+  await Promise.resolve();
+  expect(calls.at(-1)?.operation).toBe("input");
+  releaseInput?.();
+  await expect(sending).resolves.toMatchObject({ receipt: { eventCount: 1, deterministic: true } });
+  await resuming;
+  expect(calls.slice(-2).map((call) => call.operation)).toEqual(["input", "resume"]);
+  expect(calls.find((call) => call.operation === "input")?.timeoutMs).toBe(31_000);
+  await expect(service.input({ ...input, handle: { ...launched.handle, generation: 2 } })).rejects.toMatchObject({ code: "STALE_HANDLE" });
+  corruptReceipt = true;
+  const realtimeInput = InputOperationInputSchema.parse({ ...input, mode: "realtime" });
+  await expect(service.input(realtimeInput)).rejects.toMatchObject({ code: "GODOT_RUNTIME_ERROR" });
   await service.close();
 });

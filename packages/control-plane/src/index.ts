@@ -93,3 +93,9 @@ export {
   type RuntimeSnapshot,
   type RuntimeState,
 } from "./runtime/runtimeService.js";
+export {
+  inputTraceEvents,
+  summarizeInputForAudit,
+  traceSha256,
+  type InputAuditSummary,
+} from "./runtime/inputReceipt.js";
