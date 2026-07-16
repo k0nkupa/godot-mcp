@@ -253,9 +253,10 @@ describe("BridgeSession requests", () => {
 
   it("ignores a late runtime input result without poisoning the next request", async () => {
     const expired = peer.session.request("runtime.command", { operation: "input" }, { timeoutMs: 5 });
+    const expiredAssertion = expect(expired).rejects.toMatchObject({ code: "TIMEOUT" });
     const sent = await peer.nextEnvelope();
     const expiredRequestId = String((sent.params as { requestId: string }).requestId);
-    await expect(expired).rejects.toMatchObject({ code: "TIMEOUT" });
+    await expiredAssertion;
     peer.send("command.result", { requestId: expiredRequestId, ok: true, data: { late: true } });
 
     const next = peer.session.request("runtime.command", { operation: "status" }, { timeoutMs: 1_000 });
