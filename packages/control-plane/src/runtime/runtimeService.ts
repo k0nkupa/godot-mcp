@@ -96,6 +96,7 @@ export class RuntimeService {
   launch(input: Omit<LaunchInput, "operation">): Promise<{ handle: RuntimeHandle; root: unknown }> {
     if (this.closed) return Promise.reject(runtimeError("CONFLICT", "Runtime service is closed"));
     if (this.disconnectPromise) return Promise.reject(runtimeError("CONFLICT", "Runtime service is disconnecting"));
+    if (this.launchPromise) return Promise.reject(runtimeError("CONFLICT", "A runtime launch is already in progress"));
     if (!["idle", "stopped"].includes(this.state)) return Promise.reject(runtimeError("CONFLICT", "A runtime is already active"));
     const epoch = this.lifecycleEpoch;
     const activeLaunch = this.launchGeneration(input, epoch).finally(() => {
@@ -112,8 +113,9 @@ export class RuntimeService {
     this.handle = { runId: randomUUID(), generation: this.generation };
     this.scenePath = input.scenePath;
     this.processStopped = false;
-    this.debuggerCleaned = false;
     try {
+      await this.cleanupDebugger(true);
+      this.assertLaunchCurrent(epoch);
       this.state = "preparing";
       const descriptorInput: RuntimeDescriptorInput = {
         project: this.dependencies.project,
@@ -124,6 +126,7 @@ export class RuntimeService {
       };
       this.descriptor = await (this.dependencies.createDescriptor ?? createRuntimeDescriptor)(descriptorInput);
       this.assertLaunchCurrent(epoch);
+      this.debuggerCleaned = false;
       const prepared = await this.dependencies.prepare({ descriptor: this.descriptor.descriptor });
       this.assertLaunchCurrent(epoch);
       if (!Number.isInteger(prepared.debugPort) || prepared.debugPort < 1 || prepared.debugPort > 65_535) {
@@ -274,10 +277,7 @@ export class RuntimeService {
     const activeCleanup = (async () => {
       await this.descriptor?.cleanup().catch(() => undefined);
       this.descriptor = null;
-      if (!this.debuggerCleaned) {
-        await this.dependencies.cleanup?.().catch(() => undefined);
-        this.debuggerCleaned = true;
-      }
+      await this.cleanupDebugger(false);
       await this.stopProcess();
       if (!["stopped", "idle"].includes(this.state)) this.state = "stopped";
     })();
@@ -286,6 +286,20 @@ export class RuntimeService {
       await activeCleanup;
     } finally {
       if (this.cleanupPromise === activeCleanup) this.cleanupPromise = undefined;
+    }
+  }
+
+  private async cleanupDebugger(required: boolean): Promise<void> {
+    if (this.debuggerCleaned) return;
+    if (!this.dependencies.cleanup) {
+      this.debuggerCleaned = true;
+      return;
+    }
+    try {
+      await this.dependencies.cleanup();
+      this.debuggerCleaned = true;
+    } catch (error) {
+      if (required) throw error;
     }
   }
 

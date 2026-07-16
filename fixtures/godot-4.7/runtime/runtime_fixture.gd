@@ -7,6 +7,7 @@ signal milestone(value: int)
 @export var physics_counter := 0
 @export var phase := "starting"
 @export var ready_current_scene_matches := false
+@export var api_key := "fixture-secret-value"
 
 func _ready() -> void:
 	ready_current_scene_matches = get_tree().current_scene == self

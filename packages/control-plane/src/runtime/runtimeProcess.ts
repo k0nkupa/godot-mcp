@@ -74,6 +74,14 @@ export function childHasExited(child: Pick<ChildProcess, "exitCode" | "signalCod
   return child.exitCode !== null || child.signalCode !== null;
 }
 
+export function shouldRefuseProcessSignal(
+  child: Pick<ChildProcess, "exitCode" | "signalCode">,
+  currentFingerprint: string,
+  ownedFingerprint: string,
+): boolean {
+  return currentFingerprint !== ownedFingerprint && !childHasExited(child);
+}
+
 function waitForExit(child: ChildProcess): Promise<number> {
   if (childHasExited(child)) return Promise.resolve(child.exitCode ?? 1);
   return new Promise((resolve, reject) => {
@@ -140,7 +148,7 @@ export class OwnedGodotProcess implements OwnedRuntimeProcess {
     this.stopPromise ??= (async () => {
       if (childHasExited(this.child)) return;
       const current = await processFingerprint(this.pid).catch(() => "");
-      if (current !== this.fingerprint) {
+      if (shouldRefuseProcessSignal(this.child, current, this.fingerprint)) {
         throw new GodotMcpException({
           code: "CONFLICT",
           message: "Owned runtime process fingerprint changed; refusing to signal",
@@ -150,6 +158,7 @@ export class OwnedGodotProcess implements OwnedRuntimeProcess {
           rollback: "not_attempted",
         });
       }
+      if (childHasExited(this.child)) return;
       this.child.kill("SIGTERM");
       const stopped = await Promise.race([
         waitForExit(this.child).then(() => true),
@@ -157,7 +166,10 @@ export class OwnedGodotProcess implements OwnedRuntimeProcess {
       ]);
       if (!stopped && !childHasExited(this.child)) {
         const beforeKill = await processFingerprint(this.pid).catch(() => "");
-        if (beforeKill !== this.fingerprint) throw new Error("Owned runtime fingerprint changed before escalation");
+        if (shouldRefuseProcessSignal(this.child, beforeKill, this.fingerprint)) {
+          throw new Error("Owned runtime fingerprint changed before escalation");
+        }
+        if (childHasExited(this.child)) return;
         this.child.kill("SIGKILL");
         await waitForExit(this.child);
       }

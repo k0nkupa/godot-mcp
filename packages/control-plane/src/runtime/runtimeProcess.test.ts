@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { childHasExited, godotRuntimeArguments, lsofShowsLoopbackListener, scrubRuntimeEnvironment } from "./runtimeProcess.js";
+import { childHasExited, godotRuntimeArguments, lsofShowsLoopbackListener, scrubRuntimeEnvironment, shouldRefuseProcessSignal } from "./runtimeProcess.js";
 
 describe("owned runtime launch", () => {
   it("builds only fixed Godot arguments", () => {
@@ -23,6 +23,12 @@ describe("owned runtime launch", () => {
   it("treats signal-terminated children as exited", () => {
     expect(childHasExited({ exitCode: null, signalCode: "SIGTERM" })).toBe(true);
     expect(childHasExited({ exitCode: null, signalCode: null })).toBe(false);
+  });
+
+  it("does not report PID reuse when the child exited during fingerprint lookup", () => {
+    expect(shouldRefuseProcessSignal({ exitCode: 0, signalCode: null }, "", "42:start")).toBe(false);
+    expect(shouldRefuseProcessSignal({ exitCode: null, signalCode: "SIGTERM" }, "", "42:start")).toBe(false);
+    expect(shouldRefuseProcessSignal({ exitCode: null, signalCode: null }, "", "42:start")).toBe(true);
   });
 
   it("accepts only the expected process loopback debugger listener", () => {

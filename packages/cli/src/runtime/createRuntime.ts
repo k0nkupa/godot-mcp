@@ -136,7 +136,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<GodotMcpRu
       },
       cleanup: async () => {
         const attached = bridge?.session;
-        if (!attached) return;
+        if (!attached) throw new Error("Godot editor addon is not attached");
         await attached.request("runtime.cleanup", {}, { timeoutMs: 5_000 });
       },
     });

@@ -77,11 +77,13 @@ test("launches, inspects, controls, and cleans one authenticated runtime", async
         const node = await runtime.execute({ operation: "node", handle: launched.handle, nodePath: ".", includeProperties: true, includeSignals: true }) as { properties: Array<{ name: string; value: unknown }>; signals: unknown[] };
         expect(node.properties).toEqual(expect.arrayContaining([expect.objectContaining({ name: "fixture_name", value: "phase-3-runtime" })]));
         expect(node.properties).toEqual(expect.arrayContaining([expect.objectContaining({ name: "ready_current_scene_matches", value: true })]));
+        expect(node.properties).toEqual(expect.arrayContaining([expect.objectContaining({ name: "api_key", value: "[redacted]" })]));
         expect(JSON.stringify(node.signals)).toContain("milestone");
         const logs = await runtime.execute({ operation: "logs", handle: launched.handle, afterSequence: 0, levels: ["log"], limit: 20 }) as { records: Array<{ message: string }> };
         expect(logs.records.map((record) => record.message).join("\n")).toContain("phase-3 runtime ready");
         await expect(runtime.execute({ operation: "wait", handle: launched.handle, timeoutMs: 5_000, condition: { type: "property_equals", nodePath: ".", property: "phase", value: "ready" } })).resolves.toMatchObject({ satisfied: true });
         await expect(runtime.execute({ operation: "wait", handle: launched.handle, timeoutMs: 1_000, condition: { type: "property_equals", nodePath: ".", property: "missing_property", value: null } })).rejects.toMatchObject({ code: "TARGET_NOT_FOUND" });
+        await expect(runtime.execute({ operation: "wait", handle: launched.handle, timeoutMs: 1_000, condition: { type: "property_matches", nodePath: ".", property: "api_key", pattern: ".*" } })).rejects.toMatchObject({ code: "INVALID_REQUEST" });
         const invalidPatternStartedAt = Date.now();
         await expect(runtime.execute({ operation: "wait", handle: launched.handle, timeoutMs: 5_000, condition: { type: "property_matches", nodePath: ".", property: "phase", pattern: "[" } })).rejects.toMatchObject({ code: "INVALID_REQUEST" });
         expect(Date.now() - invalidPatternStartedAt).toBeLessThan(1_000);

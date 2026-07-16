@@ -1,6 +1,8 @@
 class_name GodotMcpRuntimeControl
 extends RefCounted
 
+const VariantEncoder = preload("res://addons/godot_mcp/observation/variant_encoder.gd")
+
 var _root: Node
 var _query: RefCounted
 var _logger: Logger
@@ -46,6 +48,8 @@ func _wait(condition: Variant, deadline_unix_ms: int) -> Dictionary:
 	if String(condition.get("type", "")) in ["property_equals", "property_matches"]:
 		var node: Node = _query.resolve_node(String(condition.get("nodePath", ".")))
 		var property := String(condition.get("property", ""))
+		if VariantEncoder.is_secret_name(property):
+			return _error("INVALID_REQUEST", "Runtime wait property is redacted")
 		if node == null or not _has_property(node, property):
 			return _error("TARGET_NOT_FOUND", "Runtime wait property was not found")
 	var property_regex: RegEx

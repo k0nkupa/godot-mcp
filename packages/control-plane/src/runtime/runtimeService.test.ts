@@ -211,3 +211,40 @@ it("cleans every generation across editor disconnects", async () => {
   expect(stopCalls).toBe(2);
   expect(service.snapshot().state).toBe("stopped");
 });
+
+it("retries debugger cleanup after reconnect before preparing a new runtime", async () => {
+  let attached = true;
+  let cleanupCalls = 0;
+  let nextPid = 41;
+  const calls: string[] = [];
+  const service = new RuntimeService({
+    project,
+    sessionId: () => attached ? "session_12345678" : null,
+    createDescriptor: async (input) => ({
+      path: `/private/runtime/descriptor-${input.generation}.json`,
+      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001 },
+      secret: Buffer.alloc(32), cleanup: async () => undefined,
+    }),
+    prepare: async () => { calls.push("prepare"); return { debugPort: 6007 }; },
+    launchProcess: async () => {
+      const pid = ++nextPid;
+      return { pid, fingerprint: `${pid}:start`, stop: async () => undefined, wait: async () => new Promise<number>(() => undefined) };
+    },
+    command: async (operation) => operation === "await_ready" ? { pid: nextPid } : { ok: true },
+    cleanup: async () => {
+      cleanupCalls += 1;
+      calls.push("cleanup");
+      if (!attached) throw new Error("disconnected");
+    },
+  });
+
+  await service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 });
+  attached = false;
+  await service.disconnect();
+  attached = true;
+  calls.length = 0;
+  await service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 });
+  expect(calls.slice(0, 2)).toEqual(["cleanup", "prepare"]);
+  expect(cleanupCalls).toBe(2);
+  await service.disconnect();
+});
