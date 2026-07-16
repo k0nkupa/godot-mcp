@@ -26,7 +26,7 @@ export async function connectProject(
   grants: SessionGrants = parseConnectGrants([], []),
   godotBin?: string,
 ): Promise<void> {
-  const doctor = await runDoctor(project);
+  const doctor = await runDoctor(project, godotBin);
   if (!doctor.healthy) {
     throw new Error("Godot MCP installation is unhealthy; run godot-mcp doctor before connect");
   }

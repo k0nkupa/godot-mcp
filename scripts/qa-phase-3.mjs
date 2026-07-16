@@ -106,7 +106,8 @@ try {
   await run("12/15 crash disconnect and repeated cleanup recovery", pnpm, ["exec", "vitest", "run", "packages/control-plane/src/runtime/runtimeService.test.ts"]);
   await run("13/15 published stdio Phase 3 E2E", pnpm, ["exec", "vitest", "run", "tests/end-to-end/phase-3.test.ts"]);
   await run("14/15 full regression suite", pnpm, ["test"]);
-  await run("15/15 git diff --check", "git", ["diff", "--check"]);
+  await run("15/15 committed branch diff check", "git", ["diff", "--check", `${process.env.GODOT_MCP_DIFF_BASE ?? "main"}...HEAD`]);
+  await run("15/15 working tree diff check", "git", ["diff", "--check"]);
   passed = true;
   process.stdout.write("\n[phase-3] PASS (15/15 stages)\n");
 } finally {

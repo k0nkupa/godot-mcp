@@ -17,7 +17,7 @@ export interface DoctorReport {
   checks: DoctorCheck[];
 }
 
-export async function runDoctor(projectInput: string): Promise<DoctorReport> {
+export async function runDoctor(projectInput: string, godotBin?: string): Promise<DoctorReport> {
   const checks: DoctorCheck[] = [];
   let root: string;
   try {
@@ -72,7 +72,7 @@ export async function runDoctor(projectInput: string): Promise<DoctorReport> {
   }
 
   try {
-    const version = await godotVersion();
+    const version = await godotVersion(godotBin);
     checks.push({ name: "godot-version", status: "ok", detail: version });
   } catch (error) {
     checks.push({ name: "godot-version", status: "error", detail: (error as Error).message });

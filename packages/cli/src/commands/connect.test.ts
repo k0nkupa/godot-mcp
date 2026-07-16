@@ -39,6 +39,7 @@ describe("connect grants", () => {
   it("forwards the explicitly selected Godot binary to runtime launch", async () => {
     const grants = parseConnectGrants(["runtime_control"], ["runtime"]);
     await connectProject("/private/project", grants, "/custom/godot");
+    expect(mocks.runDoctor).toHaveBeenCalledWith("/private/project", "/custom/godot");
     expect(mocks.createRuntime).toHaveBeenCalledWith({ project: "/private/project", grants, godotBin: "/custom/godot" });
   });
 });

@@ -144,7 +144,7 @@ export class RuntimeService {
       this.state = "launching";
       const launch = this.dependencies.launchProcess ?? ((launchInput) => OwnedGodotProcess.launch(launchInput));
       this.process = await launch({
-        godotBin: this.dependencies.godotBin ?? process.env.GODOT_BIN ?? "/opt/homebrew/bin/godot",
+        godotBin: this.dependencies.godotBin ?? process.env.GODOT_BIN ?? "godot",
         projectRoot: this.dependencies.project.rootRealPath,
         debugPort: prepared.debugPort,
         descriptorPath: descriptor.path,

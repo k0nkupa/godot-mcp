@@ -9,5 +9,5 @@ export async function initProject(
 ): Promise<DoctorReport> {
   const install = await installAddon(project, sourceDir);
   await setPluginState(install.projectRoot, "enable", godotBin);
-  return runDoctor(install.projectRoot);
+  return runDoctor(install.projectRoot, godotBin);
 }

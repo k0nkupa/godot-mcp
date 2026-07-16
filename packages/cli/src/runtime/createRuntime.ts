@@ -16,6 +16,7 @@ import {
 
 import { readInstallManifest } from "../install/addonManifest.js";
 import { runDoctor } from "../install/doctor.js";
+import { findGodotBinary } from "../install/pluginState.js";
 
 export interface RuntimeOptions {
   project: string;
@@ -81,10 +82,11 @@ export class GodotMcpRuntime {
 
 export async function createRuntime(options: RuntimeOptions): Promise<GodotMcpRuntime> {
   const grants = normalizeRuntimeGrants(options.grants);
+  const godotBin = await findGodotBinary(options.godotBin);
   const project = await readProjectIdentity(options.project);
   const manifest = await readInstallManifest(project.rootRealPath);
   const audit = JsonlAuditSink.forProject(project.rootRealPath);
-  const session = new SessionService(project, grants, () => runDoctor(project.rootRealPath));
+  const session = new SessionService(project, grants, () => runDoctor(project.rootRealPath, godotBin));
   let bridge: BridgeServer | undefined;
   let runtime: RuntimeService | undefined;
   let mcp: GodotMcpServer | undefined;
@@ -112,7 +114,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<GodotMcpRu
     runtime = new RuntimeService({
       project,
       sessionId: () => bridge?.session?.sessionId ?? null,
-      ...(options.godotBin === undefined ? {} : { godotBin: options.godotBin }),
+      godotBin,
       prepare: async ({ descriptor }) => {
         const attached = bridge?.session;
         if (!attached) throw new Error("Godot editor addon is not attached");
