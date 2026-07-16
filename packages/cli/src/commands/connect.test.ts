@@ -26,14 +26,24 @@ describe("connect grants", () => {
     expect(parseConnectGrants([], [])).toEqual({ tiers: ["observe"], packs: ["core"] });
   });
 
-  it("requires the runtime tier and pack together", () => {
+  it("requires runtime_control for runtime and input packs", () => {
     expect(parseConnectGrants(["runtime_control"], ["runtime"])).toEqual({
       tiers: ["observe", "runtime_control"],
       packs: ["core", "runtime"],
     });
-    expect(() => parseConnectGrants(["runtime_control"], [])).toThrow("must be granted together");
-    expect(() => parseConnectGrants([], ["runtime"])).toThrow("must be granted together");
+    expect(() => parseConnectGrants(["runtime_control"], [])).toThrow("must be granted with runtime or input packs");
+    expect(() => parseConnectGrants([], ["runtime"])).toThrow("must be granted with runtime or input packs");
     expect(() => parseConnectGrants(["project_mutate"], ["runtime"])).toThrow("Unsupported connect grant");
+
+    expect(parseConnectGrants(["runtime_control"], ["input"])).toEqual({
+      tiers: ["observe", "runtime_control"],
+      packs: ["core", "input"],
+    });
+    expect(parseConnectGrants(["runtime_control"], ["runtime,input"])).toEqual({
+      tiers: ["observe", "runtime_control"],
+      packs: ["core", "runtime", "input"],
+    });
+    expect(() => parseConnectGrants([], ["input"])).toThrow("runtime_control");
   });
 
   it("forwards the explicitly selected Godot binary to runtime launch", async () => {

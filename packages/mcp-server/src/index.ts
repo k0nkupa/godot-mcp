@@ -1,5 +1,10 @@
 export { createGodotMcpServer, type GodotMcpServerDependencies } from "./createServer.js";
 export {
+  registerInputTools,
+  type InputController,
+  type InputToolDependencies,
+} from "./registerInputTools.js";
+export {
   registerRuntimeTools,
   type RuntimeController,
   type RuntimeFrame,

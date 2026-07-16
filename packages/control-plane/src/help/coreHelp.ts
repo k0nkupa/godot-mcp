@@ -72,7 +72,7 @@ const HELP: Record<CoreHelpTopic, CoreHelp> = {
   input: {
     topic: "input",
     title: "Automate owned runtime input",
-    summary: "Injects bounded events and frame-indexed sequences into an authenticated owned runtime, with non-passive recording limited to MCP-injected events.",
+    summary: "Injects bounded events and frame-indexed sequences into an authenticated owned runtime. Requires explicit runtime_control and input grants; launch remains separately gated by the runtime pack. Recording is limited to MCP-injected events.",
     tool: "godot_input",
     readOnly: false,
   },

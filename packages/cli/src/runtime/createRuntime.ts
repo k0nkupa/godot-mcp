@@ -32,15 +32,18 @@ function normalizeRuntimeGrants(grants: SessionGrants | undefined): SessionGrant
     if (tier !== "observe" && tier !== "runtime_control") throw new Error(`Unsupported runtime tier: ${tier}`);
   }
   for (const pack of packs) {
-    if (pack !== "core" && pack !== "runtime") throw new Error(`Unsupported runtime pack: ${pack}`);
+    if (pack !== "core" && pack !== "runtime" && pack !== "input") throw new Error(`Unsupported runtime pack: ${pack}`);
   }
   if (!tiers.has("observe") || !packs.has("core")) throw new Error("observe and core grants are required");
-  if (tiers.has("runtime_control") !== packs.has("runtime")) {
-    throw new Error("runtime_control and runtime must be granted together");
+  const hasRuntimePack = packs.has("runtime") || packs.has("input");
+  if (tiers.has("runtime_control") !== hasRuntimePack) {
+    throw new Error("runtime_control must be granted with runtime or input packs");
   }
-  return tiers.has("runtime_control")
-    ? { tiers: ["observe", "runtime_control"], packs: ["core", "runtime"] }
-    : { tiers: ["observe"], packs: ["core"] };
+  if (!hasRuntimePack) return { tiers: ["observe"], packs: ["core"] };
+  return {
+    tiers: ["observe", "runtime_control"],
+    packs: ["core", ...(packs.has("runtime") ? ["runtime" as const] : []), ...(packs.has("input") ? ["input" as const] : [])],
+  };
 }
 
 type GodotMcpServer = ReturnType<typeof createGodotMcpServer>;

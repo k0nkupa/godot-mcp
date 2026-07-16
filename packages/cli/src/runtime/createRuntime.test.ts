@@ -57,6 +57,23 @@ it("uses only explicitly supplied runtime grants", async () => {
   });
 });
 
+it("accepts an independently selected input pack with runtime_control", async () => {
+  const project = await copyFixture();
+  cleanups.push(project.cleanup);
+  process.env.XDG_RUNTIME_DIR = join(project.root, "runtime");
+  await installAddon(project.root, resolve(process.cwd(), "addons/godot_mcp"));
+
+  const runtime = await createRuntime({
+    project: project.root,
+    grants: { tiers: ["observe", "runtime_control"], packs: ["core", "input"] },
+  });
+  cleanups.push(() => runtime.close("cleanup"));
+  expect(runtime.session.snapshot().grants).toEqual({
+    tiers: ["observe", "runtime_control"],
+    packs: ["core", "input"],
+  });
+});
+
 it("rejects inconsistent programmatic runtime grants", async () => {
   const project = await copyFixture();
   cleanups.push(project.cleanup);
@@ -65,7 +82,7 @@ it("rejects inconsistent programmatic runtime grants", async () => {
   await expect(createRuntime({
     project: project.root,
     grants: { tiers: ["observe", "runtime_control"], packs: ["core"] },
-  })).rejects.toThrow("runtime_control and runtime must be granted together");
+  })).rejects.toThrow("runtime_control must be granted with runtime or input packs");
   await expect(createRuntime({
     project: project.root,
     grants: { tiers: ["observe", "project_mutate"], packs: ["core"] },

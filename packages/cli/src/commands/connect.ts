@@ -11,14 +11,17 @@ export function parseConnectGrants(grants: readonly string[], packs: readonly st
     if (grant !== "runtime_control") throw new Error(`Unsupported connect grant: ${grant}`);
   }
   for (const pack of normalizedPacks) {
-    if (pack !== "runtime") throw new Error(`Unsupported connect pack: ${pack}`);
+    if (pack !== "runtime" && pack !== "input") throw new Error(`Unsupported connect pack: ${pack}`);
   }
-  if (normalizedGrants.includes("runtime_control") !== normalizedPacks.includes("runtime")) {
-    throw new Error("runtime_control and runtime must be granted together");
+  const hasRuntimePack = normalizedPacks.includes("runtime") || normalizedPacks.includes("input");
+  if (normalizedGrants.includes("runtime_control") !== hasRuntimePack) {
+    throw new Error("runtime_control must be granted with runtime or input packs");
   }
-  return normalizedGrants.includes("runtime_control")
-    ? { tiers: ["observe", "runtime_control"], packs: ["core", "runtime"] }
-    : { tiers: ["observe"], packs: ["core"] };
+  if (!hasRuntimePack) return { tiers: ["observe"], packs: ["core"] };
+  return {
+    tiers: ["observe", "runtime_control"],
+    packs: ["core", ...(normalizedPacks.includes("runtime") ? ["runtime" as const] : []), ...(normalizedPacks.includes("input") ? ["input" as const] : [])],
+  };
 }
 
 export async function connectProject(
