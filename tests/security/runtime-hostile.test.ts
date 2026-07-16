@@ -56,6 +56,7 @@ describe("hostile runtime boundaries", () => {
     expect(() => RuntimeCommandSchema.parse({ ...command, sequence: 0 })).toThrow();
     expect(() => RuntimeCommandSchema.parse({ ...command, deadlineUnixMs: 0 })).toThrow();
     expect(() => RuntimeCommandSchema.parse({ ...command, unexpected: "forbidden" })).toThrow();
+    expect(RuntimeCommandSchema.parse({ ...command, operation: "input", arguments: { input: { operation: "record_start", handle } } })).toMatchObject({ operation: "input" });
   });
 
   it("rejects expired, mismatched, and replayed one-use descriptors without residue", async () => {

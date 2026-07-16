@@ -224,4 +224,18 @@ describe("BridgeSession requests", () => {
     peer.client.close();
     await expect(pending).rejects.toMatchObject({ code: "NOT_ATTACHED" });
   });
+
+  it("ignores a late runtime input result without poisoning the next request", async () => {
+    const expired = peer.session.request("runtime.command", { operation: "input" }, { timeoutMs: 5 });
+    const sent = await peer.nextEnvelope();
+    const expiredRequestId = String((sent.params as { requestId: string }).requestId);
+    await expect(expired).rejects.toMatchObject({ code: "TIMEOUT" });
+    peer.send("command.result", { requestId: expiredRequestId, ok: true, data: { late: true } });
+
+    const next = peer.session.request("runtime.command", { operation: "status" }, { timeoutMs: 1_000 });
+    const nextEnvelope = await peer.nextEnvelope();
+    const nextRequestId = String((nextEnvelope.params as { requestId: string }).requestId);
+    peer.send("command.result", { requestId: nextRequestId, ok: true, data: { state: "running" } });
+    await expect(next).resolves.toMatchObject({ data: { state: "running" } });
+  });
 });
