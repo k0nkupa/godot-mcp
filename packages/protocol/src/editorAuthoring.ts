@@ -29,6 +29,8 @@ const NodePathSchema = z.string().min(1).max(512).refine(
 
 const FiniteSchema = z.number().finite();
 const Vector2Schema = z.object({ x: FiniteSchema, y: FiniteSchema }).strict();
+const Vector3Schema = z.object({ x: FiniteSchema, y: FiniteSchema, z: FiniteSchema }).strict();
+const Vector4Schema = z.object({ x: FiniteSchema, y: FiniteSchema, z: FiniteSchema, w: FiniteSchema }).strict();
 const RectSchema = z.object({ left: FiniteSchema, top: FiniteSchema, right: FiniteSchema, bottom: FiniteSchema }).strict();
 const ScalarImportValueSchema = z.union([z.boolean(), z.number().finite(), z.string().max(1_024)]);
 
@@ -56,6 +58,10 @@ const NumericTagSchemas = [
   z.object({ type: z.literal("quaternion"), x: FiniteSchema, y: FiniteSchema, z: FiniteSchema, w: FiniteSchema }).strict(),
   z.object({ type: z.literal("plane"), x: FiniteSchema, y: FiniteSchema, z: FiniteSchema, d: FiniteSchema }).strict(),
   z.object({ type: z.literal("aabb"), position: z.tuple([FiniteSchema, FiniteSchema, FiniteSchema]), size: z.tuple([FiniteSchema, FiniteSchema, FiniteSchema]) }).strict(),
+  z.object({ type: z.literal("transform2d"), x: Vector2Schema, y: Vector2Schema, origin: Vector2Schema }).strict(),
+  z.object({ type: z.literal("basis"), x: Vector3Schema, y: Vector3Schema, z: Vector3Schema }).strict(),
+  z.object({ type: z.literal("transform3d"), basis: z.object({ x: Vector3Schema, y: Vector3Schema, z: Vector3Schema }).strict(), origin: Vector3Schema }).strict(),
+  z.object({ type: z.literal("projection"), x: Vector4Schema, y: Vector4Schema, z: Vector4Schema, w: Vector4Schema }).strict(),
 ] as const;
 
 const PackedTagSchema = z.discriminatedUnion("type", [
@@ -65,6 +71,9 @@ const PackedTagSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("packed_float32_array"), values: z.array(FiniteSchema).max(4_096) }).strict(),
   z.object({ type: z.literal("packed_float64_array"), values: z.array(FiniteSchema).max(4_096) }).strict(),
   z.object({ type: z.literal("packed_string_array"), values: z.array(z.string().max(16_384)).max(4_096) }).strict(),
+  z.object({ type: z.literal("packed_vector2_array"), values: z.array(Vector2Schema).max(4_096) }).strict(),
+  z.object({ type: z.literal("packed_vector3_array"), values: z.array(Vector3Schema).max(4_096) }).strict(),
+  z.object({ type: z.literal("packed_color_array"), values: z.array(z.object({ r: FiniteSchema, g: FiniteSchema, b: FiniteSchema, a: FiniteSchema }).strict()).max(4_096) }).strict(),
 ]);
 
 export const ExtendedEditorVariantSchema: z.ZodType<unknown> = z.lazy(() => z.union([
@@ -79,7 +88,7 @@ export const ExtendedEditorVariantSchema: z.ZodType<unknown> = z.lazy(() => z.un
   z.object({ type: z.literal("resource_ref"), path: ResourcePathSchema, expectedType: IdentifierSchema.optional() }).strict(),
   z.array(ExtendedEditorVariantSchema).max(256),
   z.record(z.string().min(1).max(128), ExtendedEditorVariantSchema)
-    .refine((value) => Object.keys(value).length <= 256, { message: "Variant dictionary exceeds 256 entries" }),
+    .refine((value) => Object.keys(value).length <= 256 && !("type" in value), { message: "Variant dictionary exceeds 256 entries or uses a reserved type key" }),
 ]));
 
 const ResourceBase = {

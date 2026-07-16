@@ -9,6 +9,14 @@ describe("Phase 6 authoring schemas", () => {
     expect(ExtendedEditorVariantSchema.parse({ type: "packed_int32_array", values: [1, 2, 3] })).toMatchObject({ values: [1, 2, 3] });
   });
 
+  it("accepts structured transforms and packed geometry values", () => {
+    const v2 = (x: number, y: number) => ({ x, y });
+    const v4 = (x: number, y: number, z: number, w: number) => ({ x, y, z, w });
+    expect(ExtendedEditorVariantSchema.parse({ type: "transform2d", x: v2(1, 0), y: v2(0, 1), origin: v2(4, 5) })).toMatchObject({ type: "transform2d" });
+    expect(ExtendedEditorVariantSchema.parse({ type: "projection", x: v4(1, 0, 0, 0), y: v4(0, 1, 0, 0), z: v4(0, 0, 1, 0), w: v4(0, 0, 0, 1) })).toMatchObject({ type: "projection" });
+    expect(ExtendedEditorVariantSchema.parse({ type: "packed_vector2_array", values: [v2(1, 2), v2(3, 4)] })).toMatchObject({ type: "packed_vector2_array" });
+  });
+
   it("accepts hash-bound source replacement", () => {
     expect(EditorAuthoringStepSchema.parse({
       operation: "replace_script",
@@ -82,5 +90,9 @@ describe("Phase 6 authoring schemas", () => {
     { operation: "create_script", sourcePath: "res://authoring/x.gd", content: "x".repeat(192 * 1024 + 1) },
   ])("rejects unsafe authoring input %#", (value) => {
     expect(() => EditorAuthoringStepSchema.parse(value)).toThrow();
+  });
+
+  it("rejects unknown tagged variants instead of treating them as dictionaries", () => {
+    expect(() => ExtendedEditorVariantSchema.parse({ type: "object", payload: "encoded" })).toThrow();
   });
 });

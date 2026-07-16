@@ -40,14 +40,22 @@ static func encode_value(value: Variant, depth: int = 0) -> Variant:
 			return {"type": "Vector3i", "x": value.x, "y": value.y, "z": value.z}
 		TYPE_VECTOR4:
 			return {"type": "Vector4", "x": str(value.x), "y": str(value.y), "z": str(value.z), "w": str(value.w)}
+		TYPE_VECTOR4I:
+			return {"type": "Vector4i", "x": value.x, "y": value.y, "z": value.z, "w": value.w}
 		TYPE_COLOR:
 			return {"type": "Color", "r": str(value.r), "g": str(value.g), "b": str(value.b), "a": str(value.a)}
 		TYPE_RECT2:
 			return {"type": "Rect2", "position": encode_value(value.position, depth + 1), "size": encode_value(value.size, depth + 1)}
+		TYPE_RECT2I:
+			return {"type": "Rect2i", "position": encode_value(value.position, depth + 1), "size": encode_value(value.size, depth + 1)}
 		TYPE_AABB:
 			return {"type": "AABB", "position": encode_value(value.position, depth + 1), "size": encode_value(value.size, depth + 1)}
 		TYPE_TRANSFORM2D, TYPE_BASIS, TYPE_TRANSFORM3D, TYPE_QUATERNION, TYPE_PLANE:
 			return {"type": type_string(typeof(value)), "value": String(value)}
+		TYPE_PACKED_BYTE_ARRAY, TYPE_PACKED_INT32_ARRAY, TYPE_PACKED_INT64_ARRAY, TYPE_PACKED_FLOAT32_ARRAY, TYPE_PACKED_FLOAT64_ARRAY, TYPE_PACKED_STRING_ARRAY:
+			var values: Array = []
+			for index in mini(value.size(), 4096): values.append(value[index])
+			return {"type": type_string(typeof(value)), "values": values, "truncated": value.size() > 4096}
 		TYPE_ARRAY:
 			var output: Array = []
 			for index in mini(value.size(), MAX_ENTRIES):
