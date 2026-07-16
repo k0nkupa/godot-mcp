@@ -22,6 +22,9 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    // Godot editor and runtime integration files compete for the same host UI
+    // resources, which can starve otherwise bounded bridge deadlines.
+    fileParallelism: false,
     include: ["tests/**/*.test.ts", "packages/*/src/**/*.test.ts"],
     restoreMocks: true,
     testTimeout: 10_000,
