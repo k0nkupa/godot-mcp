@@ -18,6 +18,8 @@ var _query: RefCounted
 var _control: RefCounted
 var _runtime_capture: RefCounted
 var _next_owner_check_ms := 0
+var _scene_revision := 0
+var _pending_commands: Dictionary = {}
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -119,6 +121,8 @@ func _load_game_scene() -> void:
 	}])
 
 func _bind_game_scene() -> void:
+	_scene_revision += 1
+	_cancel_stale_commands()
 	_game_scene = get_tree().current_scene
 	if _game_scene == null:
 		_query = null
@@ -145,11 +149,30 @@ func _handle_command(command: Dictionary) -> void:
 		outcome = _error("TARGET_NOT_FOUND", "Runtime scene is changing", true)
 	else:
 		_receive_sequence = sequence
+		var scene_revision := _scene_revision
+		_pending_commands[request_id] = scene_revision
 		outcome = await _execute_operation(operation, command.get("arguments", {}), deadline)
+		if not _pending_commands.has(request_id):
+			return
+		if operation != "stop" and scene_revision != _scene_revision:
+			outcome = _error("TARGET_NOT_FOUND", "Runtime scene changed during the operation", true)
+		_pending_commands.erase(request_id)
 	EngineDebugger.send_message("godot_mcp_runtime:result", [{
 		"requestId": request_id,
 		"outcome": outcome,
 	}])
+	if operation == "stop" and bool(outcome.get("ok", false)):
+		call_deferred("_cooperative_stop")
+
+func _cancel_stale_commands() -> void:
+	for request_id: String in _pending_commands.keys():
+		if int(_pending_commands[request_id]) == _scene_revision:
+			continue
+		_pending_commands.erase(request_id)
+		EngineDebugger.send_message("godot_mcp_runtime:result", [{
+			"requestId": request_id,
+			"outcome": _error("TARGET_NOT_FOUND", "Runtime scene changed during the operation", true),
+		}])
 
 func _execute_operation(operation: String, arguments: Dictionary, deadline_unix_ms: int) -> Dictionary:
 	match operation:
@@ -157,7 +180,6 @@ func _execute_operation(operation: String, arguments: Dictionary, deadline_unix_
 		"wait", "pause", "resume", "step": return await _control.execute(operation, arguments, deadline_unix_ms)
 		"capture": return await _runtime_capture.execute(arguments, deadline_unix_ms)
 		"stop":
-			call_deferred("_cooperative_stop")
 			return {"ok": true, "data": {"stopping": true}}
 		_: return _error("INVALID_REQUEST", "Runtime operation is not implemented")
 

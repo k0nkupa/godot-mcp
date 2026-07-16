@@ -338,3 +338,34 @@ it("contains background cleanup rejection after an unexpected process exit", asy
   await expect(service.close()).resolves.toBeUndefined();
   expect(cleanupCalls).toBe(2);
 });
+
+it("cancels launch while descriptor consumption is in progress", async () => {
+  let consumeStarted: (() => void) | undefined;
+  const consumeEntered = new Promise<void>((resolve) => { consumeStarted = resolve; });
+  let releaseConsume: (() => void) | undefined;
+  const consumeBlocked = new Promise<void>((resolve) => { releaseConsume = resolve; });
+  let stopped = false;
+  const service = new RuntimeService({
+    project,
+    sessionId: () => "session_12345678",
+    createDescriptor: async (input) => ({
+      path: "/private/runtime/descriptor.json",
+      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001, ownerLeasePath: "/private/runtime/runtime-owner.lease" },
+      secret: Buffer.alloc(32),
+      consume: async () => { consumeStarted?.(); await consumeBlocked; },
+      cleanup: async () => undefined,
+    }),
+    prepare: async () => ({ debugPort: 6007 }),
+    launchProcess: async () => ({ pid: 42, fingerprint: "42:start", stop: async () => { stopped = true; }, wait: async () => new Promise<number>(() => undefined) }),
+    command: async () => ({ pid: 42 }),
+  });
+
+  const launching = service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 });
+  await consumeEntered;
+  const closing = service.close();
+  releaseConsume?.();
+  await expect(launching).rejects.toMatchObject({ code: "CONFLICT" });
+  await closing;
+  expect(stopped).toBe(true);
+  expect(service.snapshot().state).toBe("stopped");
+});

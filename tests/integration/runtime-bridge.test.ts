@@ -118,6 +118,7 @@ test("launches, inspects, controls, and cleans one authenticated runtime", async
         await runtime.execute({ operation: "stop", handle: launched.handle });
         phase = "launch-transition-generation";
         const transitionRun = await runtime.launch({ scenePath: "res://runtime/runtime_transition_source.tscn", startupTimeoutMs: 15_000 });
+        await expect(runtime.execute({ operation: "wait", handle: transitionRun.handle, timeoutMs: 5_000, condition: { type: "property_equals", nodePath: ".", property: "phase", value: "never" } })).rejects.toMatchObject({ code: "TARGET_NOT_FOUND" });
         let transitionedTree: { nodes: Array<{ nodePath: string }> } | undefined;
         phase = "wait-for-transitioned-tree";
         await waitUntil(async () => {

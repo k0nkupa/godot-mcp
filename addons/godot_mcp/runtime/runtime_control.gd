@@ -2,6 +2,7 @@ class_name GodotMcpRuntimeControl
 extends RefCounted
 
 const VariantEncoder = preload("res://addons/godot_mcp/observation/variant_encoder.gd")
+const RuntimeDeadline = preload("res://addons/godot_mcp/runtime/runtime_deadline.gd")
 
 var _root: Node
 var _query: RefCounted
@@ -27,22 +28,31 @@ func execute(operation: String, arguments: Dictionary, deadline_unix_ms: int) ->
 		_: return _error("INVALID_REQUEST", "Runtime control operation is not allowed")
 
 func _step(frames: int, deadline_unix_ms: int) -> Dictionary:
-	if not _root.get_tree().paused:
+	if not is_instance_valid(_root):
+		return _error("TARGET_NOT_FOUND", "Runtime scene changed")
+	var tree := _root.get_tree()
+	if not tree.paused:
 		return _error("PRECONDITION_FAILED", "Runtime must be paused before frame stepping")
 	for _frame in frames:
 		if _now_ms() >= deadline_unix_ms:
 			return _error("TIMEOUT", "Runtime step deadline expired", true)
-		_root.get_tree().paused = false
-		await _root.get_tree().process_frame
-		await RenderingServer.frame_post_draw
-		_root.get_tree().paused = true
-		if _now_ms() >= deadline_unix_ms:
+		var post_draw := RuntimeDeadline.post_draw_latch(tree, deadline_unix_ms)
+		tree.paused = false
+		await tree.process_frame
+		if not post_draw.finished:
+			await post_draw.completed
+		tree.paused = true
+		post_draw.release()
+		if not post_draw.drew_frame or _now_ms() >= deadline_unix_ms:
 			return _error("TIMEOUT", "Runtime step deadline expired", true)
 	return {"ok": true, "data": _frame_state()}
 
 func _wait(condition: Variant, deadline_unix_ms: int) -> Dictionary:
 	if typeof(condition) != TYPE_DICTIONARY:
 		return _error("INVALID_REQUEST", "Runtime wait condition is invalid")
+	if not is_instance_valid(_root):
+		return _error("TARGET_NOT_FOUND", "Runtime scene changed")
+	var tree := _root.get_tree()
 	if String(condition.get("type", "")) == "signal_emitted":
 		return await _wait_signal(condition, deadline_unix_ms)
 	if String(condition.get("type", "")) in ["property_equals", "property_matches"]:
@@ -60,12 +70,17 @@ func _wait(condition: Variant, deadline_unix_ms: int) -> Dictionary:
 	var started_process_frame := Engine.get_process_frames()
 	while _now_ms() < deadline_unix_ms:
 		var observed := _condition_state(condition, started_process_frame, property_regex)
+		if bool(observed.get("targetMissing", false)):
+			return _error("TARGET_NOT_FOUND", "Runtime wait property was not found")
 		if bool(observed.get("satisfied", false)):
 			return {"ok": true, "data": observed}
-		await _root.get_tree().process_frame
+		await tree.process_frame
 	return _error("TIMEOUT", "Runtime wait condition timed out", true)
 
 func _wait_signal(condition: Dictionary, deadline_unix_ms: int) -> Dictionary:
+	if not is_instance_valid(_root):
+		return _error("TARGET_NOT_FOUND", "Runtime scene changed")
+	var tree := _root.get_tree()
 	var node: Node = _query.resolve_node(String(condition.get("nodePath", ".")))
 	var signal_name := StringName(String(condition.get("signal", "")))
 	if node == null or not node.has_signal(signal_name):
@@ -91,7 +106,7 @@ func _wait_signal(condition: Dictionary, deadline_unix_ms: int) -> Dictionary:
 		8: callback = func(_a: Variant, _b: Variant, _c: Variant, _d: Variant, _e: Variant, _f: Variant, _g: Variant, _h: Variant) -> void: observed[0] = true
 	node.connect(signal_name, callback, CONNECT_ONE_SHOT)
 	while not observed[0] and _now_ms() < deadline_unix_ms:
-		await _root.get_tree().process_frame
+		await tree.process_frame
 		if not is_instance_valid(node):
 			break
 	if is_instance_valid(node) and node.is_connected(signal_name, callback):
@@ -109,11 +124,15 @@ func _condition_state(condition: Dictionary, started_process_frame: int, propert
 		"node_exists": return {"satisfied": node != null}
 		"node_missing": return {"satisfied": node == null}
 		"property_equals":
-			return {"satisfied": node != null and node.get(String(condition.get("property", ""))) == condition.get("value")}
+			var property := String(condition.get("property", ""))
+			if node == null or not _has_property(node, property):
+				return {"satisfied": false, "targetMissing": true}
+			return {"satisfied": node.get(property) == condition.get("value")}
 		"property_matches":
-			if node == null:
-				return {"satisfied": false}
-			return {"satisfied": property_regex != null and property_regex.search(str(node.get(String(condition.get("property", ""))))) != null}
+			var property := String(condition.get("property", ""))
+			if node == null or not _has_property(node, property):
+				return {"satisfied": false, "targetMissing": true}
+			return {"satisfied": property_regex != null and property_regex.search(str(node.get(property))) != null}
 		"log_matches":
 			var levels: Array = [String(condition.level)] if condition.has("level") else ["log", "warning", "error", "script", "shader"]
 			var records: Array[Dictionary] = _logger.read_after(0, levels, 500)

@@ -6,9 +6,9 @@ import { join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-const failureArtifacts = process.env.GODOT_MCP_FAILURE_ARTIFACT_DIR
-  ?? join(tmpdir(), "godot-mcp-phase-3-failure-artifacts");
-const gateEnvironment = { ...process.env, GODOT_MCP_FAILURE_ARTIFACT_DIR: failureArtifacts };
+const failureArtifactParent = process.env.GODOT_MCP_FAILURE_ARTIFACT_DIR ?? tmpdir();
+let failureArtifacts = "";
+let gateEnvironment = { ...process.env };
 
 async function executable(path) {
   try {
@@ -69,8 +69,9 @@ if (process.platform !== "darwin") {
   throw new Error("Phase 3 certification requires macOS with a visible WindowServer session");
 }
 
-await rm(failureArtifacts, { force: true, recursive: true });
-await mkdir(failureArtifacts, { recursive: true });
+await mkdir(failureArtifactParent, { recursive: true });
+failureArtifacts = await mkdtemp(join(failureArtifactParent, "godot-mcp-phase-3-"));
+gateEnvironment = { ...process.env, GODOT_MCP_FAILURE_ARTIFACT_DIR: failureArtifacts };
 const godot = await godotBinary();
 const detectedGodotVersion = await readOutput(godot, ["--version"]);
 if (detectedGodotVersion !== "4.7.stable.official.5b4e0cb0f") {

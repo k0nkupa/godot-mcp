@@ -2,6 +2,7 @@ class_name GodotMcpRuntimeCapture
 extends RefCounted
 
 const EditorCapture = preload("res://addons/godot_mcp/observation/editor_capture.gd")
+const RuntimeDeadline = preload("res://addons/godot_mcp/runtime/runtime_deadline.gd")
 const MAX_BYTES := 8 * 1024 * 1024
 
 var _root: Node
@@ -12,9 +13,12 @@ func _init(root: Node, control: RefCounted) -> void:
 	_control = control
 
 func execute(arguments: Dictionary, deadline_unix_ms: int) -> Dictionary:
+	if not is_instance_valid(_root):
+		return _error("TARGET_NOT_FOUND", "Runtime scene changed")
+	var tree := _root.get_tree()
 	var wait_frames := clampi(int(arguments.get("waitFrames", 0)), 0, 120)
 	if wait_frames > 0:
-		if _root.get_tree().paused:
+		if tree.paused:
 			if bool(arguments.get("advancePaused", false)):
 				var stepped: Dictionary = await _control.execute("step", {"frames": wait_frames}, deadline_unix_ms)
 				if not bool(stepped.get("ok", false)):
@@ -23,14 +27,19 @@ func execute(arguments: Dictionary, deadline_unix_ms: int) -> Dictionary:
 			for _frame in wait_frames:
 				if _deadline_expired(deadline_unix_ms):
 					return _error("TIMEOUT", "Runtime capture deadline expired", true)
-				await _root.get_tree().process_frame
+				await tree.process_frame
 				if _deadline_expired(deadline_unix_ms):
 					return _error("TIMEOUT", "Runtime capture deadline expired", true)
 	if _deadline_expired(deadline_unix_ms):
 		return _error("TIMEOUT", "Runtime capture deadline expired", true)
-	await RenderingServer.frame_post_draw
-	if _deadline_expired(deadline_unix_ms):
+	var post_draw := RuntimeDeadline.post_draw_latch(tree, deadline_unix_ms)
+	if not post_draw.finished:
+		await post_draw.completed
+	post_draw.release()
+	if not post_draw.drew_frame:
 		return _error("TIMEOUT", "Runtime capture deadline expired", true)
+	if not is_instance_valid(_root):
+		return _error("TARGET_NOT_FOUND", "Runtime scene changed")
 	var image := _root.get_viewport().get_texture().get_image()
 	if image == null or image.is_empty():
 		return _error("TARGET_NOT_FOUND", "Runtime viewport returned no image")

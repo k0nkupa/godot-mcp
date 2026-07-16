@@ -166,6 +166,7 @@ export class RuntimeService {
         throw runtimeError("AUTHENTICATION_FAILED", "Authenticated runtime PID does not match the owned process");
       }
       await descriptor.consume?.();
+      this.assertLaunchCurrent(epoch);
       if (this.processStopped) {
         throw runtimeError("GODOT_RUNTIME_ERROR", "Owned runtime exited before launch completed");
       }

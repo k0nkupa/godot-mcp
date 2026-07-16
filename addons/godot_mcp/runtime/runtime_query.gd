@@ -28,7 +28,7 @@ func execute(operation: String, arguments: Dictionary) -> Dictionary:
 	return {"ok": true, "data": data}
 
 func resolve_node(path: String) -> Node:
-	if not valid_node_path(path):
+	if not is_instance_valid(_root) or not valid_node_path(path):
 		return null
 	if path == ".":
 		return _root
