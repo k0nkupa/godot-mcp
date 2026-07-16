@@ -86,7 +86,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<GodotMcpRu
       prepare: async ({ descriptor }) => {
         const attached = bridge?.session;
         if (!attached) throw new Error("Godot editor addon is not attached");
-        return (await attached.request<{ debugPort: number }>(
+        return (await attached.request<{ debugPort: number; editorPid: number }>(
           "runtime.prepare",
           { descriptor },
           { timeoutMs: 5_000 },

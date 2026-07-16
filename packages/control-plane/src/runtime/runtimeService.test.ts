@@ -42,6 +42,9 @@ it("serializes one runtime generation and rejects stale handles", async () => {
   const launched = await service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 });
   expect(launched.handle.generation).toBe(1);
   expect(service.snapshot()).toMatchObject({ state: "running", handle: launched.handle });
+  await expect(service.execute({ operation: "status", handle: launched.handle })).resolves.toMatchObject({ state: "running", handle: launched.handle });
+  expect(calls.at(-1)).toBe("status");
+  await expect(service.execute({ operation: "status", handle: { ...launched.handle, generation: 2 } })).rejects.toMatchObject({ code: "STALE_HANDLE" });
   await expect(service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 })).rejects.toMatchObject({ code: "CONFLICT" });
   await expect(service.execute({ operation: "pause", handle: { ...launched.handle, generation: 2 } })).rejects.toMatchObject({ code: "STALE_HANDLE" });
   await service.execute({ operation: "pause", handle: launched.handle });
@@ -131,4 +134,23 @@ it("cleans the owned process when cooperative stop fails", async () => {
   await expect(service.execute({ operation: "stop", handle: launched.handle })).rejects.toThrow("cooperative stop failed");
   expect(stopped).toBe(true);
   expect(service.snapshot().state).toBe("stopped");
+});
+
+it("blocks relaunch when owned-process cleanup fails", async () => {
+  const service = new RuntimeService({
+    project,
+    sessionId: () => "session_12345678",
+    createDescriptor: async (input) => ({
+      path: "/private/runtime/descriptor.json",
+      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001 },
+      secret: Buffer.alloc(32), cleanup: async () => undefined,
+    }),
+    prepare: async () => ({ debugPort: 6007 }),
+    launchProcess: async () => ({ pid: 42, fingerprint: "42:start", stop: async () => { throw new Error("fingerprint changed"); }, wait: async () => new Promise<number>(() => undefined) }),
+    command: async (operation) => operation === "await_ready" ? { pid: 42 } : { stopping: true },
+  });
+  const launched = await service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 });
+  await expect(service.execute({ operation: "stop", handle: launched.handle })).rejects.toThrow("fingerprint changed");
+  expect(service.snapshot().state).toBe("failed");
+  await expect(service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 })).rejects.toMatchObject({ code: "CONFLICT" });
 });

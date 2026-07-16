@@ -41,7 +41,7 @@ func _setup_session(debugger_session_id: int) -> void:
 			clear()
 	)
 
-func prepare(descriptor: Dictionary, debug_port: int) -> Dictionary:
+func prepare(descriptor: Dictionary, debug_port: int, editor_pid: int) -> Dictionary:
 	if not _prepared.is_empty() or _bound_session_id >= 0:
 		return _error("CONFLICT", "A runtime is already prepared or attached")
 	for field in ["project", "sessionId", "runId", "generation", "scenePath", "secret", "launchNonce", "expiresAtUnixMs"]:
@@ -53,7 +53,7 @@ func prepare(descriptor: Dictionary, debug_port: int) -> Dictionary:
 	if debug_port < 1 or debug_port > 65535:
 		clear()
 		return _error("GODOT_RUNTIME_ERROR", "Editor debugger port is invalid")
-	return {"ok": true, "data": {"debugPort": debug_port}}
+	return {"ok": true, "data": {"debugPort": debug_port, "editorPid": editor_pid}}
 
 func execute(command: Dictionary) -> Dictionary:
 	var operation := String(command.get("arguments", {}).get("operation", ""))

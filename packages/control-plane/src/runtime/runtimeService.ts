@@ -14,7 +14,11 @@ import {
   type RuntimeDescriptorInput,
   type RuntimeDescriptorMaterial,
 } from "./runtimeDescriptor.js";
-import { OwnedGodotProcess, type OwnedRuntimeProcess } from "./runtimeProcess.js";
+import {
+  assertLoopbackListenerOwnedByProcess,
+  OwnedGodotProcess,
+  type OwnedRuntimeProcess,
+} from "./runtimeProcess.js";
 
 export type RuntimeState = "idle" | "preparing" | "launching" | "authenticating" | "running" | "paused" | "stopping" | "stopped" | "failed";
 
@@ -30,7 +34,8 @@ export interface RuntimeServiceDependencies {
   sessionId(): string | null;
   godotBin?: string;
   createDescriptor?(input: RuntimeDescriptorInput): Promise<RuntimeDescriptorMaterial>;
-  prepare(input: { descriptor: RuntimeDescriptorMaterial["descriptor"] }): Promise<{ debugPort: number }>;
+  prepare(input: { descriptor: RuntimeDescriptorMaterial["descriptor"] }): Promise<{ debugPort: number; editorPid?: number }>;
+  verifyDebuggerListener?(pid: number, port: number): Promise<void>;
   launchProcess?(input: RuntimeProcessLaunchInput): Promise<OwnedRuntimeProcess>;
   command(operation: string, input: Record<string, unknown>, timeoutMs?: number): Promise<unknown>;
   capture?(input: Record<string, unknown>, timeoutMs?: number): Promise<{
@@ -107,6 +112,12 @@ export class RuntimeService {
       if (!Number.isInteger(prepared.debugPort) || prepared.debugPort < 1 || prepared.debugPort > 65_535) {
         throw runtimeError("GODOT_RUNTIME_ERROR", "Editor reported an invalid debugger port");
       }
+      if (prepared.editorPid !== undefined) {
+        if (!Number.isInteger(prepared.editorPid) || prepared.editorPid < 1) {
+          throw runtimeError("GODOT_RUNTIME_ERROR", "Editor reported an invalid process identity");
+        }
+        await (this.dependencies.verifyDebuggerListener ?? assertLoopbackListenerOwnedByProcess)(prepared.editorPid, prepared.debugPort);
+      }
       this.state = "launching";
       const launch = this.dependencies.launchProcess ?? ((launchInput) => OwnedGodotProcess.launch(launchInput));
       this.process = await launch({
@@ -142,7 +153,14 @@ export class RuntimeService {
   }
 
   async execute(input: Exclude<RuntimeOperationInput, LaunchInput>): Promise<unknown> {
-    if (input.operation === "status") return this.snapshot();
+    if (input.operation === "status") {
+      if (input.handle) this.assertHandle(input.handle);
+      if (!this.handle || !["running", "paused"].includes(this.state)) return this.snapshot();
+      const runtimeStatus = await this.dependencies.command("status", { handle: this.handle });
+      return typeof runtimeStatus === "object" && runtimeStatus !== null
+        ? { ...this.snapshot(), ...runtimeStatus }
+        : this.snapshot();
+    }
     this.assertHandle(input.handle);
     if (input.operation === "stop") {
       this.state = "stopping";
@@ -155,9 +173,9 @@ export class RuntimeService {
       try {
         await this.cleanup();
       } catch (error) {
-        stopError ??= error;
+        this.state = "failed";
+        throw error;
       }
-      this.state = "stopped";
       if (stopError) throw stopError;
       return this.snapshot();
     }

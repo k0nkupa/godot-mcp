@@ -46,6 +46,7 @@ func _execute_command(command: Dictionary) -> Dictionary:
 		outcome = runtime_debugger.prepare(
 			command.arguments.get("descriptor", {}),
 			_runtime_debug_port(),
+			OS.get_process_id(),
 		)
 	elif String(command.method) in ["runtime.command", "runtime.capture"]:
 		outcome = await runtime_debugger.execute(command)

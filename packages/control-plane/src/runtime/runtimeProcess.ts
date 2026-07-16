@@ -35,6 +35,34 @@ export function scrubRuntimeEnvironment(environment: NodeJS.ProcessEnv): Record<
   );
 }
 
+export function lsofShowsLoopbackListener(output: string, pid: number, port: number): boolean {
+  const lines = output.split(/\r?\n/);
+  const ownsProcess = lines.includes(`p${pid}`);
+  const endpoints = [`n127.0.0.1:${port}`, `n[::1]:${port}`, `nlocalhost:${port}`];
+  return ownsProcess && endpoints.some((endpoint) => lines.includes(endpoint));
+}
+
+export async function assertLoopbackListenerOwnedByProcess(pid: number, port: number): Promise<void> {
+  let output = "";
+  try {
+    const result = await execFileAsync(process.platform === "darwin" ? "/usr/sbin/lsof" : "lsof", [
+      "-nP", "-a", "-p", String(pid), `-iTCP:${port}`, "-sTCP:LISTEN", "-Fpn",
+    ]);
+    output = result.stdout;
+  } catch {
+    // lsof exits nonzero when the requested process does not own that listener.
+  }
+  if (lsofShowsLoopbackListener(output, pid, port)) return;
+  throw new GodotMcpException({
+    code: "CONFLICT",
+    message: "The configured Godot debugger port is not the editor's loopback listener; relaunch the editor with an explicit available debug-server port",
+    retryable: false,
+    correlationId: `${pid}:${port}`,
+    partialEffects: false,
+    rollback: "not_needed",
+  });
+}
+
 async function processFingerprint(pid: number): Promise<string> {
   const { stdout } = await execFileAsync("ps", ["-o", "lstart=", "-p", String(pid)]);
   const started = stdout.trim();
@@ -83,7 +111,15 @@ export class OwnedGodotProcess implements OwnedRuntimeProcess {
     });
     const pid = child.pid;
     if (!pid) throw new Error("Godot runtime did not report a PID");
-    const owned = new OwnedGodotProcess(child, pid, await processFingerprint(pid));
+    let fingerprint: string;
+    try {
+      fingerprint = await processFingerprint(pid);
+    } catch (error) {
+      if (!childHasExited(child)) child.kill("SIGKILL");
+      await waitForExit(child).catch(() => undefined);
+      throw error;
+    }
+    const owned = new OwnedGodotProcess(child, pid, fingerprint);
     const append = (chunk: Buffer | string): void => {
       owned.output = `${owned.output}${chunk.toString()}`.slice(-64 * 1024);
     };
