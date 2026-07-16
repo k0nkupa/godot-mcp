@@ -75,8 +75,12 @@ export class RuntimeService {
   private processStopped = false;
   private descriptor: RuntimeDescriptorMaterial | null = null;
   private closePromise: Promise<void> | undefined;
+  private disconnectPromise: Promise<void> | undefined;
+  private launchPromise: Promise<{ handle: RuntimeHandle; root: unknown }> | undefined;
   private cleanupPromise: Promise<void> | undefined;
   private debuggerCleaned = true;
+  private lifecycleEpoch = 0;
+  private closed = false;
 
   constructor(private readonly dependencies: RuntimeServiceDependencies) {}
 
@@ -89,8 +93,19 @@ export class RuntimeService {
     };
   }
 
-  async launch(input: Omit<LaunchInput, "operation">): Promise<{ handle: RuntimeHandle; root: unknown }> {
-    if (!["idle", "stopped"].includes(this.state)) throw runtimeError("CONFLICT", "A runtime is already active");
+  launch(input: Omit<LaunchInput, "operation">): Promise<{ handle: RuntimeHandle; root: unknown }> {
+    if (this.closed) return Promise.reject(runtimeError("CONFLICT", "Runtime service is closed"));
+    if (this.disconnectPromise) return Promise.reject(runtimeError("CONFLICT", "Runtime service is disconnecting"));
+    if (!["idle", "stopped"].includes(this.state)) return Promise.reject(runtimeError("CONFLICT", "A runtime is already active"));
+    const epoch = this.lifecycleEpoch;
+    const activeLaunch = this.launchGeneration(input, epoch).finally(() => {
+      if (this.launchPromise === activeLaunch) this.launchPromise = undefined;
+    });
+    this.launchPromise = activeLaunch;
+    return activeLaunch;
+  }
+
+  private async launchGeneration(input: Omit<LaunchInput, "operation">, epoch: number): Promise<{ handle: RuntimeHandle; root: unknown }> {
     const sessionId = this.dependencies.sessionId();
     if (!sessionId) throw runtimeError("NOT_ATTACHED", "Godot editor addon is not attached", true);
     this.generation += 1;
@@ -108,7 +123,9 @@ export class RuntimeService {
         scenePath: input.scenePath,
       };
       this.descriptor = await (this.dependencies.createDescriptor ?? createRuntimeDescriptor)(descriptorInput);
+      this.assertLaunchCurrent(epoch);
       const prepared = await this.dependencies.prepare({ descriptor: this.descriptor.descriptor });
+      this.assertLaunchCurrent(epoch);
       if (!Number.isInteger(prepared.debugPort) || prepared.debugPort < 1 || prepared.debugPort > 65_535) {
         throw runtimeError("GODOT_RUNTIME_ERROR", "Editor reported an invalid debugger port");
       }
@@ -117,6 +134,7 @@ export class RuntimeService {
           throw runtimeError("GODOT_RUNTIME_ERROR", "Editor reported an invalid process identity");
         }
         await (this.dependencies.verifyDebuggerListener ?? assertLoopbackListenerOwnedByProcess)(prepared.editorPid, prepared.debugPort);
+        this.assertLaunchCurrent(epoch);
       }
       this.state = "launching";
       const launch = this.dependencies.launchProcess ?? ((launchInput) => OwnedGodotProcess.launch(launchInput));
@@ -126,6 +144,7 @@ export class RuntimeService {
         debugPort: prepared.debugPort,
         descriptorPath: this.descriptor.path,
       });
+      this.assertLaunchCurrent(epoch);
       const ownedProcess = this.process;
       void ownedProcess.wait().then(
         () => this.onProcessExit(ownedProcess),
@@ -133,6 +152,7 @@ export class RuntimeService {
       );
       this.state = "authenticating";
       const ready = await this.dependencies.command("await_ready", { handle: this.handle }, input.startupTimeoutMs);
+      this.assertLaunchCurrent(epoch);
       if (
         typeof ready !== "object" ||
         ready === null ||
@@ -211,8 +231,23 @@ export class RuntimeService {
   }
 
   close(): Promise<void> {
-    this.closePromise ??= this.cleanup();
+    this.closed = true;
+    this.closePromise ??= this.disconnect();
     return this.closePromise;
+  }
+
+  disconnect(): Promise<void> {
+    if (this.disconnectPromise) return this.disconnectPromise;
+    this.lifecycleEpoch += 1;
+    const activeDisconnect = (async () => {
+      await this.launchPromise?.catch(() => undefined);
+      await this.cleanup();
+    })();
+    this.disconnectPromise = activeDisconnect;
+    void activeDisconnect.finally(() => {
+      if (this.disconnectPromise === activeDisconnect) this.disconnectPromise = undefined;
+    }).catch(() => undefined);
+    return activeDisconnect;
   }
 
   private assertHandle(handle: RuntimeHandle): void {
@@ -220,6 +255,12 @@ export class RuntimeService {
       throw runtimeError("STALE_HANDLE", "Runtime handle is stale");
     }
     if (!["running", "paused"].includes(this.state)) throw runtimeError("CONFLICT", "Runtime is not controllable in its current state");
+  }
+
+  private assertLaunchCurrent(epoch: number): void {
+    if (this.closed || epoch !== this.lifecycleEpoch) {
+      throw runtimeError("CONFLICT", "Runtime launch was cancelled by shutdown");
+    }
   }
 
   private async stopProcess(): Promise<void> {

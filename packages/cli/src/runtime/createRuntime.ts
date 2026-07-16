@@ -23,6 +23,25 @@ export interface RuntimeOptions {
   godotBin?: string;
 }
 
+function normalizeRuntimeGrants(grants: SessionGrants | undefined): SessionGrants {
+  if (grants === undefined) return { tiers: ["observe"], packs: ["core"] };
+  const tiers = new Set(grants.tiers);
+  const packs = new Set(grants.packs);
+  for (const tier of tiers) {
+    if (tier !== "observe" && tier !== "runtime_control") throw new Error(`Unsupported runtime tier: ${tier}`);
+  }
+  for (const pack of packs) {
+    if (pack !== "core" && pack !== "runtime") throw new Error(`Unsupported runtime pack: ${pack}`);
+  }
+  if (!tiers.has("observe") || !packs.has("core")) throw new Error("observe and core grants are required");
+  if (tiers.has("runtime_control") !== packs.has("runtime")) {
+    throw new Error("runtime_control and runtime must be granted together");
+  }
+  return tiers.has("runtime_control")
+    ? { tiers: ["observe", "runtime_control"], packs: ["core", "runtime"] }
+    : { tiers: ["observe"], packs: ["core"] };
+}
+
 type GodotMcpServer = ReturnType<typeof createGodotMcpServer>;
 
 export class GodotMcpRuntime {
@@ -50,10 +69,10 @@ export class GodotMcpRuntime {
 }
 
 export async function createRuntime(options: RuntimeOptions): Promise<GodotMcpRuntime> {
+  const grants = normalizeRuntimeGrants(options.grants);
   const project = await readProjectIdentity(options.project);
   const manifest = await readInstallManifest(project.rootRealPath);
   const audit = JsonlAuditSink.forProject(project.rootRealPath);
-  const grants: SessionGrants = options.grants ?? { tiers: ["observe"], packs: ["core"] };
   const session = new SessionService(project, grants, () => runDoctor(project.rootRealPath));
   let bridge: BridgeServer | undefined;
   let runtime: RuntimeService | undefined;
@@ -76,7 +95,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<GodotMcpRu
       },
       onDisconnected: () => {
         session.onDisconnected();
-        void runtime?.close();
+        void runtime?.disconnect();
       },
     });
     runtime = new RuntimeService({

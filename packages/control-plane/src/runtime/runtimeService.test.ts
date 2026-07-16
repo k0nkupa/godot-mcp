@@ -154,3 +154,60 @@ it("blocks relaunch when owned-process cleanup fails", async () => {
   expect(service.snapshot().state).toBe("failed");
   await expect(service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 })).rejects.toMatchObject({ code: "CONFLICT" });
 });
+
+it("cancels an in-progress launch before shutdown returns", async () => {
+  let releasePrepare: (() => void) | undefined;
+  const prepareBlocked = new Promise<void>((resolve) => { releasePrepare = resolve; });
+  let launchCalls = 0;
+  const service = new RuntimeService({
+    project,
+    sessionId: () => "session_12345678",
+    createDescriptor: async (input) => ({
+      path: "/private/runtime/descriptor.json",
+      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001 },
+      secret: Buffer.alloc(32), cleanup: async () => undefined,
+    }),
+    prepare: async () => { await prepareBlocked; return { debugPort: 6007 }; },
+    launchProcess: async () => {
+      launchCalls += 1;
+      return { pid: 42, fingerprint: "42:start", stop: async () => undefined, wait: async () => new Promise<number>(() => undefined) };
+    },
+    command: async () => ({ pid: 42 }),
+  });
+
+  const launching = service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 });
+  const closing = service.close();
+  releasePrepare?.();
+  await expect(launching).rejects.toMatchObject({ code: "CONFLICT" });
+  await closing;
+  expect(launchCalls).toBe(0);
+  expect(service.snapshot().state).toBe("stopped");
+  await expect(service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 })).rejects.toMatchObject({ code: "CONFLICT" });
+});
+
+it("cleans every generation across editor disconnects", async () => {
+  let stopCalls = 0;
+  let nextPid = 41;
+  const service = new RuntimeService({
+    project,
+    sessionId: () => "session_12345678",
+    createDescriptor: async (input) => ({
+      path: `/private/runtime/descriptor-${input.generation}.json`,
+      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001 },
+      secret: Buffer.alloc(32), cleanup: async () => undefined,
+    }),
+    prepare: async () => ({ debugPort: 6007 }),
+    launchProcess: async () => {
+      const pid = ++nextPid;
+      return { pid, fingerprint: `${pid}:start`, stop: async () => { stopCalls += 1; }, wait: async () => new Promise<number>(() => undefined) };
+    },
+    command: async (operation) => operation === "await_ready" ? { pid: nextPid } : { ok: true },
+  });
+
+  await service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 });
+  await service.disconnect();
+  await service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 });
+  await service.disconnect();
+  expect(stopCalls).toBe(2);
+  expect(service.snapshot().state).toBe("stopped");
+});

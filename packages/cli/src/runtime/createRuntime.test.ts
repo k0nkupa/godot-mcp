@@ -56,3 +56,18 @@ it("uses only explicitly supplied runtime grants", async () => {
     packs: ["core", "runtime"],
   });
 });
+
+it("rejects inconsistent programmatic runtime grants", async () => {
+  const project = await copyFixture();
+  cleanups.push(project.cleanup);
+  process.env.XDG_RUNTIME_DIR = join(project.root, "runtime");
+
+  await expect(createRuntime({
+    project: project.root,
+    grants: { tiers: ["observe", "runtime_control"], packs: ["core"] },
+  })).rejects.toThrow("runtime_control and runtime must be granted together");
+  await expect(createRuntime({
+    project: project.root,
+    grants: { tiers: ["observe", "project_mutate"], packs: ["core"] },
+  })).rejects.toThrow("Unsupported runtime tier");
+});
