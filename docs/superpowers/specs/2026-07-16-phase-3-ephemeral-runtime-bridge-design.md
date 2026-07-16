@@ -150,7 +150,7 @@ Each PNG is limited to 2048 by 2048 pixels and 8 MiB decoded. Phase 2's signed c
 
 Multi-frame capture is implemented as an ordered series of individually requested, verified, and persisted PNGs. This avoids changing the established single-binary bridge result contract. When the run is active, the harness waits the requested number of process frames between captures. When paused, capture returns the current frame repeatedly unless `advancePaused` is true; with that flag it performs explicit frame steps and restores paused state.
 
-The MCP result returns ordered image content blocks plus structured per-frame metadata and opaque evidence URIs. Base64 image data never appears in structured output or audit JSONL.
+The MCP result returns ordered image content blocks plus structured per-frame metadata, a content-addressed PNG URI, and an append-only observation URI for each capture occurrence. Observation receipts preserve run, generation, and frame-index provenance even when multiple frames have identical PNG bytes. Base64 image data never appears in structured output or audit JSONL.
 
 ## 6. Runtime service and lifecycle
 

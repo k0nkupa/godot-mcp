@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -66,9 +66,16 @@ it("returns ordered runtime images without putting bytes in structured or audit 
     { type: "image", data: png.toString("base64"), mimeType: "image/png" },
     { type: "image", data: png.toString("base64"), mimeType: "image/png" },
   ]);
-  expect(capture.structuredContent).toMatchObject({ ok: true, data: { frames: [{ frameIndex: 0 }, { frameIndex: 1 }] } });
+  expect(capture.structuredContent).toMatchObject({ ok: true, data: { frames: [
+    { frameIndex: 0, evidenceObservationUri: expect.stringContaining("/observations/") },
+    { frameIndex: 1, evidenceObservationUri: expect.stringContaining("/observations/") },
+  ] } });
   expect(JSON.stringify(capture.structuredContent)).not.toContain(png.toString("base64"));
   expect(await readFile(auditPath, "utf8")).not.toContain(png.toString("base64"));
-  await expect(readFile(join(directory, ".godot/evidence/godot-mcp/sessions/session_12345678", `${sha256}.json`), "utf8"))
-    .resolves.toContain('"viewport":"runtime"');
+  const observationDirectory = join(directory, ".godot/evidence/godot-mcp/sessions/session_12345678", `${sha256}.observations`);
+  const observations = await Promise.all((await readdir(observationDirectory)).map(async (name) => JSON.parse(await readFile(join(observationDirectory, name), "utf8")) as { viewport: string; frameIndex: number }));
+  expect(observations).toEqual(expect.arrayContaining([
+    expect.objectContaining({ viewport: "runtime", frameIndex: 0 }),
+    expect.objectContaining({ viewport: "runtime", frameIndex: 1 }),
+  ]));
 });

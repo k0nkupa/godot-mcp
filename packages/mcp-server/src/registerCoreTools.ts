@@ -125,8 +125,8 @@ export function registerCoreTools(server: McpServer, dependencies: CoreToolDepen
       viewport, width, height, ...(viewport === "3d" ? { viewportIndex: input.viewportIndex ?? 0 } : {}),
     });
     return {
-      data: { ...metadata, sha256: evidence.sha256, byteLength: evidence.byteLength, evidenceUri: evidence.uri },
-      evidence: [evidence.uri],
+      data: { ...metadata, sha256: evidence.sha256, byteLength: evidence.byteLength, evidenceUri: evidence.uri, evidenceObservationUri: evidence.observationUri },
+      evidence: [evidence.observationUri],
       image: { data: response.binary, mimeType: "image/png" },
     };
   })));

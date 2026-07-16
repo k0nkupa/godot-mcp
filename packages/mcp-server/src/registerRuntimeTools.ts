@@ -103,8 +103,8 @@ export function registerRuntimeTools(server: McpServer, dependencies: RuntimeToo
         generation: input.handle.generation,
         frameIndex,
       });
-      evidence.push(stored.uri);
-      frames.push({ ...metadata, evidenceUri: stored.uri });
+      evidence.push(stored.observationUri);
+      frames.push({ ...metadata, evidenceUri: stored.uri, evidenceObservationUri: stored.observationUri });
       images.push({ data: frame.data, mimeType: "image/png" as const });
     }
     return { data: { handle: input.handle, frames }, evidence, images };

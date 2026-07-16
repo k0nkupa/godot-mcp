@@ -14,7 +14,7 @@ The default connection still exposes six observe/core tools. Runtime is visible 
 
 `godot_runtime` owns at most one generation and supports launch, status, bounded tree/node/log reads, typed waits, pause, one-to-120-frame step, resume, and stop. Scene paths stay under `res://`; node paths are relative and reject traversal and subnames. Tree responses are limited to depth 32 and 1,000 nodes, node results to 128 properties and signals, logs to 500 records, and waits to 30 seconds.
 
-`godot_runtime_capture` returns one to eight ordered PNG image blocks. Each frame is bounded to 2048×2048 and 8 MiB, delivered in the existing signed 512 KiB/16-chunk protocol, SHA-256 verified, and persisted under the session evidence directory. Structured and audit output contain metadata and opaque evidence URIs, never PNG base64.
+`godot_runtime_capture` returns one to eight ordered PNG image blocks. Each frame is bounded to 2048×2048 and 8 MiB, delivered in the existing signed 512 KiB/16-chunk protocol, SHA-256 verified, and persisted under the session evidence directory. PNG blobs remain content-addressed, while every capture occurrence receives a separate owner-only observation receipt containing its run, generation, and frame index; identical paused frames therefore retain distinct provenance without duplicating image bytes. Structured and audit output contain metadata and opaque evidence URIs, never PNG base64.
 
 ## Ownership and cleanup proof
 

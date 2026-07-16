@@ -21,10 +21,12 @@ export interface PngEvidenceMetadata {
 
 export interface EvidenceReference {
   uri: `godot-mcp://evidence/${string}`;
+  observationUri: `godot-mcp://evidence/${string}`;
   sha256: string;
   mimeType: "image/png";
   byteLength: number;
   path: string;
+  observationPath: string;
 }
 
 function evidenceError(
@@ -96,17 +98,31 @@ export class EvidenceStore {
       sha256,
       mimeType: "image/png",
       byteLength: png.byteLength,
-      ...metadata,
+      width: metadata.width,
+      height: metadata.height,
     })}\n`;
     if (!(await readFile(metadataPath).catch(() => undefined))) {
       await atomicWrite(metadataPath, metadataContents);
     }
+    const observationId = randomUUID();
+    const observationDirectory = join(directory, `${sha256}.observations`);
+    await mkdir(observationDirectory, { recursive: true, mode: 0o700 });
+    const observationPath = join(observationDirectory, `${observationId}.json`);
+    await atomicWrite(observationPath, `${JSON.stringify({
+      observationId,
+      sha256,
+      mimeType: "image/png",
+      byteLength: png.byteLength,
+      ...metadata,
+    })}\n`);
     return {
       uri: `godot-mcp://evidence/${sha256}`,
+      observationUri: `godot-mcp://evidence/${sha256}/observations/${observationId}`,
       sha256,
       mimeType: "image/png",
       byteLength: png.byteLength,
       path,
+      observationPath,
     };
   }
 }

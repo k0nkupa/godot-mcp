@@ -23,10 +23,14 @@ describe("EvidenceStore", () => {
         width: 1,
         height: 1,
       });
-      expect(second).toEqual(first);
+      expect(second).toMatchObject({ uri: first.uri, sha256: first.sha256, path: first.path });
+      expect(second.observationUri).not.toBe(first.observationUri);
       expect(first.uri).toBe(`godot-mcp://evidence/${first.sha256}`);
+      expect(first.observationUri).toMatch(new RegExp(`^godot-mcp://evidence/${first.sha256}/observations/`));
       expect(await readFile(first.path)).toEqual(png);
+      expect(JSON.parse(await readFile(first.observationPath, "utf8"))).toMatchObject({ viewport: "2d", width: 1, height: 1 });
       expect((await stat(first.path)).mode & 0o077).toBe(0);
+      expect((await stat(first.observationPath)).mode & 0o077).toBe(0);
     } finally {
       await project.cleanup();
     }
