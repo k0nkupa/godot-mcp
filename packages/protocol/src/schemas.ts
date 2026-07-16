@@ -62,6 +62,8 @@ export const GodotMcpErrorSchema = z.object({
   correlationId: z.string(),
   partialEffects: z.boolean(),
   rollback: z.enum(["not_needed", "succeeded", "failed", "not_attempted"]),
+  failedPhase: z.string().min(1).max(128).default("request"),
+  safeRecovery: z.string().min(1).max(1024).default("Review the error and retry only after correcting the request"),
 });
 
 export const ToolResultSchema = z.object({
@@ -75,7 +77,7 @@ export const ToolResultSchema = z.object({
 });
 
 export const AuditRecordSchema = z.object({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2),
   auditId: z.string(),
   correlationId: z.string(),
   sessionId: z.string().nullable(),
@@ -89,6 +91,12 @@ export const AuditRecordSchema = z.object({
   arguments: z.unknown(),
   errorCode: z.string().nullable(),
   evidence: z.array(z.string()).default([]),
+  targetIdentities: z.array(z.unknown()).max(64).default([]),
+  preconditions: z.array(z.unknown()).max(64).default([]),
+  changes: z.array(z.unknown()).max(64).default([]),
+  idempotencyKeySha256: z.string().regex(/^[a-f0-9]{64}$/).nullable().default(null),
+  partialEffects: z.boolean().default(false),
+  rollback: z.enum(["not_needed", "succeeded", "failed", "not_attempted"]).default("not_needed"),
 });
 
 export type PermissionTier = z.infer<typeof PermissionTierSchema>;

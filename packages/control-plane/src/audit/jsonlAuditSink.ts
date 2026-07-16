@@ -25,6 +25,12 @@ export interface AuditInput {
   arguments: unknown;
   errorCode: string | null;
   evidence?: string[];
+  targetIdentities?: unknown[];
+  preconditions?: unknown[];
+  changes?: unknown[];
+  idempotencyKeySha256?: string | null;
+  partialEffects?: boolean;
+  rollback?: AuditRecord["rollback"];
 }
 
 export interface AuditSink {
@@ -34,7 +40,7 @@ export interface AuditSink {
 function buildAuditRecord(input: AuditInput): AuditRecord {
   const timestamp = new Date().toISOString();
   return AuditRecordSchema.parse({
-    schemaVersion: 1,
+    schemaVersion: 2,
     auditId: input.auditId ?? randomUUID(),
     correlationId: input.correlationId ?? randomUUID(),
     sessionId: input.sessionId,
@@ -48,6 +54,12 @@ function buildAuditRecord(input: AuditInput): AuditRecord {
     arguments: redactAuditValue(input.arguments),
     errorCode: input.errorCode,
     evidence: input.evidence ?? [],
+    targetIdentities: input.targetIdentities ?? [],
+    preconditions: input.preconditions ?? [],
+    changes: input.changes ?? [],
+    idempotencyKeySha256: input.idempotencyKeySha256 ?? null,
+    partialEffects: input.partialEffects ?? false,
+    rollback: input.rollback ?? "not_needed",
   });
 }
 

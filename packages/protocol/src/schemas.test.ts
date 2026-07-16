@@ -5,6 +5,7 @@ import {
   CapabilityPackSchema,
   PermissionTierSchema,
   ProjectIdentitySchema,
+  GodotMcpErrorSchema,
 } from "./index.js";
 
 describe("protocol schemas", () => {
@@ -34,5 +35,16 @@ describe("protocol schemas", () => {
 
     expect(ProjectIdentitySchema.safeParse(identity).success).toBe(true);
     expect(ProjectIdentitySchema.safeParse({ ...identity, projectConfigSha256: "nope" }).success).toBe(false);
+  });
+
+  it("normalizes recovery metadata on stable errors", () => {
+    expect(GodotMcpErrorSchema.parse({
+      code: "CONFLICT",
+      message: "changed",
+      retryable: false,
+      correlationId: "req-1",
+      partialEffects: false,
+      rollback: "not_needed",
+    })).toMatchObject({ failedPhase: "request", safeRecovery: "Review the error and retry only after correcting the request" });
   });
 });

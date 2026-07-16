@@ -1,5 +1,16 @@
 export { GodotMcpException } from "./errors.js";
 export {
+  EditorMutationService,
+  editorMutationRequestDigest,
+  type EditorMutationBridge,
+} from "./editor/editorMutationService.js";
+export {
+  MutationLedger,
+  type MutationLedgerCompleteInput,
+  type MutationLedgerKeyInput,
+  type MutationReconciliation,
+} from "./editor/mutationLedger.js";
+export {
   ProjectConfigSchema,
   createProjectConfig,
   type ProjectConfig,

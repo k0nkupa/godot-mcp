@@ -26,6 +26,15 @@ export interface ToolExecutionDependencies {
 export interface ExecutedPayload<T = unknown> {
   data: T;
   evidence?: string[];
+  warnings?: string[];
+  changes?: unknown[];
+  audit?: {
+    targetIdentities: unknown[];
+    preconditions: unknown[];
+    idempotencyKeySha256: string | null;
+    partialEffects: boolean;
+    rollback: "not_needed" | "succeeded" | "failed" | "not_attempted";
+  };
   image?: { data: Uint8Array; mimeType: "image/png" };
   images?: Array<{ data: Uint8Array; mimeType: "image/png" }>;
 }
@@ -49,6 +58,8 @@ function normalizeError(error: unknown, correlationId: string): GodotMcpError {
       correlationId,
       partialEffects: error.partialEffects,
       rollback: error.rollback,
+      failedPhase: error.failedPhase,
+      safeRecovery: error.safeRecovery,
     });
   }
   return GodotMcpErrorSchema.parse({
@@ -58,6 +69,8 @@ function normalizeError(error: unknown, correlationId: string): GodotMcpError {
     correlationId,
     partialEffects: false,
     rollback: "not_needed",
+    failedPhase: "request",
+    safeRecovery: "Review the error and retry only after correcting the request",
   });
 }
 
@@ -74,6 +87,9 @@ export async function executeTool(
     authorize(dependencies.grants, policy);
     const payload = await handler(correlationId);
     const evidence = payload.evidence ?? [];
+    const warnings = payload.warnings ?? [];
+    const changes = payload.changes ?? [];
+    const auditFacts = payload.audit;
     const receipt = await dependencies.audit.append({
       correlationId,
       sessionId: dependencies.session.snapshot().attachment?.sessionId ?? null,
@@ -86,14 +102,20 @@ export async function executeTool(
       arguments: options.auditArguments ?? argumentsValue,
       errorCode: null,
       evidence,
+      targetIdentities: auditFacts?.targetIdentities ?? [],
+      preconditions: auditFacts?.preconditions ?? [],
+      changes,
+      idempotencyKeySha256: auditFacts?.idempotencyKeySha256 ?? null,
+      partialEffects: auditFacts?.partialEffects ?? false,
+      rollback: auditFacts?.rollback ?? "not_needed",
     });
     return {
       result: ToolResultSchema.parse({
         ok: true,
         data: payload.data,
-        warnings: [],
+        warnings,
         evidence,
-        changes: [],
+        changes,
         auditId: receipt.auditId,
         correlationId,
       }),
@@ -114,6 +136,12 @@ export async function executeTool(
       arguments: options.auditArguments ?? argumentsValue,
       errorCode: normalized.code,
       evidence: [],
+      targetIdentities: [],
+      preconditions: [],
+      changes: [],
+      idempotencyKeySha256: null,
+      partialEffects: normalized.partialEffects,
+      rollback: normalized.rollback,
     });
     return {
       result: ToolResultSchema.parse({

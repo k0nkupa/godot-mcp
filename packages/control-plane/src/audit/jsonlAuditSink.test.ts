@@ -55,7 +55,40 @@ describe("JsonlAuditSink", () => {
       token: "[REDACTED]",
       nested: { password: "[REDACTED]" },
     });
+    expect(lines[0]).toMatchObject({
+      schemaVersion: 2,
+      targetIdentities: [],
+      preconditions: [],
+      changes: [],
+      idempotencyKeySha256: null,
+      partialEffects: false,
+      rollback: "not_needed",
+    });
     expect((await stat(path)).mode & 0o777).toBe(0o600);
+  });
+
+  it("records bounded mutation facts separately from arguments", async () => {
+    const project = await copyFixture();
+    cleanups.push(project.cleanup);
+    const path = join(project.root, ".godot/evidence/godot-mcp/audit.jsonl");
+    const sink = new JsonlAuditSink(path);
+    await sink.append(baseRecord({
+      permissionTier: "project_mutate",
+      targetIdentities: [{ kind: "node", path: "Target" }],
+      preconditions: [{ path: "Target", expectedRevision: "a".repeat(64) }],
+      changes: [{ operation: "rename_node", path: "Target" }],
+      idempotencyKeySha256: "b".repeat(64),
+      partialEffects: false,
+      rollback: "succeeded",
+    }));
+    const record = JSON.parse((await readFile(path, "utf8")).trim()) as Record<string, unknown>;
+    expect(record).toMatchObject({
+      schemaVersion: 2,
+      targetIdentities: [{ kind: "node", path: "Target" }],
+      changes: [{ operation: "rename_node", path: "Target" }],
+      idempotencyKeySha256: "b".repeat(64),
+      rollback: "succeeded",
+    });
   });
 
   it("replaces binary data and cycles safely", () => {
