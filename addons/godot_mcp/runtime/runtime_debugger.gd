@@ -72,6 +72,7 @@ func execute(command: Dictionary) -> Dictionary:
 	_pending[request_id] = null
 	_send_sequence += 1
 	get_session(_bound_session_id).send_message("godot_mcp_runtime:command", [{
+		"handle": command.get("arguments", {}).get("handle", {}),
 		"requestId": request_id,
 		"sequence": _send_sequence,
 		"deadlineUnixMs": deadline,

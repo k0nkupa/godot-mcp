@@ -58,12 +58,23 @@ export class GodotMcpRuntime {
 
   close(reason: string): Promise<void> {
     void reason;
-    this.closePromise ??= (async () => {
-      await this.runtime.close().catch(() => undefined);
-      await this.mcp.close().catch(() => undefined);
-      await this.bridge.close().catch(() => undefined);
-      this.session.close();
-    })();
+    if (!this.closePromise) {
+      const activeClose = (async () => {
+        let runtimeError: unknown;
+        try {
+          await this.runtime.close();
+        } catch (error) {
+          runtimeError = error;
+        }
+        await Promise.allSettled([this.mcp.close(), this.bridge.close()]);
+        this.session.close();
+        if (runtimeError) throw runtimeError;
+      })();
+      this.closePromise = activeClose;
+      void activeClose.catch(() => {
+        if (this.closePromise === activeClose) this.closePromise = undefined;
+      });
+    }
     return this.closePromise;
   }
 }

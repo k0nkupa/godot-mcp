@@ -88,9 +88,9 @@ export async function createRuntimeDescriptor(input: RuntimeDescriptorInput): Pr
     secret,
     async cleanup(): Promise<void> {
       if (cleaned) return;
-      cleaned = true;
       secret.fill(0);
       await rm(path, { force: true });
+      cleaned = true;
     },
   };
 }

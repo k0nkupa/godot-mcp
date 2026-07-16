@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { copyFixture } from "@godot-mcp/testkit";
 import { afterEach, expect, it } from "vitest";
 
-import { createRuntime, installAddon } from "../index.js";
+import { createRuntime, GodotMcpRuntime, installAddon } from "../index.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 const originalRuntimeDirectory = process.env.XDG_RUNTIME_DIR;
@@ -70,4 +70,25 @@ it("rejects inconsistent programmatic runtime grants", async () => {
     project: project.root,
     grants: { tiers: ["observe", "project_mutate"], packs: ["core"] },
   })).rejects.toThrow("Unsupported runtime tier");
+});
+
+it("closes every outer resource while preserving runtime cleanup failures", async () => {
+  const closed: string[] = [];
+  let runtimeCloseCalls = 0;
+  const runtime = new GodotMcpRuntime(
+    {} as never,
+    {} as never,
+    { close: () => { closed.push("session"); } } as never,
+    { close: async () => { closed.push("bridge"); } } as never,
+    { close: async () => {
+      runtimeCloseCalls += 1;
+      if (runtimeCloseCalls === 1) throw new Error("owned child remains");
+    } } as never,
+    { close: async () => { closed.push("mcp"); } } as never,
+  );
+
+  await expect(runtime.close("test")).rejects.toThrow("owned child remains");
+  expect(closed).toEqual(expect.arrayContaining(["mcp", "bridge", "session"]));
+  await expect(runtime.close("retry")).resolves.toBeUndefined();
+  expect(runtimeCloseCalls).toBe(2);
 });

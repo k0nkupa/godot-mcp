@@ -248,3 +248,62 @@ it("retries debugger cleanup after reconnect before preparing a new runtime", as
   expect(cleanupCalls).toBe(2);
   await service.disconnect();
 });
+
+it("does not publish running after the owned process exits during authentication", async () => {
+  let finishProcess: ((exitCode: number) => void) | undefined;
+  const processExit = new Promise<number>((resolve) => { finishProcess = resolve; });
+  let commandStarted: (() => void) | undefined;
+  const commandEntered = new Promise<void>((resolve) => { commandStarted = resolve; });
+  let releaseReady: (() => void) | undefined;
+  const readyBlocked = new Promise<void>((resolve) => { releaseReady = resolve; });
+  const service = new RuntimeService({
+    project,
+    sessionId: () => "session_12345678",
+    createDescriptor: async (input) => ({
+      path: "/private/runtime/descriptor.json",
+      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001 },
+      secret: Buffer.alloc(32), cleanup: async () => undefined,
+    }),
+    prepare: async () => ({ debugPort: 6007 }),
+    launchProcess: async () => ({ pid: 42, fingerprint: "42:start", stop: async () => undefined, wait: async () => processExit }),
+    command: async () => {
+      commandStarted?.();
+      await readyBlocked;
+      return { pid: 42 };
+    },
+  });
+
+  const launching = service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 });
+  await commandEntered;
+  finishProcess?.(0);
+  for (let attempt = 0; attempt < 20 && service.snapshot().state !== "stopped"; attempt += 1) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 1));
+  }
+  releaseReady?.();
+  await expect(launching).rejects.toMatchObject({ code: "GODOT_RUNTIME_ERROR" });
+  expect(service.snapshot().state).not.toBe("running");
+});
+
+it("retains a failed descriptor cleanup for a later close retry", async () => {
+  let cleanupCalls = 0;
+  const service = new RuntimeService({
+    project,
+    sessionId: () => "session_12345678",
+    createDescriptor: async (input) => ({
+      path: "/private/runtime/descriptor.json",
+      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001 },
+      secret: Buffer.alloc(32),
+      cleanup: async () => {
+        cleanupCalls += 1;
+        if (cleanupCalls === 1) throw new Error("transient delete failure");
+      },
+    }),
+    prepare: async () => { throw new Error("prepare failed"); },
+    command: async () => ({ ok: true }),
+  });
+
+  await expect(service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 })).rejects.toThrow("transient delete failure");
+  await expect(service.close()).resolves.toBeUndefined();
+  expect(cleanupCalls).toBe(2);
+  expect(service.snapshot().state).toBe("stopped");
+});

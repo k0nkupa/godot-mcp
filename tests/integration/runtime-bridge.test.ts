@@ -17,6 +17,7 @@ test("launches, inspects, controls, and cleans one authenticated runtime", async
   let editor: ReturnType<typeof spawn> | undefined;
   let editorOutput = "";
   let runtimeOutput = "";
+  let phase = "setup";
   try {
     expect((await runGodot(["--headless", "--editor", "--path", project.root, "--import"])).exitCode).toBe(0);
     await initProject(project.root, resolve(process.cwd(), "addons/godot_mcp"), process.env.GODOT_BIN);
@@ -108,21 +109,25 @@ test("launches, inspects, controls, and cleans one authenticated runtime", async
         expect(property(afterStep, "frame_counter") - property(beforeStep, "frame_counter")).toBe(2);
         await expect(runtime.execute({ operation: "pause", handle: { ...launched.handle, generation: launched.handle.generation + 1 } })).rejects.toMatchObject({ code: "STALE_HANDLE" });
         await runtime.execute({ operation: "resume", handle: launched.handle });
+        phase = "stop-first-generation";
         await runtime.execute({ operation: "stop", handle: launched.handle });
+        phase = "launch-transition-generation";
         const transitionRun = await runtime.launch({ scenePath: "res://runtime/runtime_transition_source.tscn", startupTimeoutMs: 15_000 });
         let transitionedTree: { nodes: Array<{ nodePath: string }> } | undefined;
+        phase = "wait-for-transitioned-tree";
         await waitUntil(async () => {
           transitionedTree = await runtime.execute({ operation: "tree", handle: transitionRun.handle, root: ".", maxDepth: 2, maxNodes: 10 }) as { nodes: Array<{ nodePath: string }> };
           return transitionedTree.nodes.some((entry) => entry.nodePath === "TransitionedMarker");
         }, 5_000, 50);
         expect(transitionedTree?.nodes.map((entry) => entry.nodePath)).toEqual([".", "TransitionedMarker"]);
+        phase = "stop-transition-generation";
         await runtime.execute({ operation: "stop", handle: transitionRun.handle });
         expect(runtime.snapshot().state).toBe("stopped");
       } finally {
         await runtime.close();
       }
     } catch (error) {
-      throw new Error(`${String(error)}\nEditor:\n${editorOutput}\nRuntime:\n${runtimeOutput}`);
+      throw new Error(`Phase: ${phase}\n${String(error)}\nEditor:\n${editorOutput}\nRuntime:\n${runtimeOutput}`);
     } finally {
       await bridge.close();
     }

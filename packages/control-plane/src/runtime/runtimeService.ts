@@ -125,9 +125,10 @@ export class RuntimeService {
         scenePath: input.scenePath,
       };
       this.descriptor = await (this.dependencies.createDescriptor ?? createRuntimeDescriptor)(descriptorInput);
+      const descriptor = this.descriptor;
       this.assertLaunchCurrent(epoch);
       this.debuggerCleaned = false;
-      const prepared = await this.dependencies.prepare({ descriptor: this.descriptor.descriptor });
+      const prepared = await this.dependencies.prepare({ descriptor: descriptor.descriptor });
       this.assertLaunchCurrent(epoch);
       if (!Number.isInteger(prepared.debugPort) || prepared.debugPort < 1 || prepared.debugPort > 65_535) {
         throw runtimeError("GODOT_RUNTIME_ERROR", "Editor reported an invalid debugger port");
@@ -145,7 +146,7 @@ export class RuntimeService {
         godotBin: this.dependencies.godotBin ?? process.env.GODOT_BIN ?? "/opt/homebrew/bin/godot",
         projectRoot: this.dependencies.project.rootRealPath,
         debugPort: prepared.debugPort,
-        descriptorPath: this.descriptor.path,
+        descriptorPath: descriptor.path,
       });
       this.assertLaunchCurrent(epoch);
       const ownedProcess = this.process;
@@ -164,8 +165,11 @@ export class RuntimeService {
       ) {
         throw runtimeError("AUTHENTICATION_FAILED", "Authenticated runtime PID does not match the owned process");
       }
-      await this.descriptor.cleanup();
-      this.descriptor = null;
+      await descriptor.cleanup();
+      if (this.descriptor === descriptor) this.descriptor = null;
+      if (this.processStopped) {
+        throw runtimeError("GODOT_RUNTIME_ERROR", "Owned runtime exited before launch completed");
+      }
       this.state = "running";
       return { handle: { ...this.handle }, root: ready };
     } catch (error) {
@@ -235,7 +239,13 @@ export class RuntimeService {
 
   close(): Promise<void> {
     this.closed = true;
-    this.closePromise ??= this.disconnect();
+    if (!this.closePromise) {
+      const activeClose = this.disconnect();
+      this.closePromise = activeClose;
+      void activeClose.catch(() => {
+        if (this.closePromise === activeClose) this.closePromise = undefined;
+      });
+    }
     return this.closePromise;
   }
 
@@ -275,10 +285,25 @@ export class RuntimeService {
   private async cleanup(): Promise<void> {
     if (this.cleanupPromise) return this.cleanupPromise;
     const activeCleanup = (async () => {
-      await this.descriptor?.cleanup().catch(() => undefined);
-      this.descriptor = null;
+      let cleanupError: unknown;
+      if (this.descriptor) {
+        try {
+          await this.descriptor.cleanup();
+          this.descriptor = null;
+        } catch (error) {
+          cleanupError = error;
+        }
+      }
       await this.cleanupDebugger(false);
-      await this.stopProcess();
+      try {
+        await this.stopProcess();
+      } catch (error) {
+        cleanupError ??= error;
+      }
+      if (cleanupError) {
+        this.state = "failed";
+        throw cleanupError;
+      }
       if (!["stopped", "idle"].includes(this.state)) this.state = "stopped";
     })();
     this.cleanupPromise = activeCleanup;
