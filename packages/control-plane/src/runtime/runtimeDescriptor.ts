@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { lstat, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, readFile, rename, rm, utimes, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
 import { ProjectIdentitySchema, RuntimeHandleSchema, type ProjectIdentity } from "@godot-mcp/protocol";
@@ -15,6 +15,7 @@ export const RuntimeDescriptorSchema = z
     runId: RuntimeHandleSchema.shape.runId,
     generation: RuntimeHandleSchema.shape.generation,
     scenePath: z.string().startsWith("res://").endsWith(".tscn").max(512),
+    ownerLeasePath: z.string().min(1).max(1024),
     secret: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
     launchNonce: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
     createdAtUnixMs: z.number().int().nonnegative(),
@@ -37,6 +38,7 @@ export interface RuntimeDescriptorMaterial {
   path: string;
   descriptor: RuntimeDescriptor;
   secret: Uint8Array;
+  consume?(): Promise<void>;
   cleanup(): Promise<void>;
 }
 
@@ -74,22 +76,45 @@ export async function createRuntimeDescriptor(input: RuntimeDescriptorInput): Pr
     runId: input.runId,
     generation: input.generation,
     scenePath: input.scenePath,
+    ownerLeasePath: join(directory, `runtime-${input.project.projectId}-${input.runId}.lease`),
     secret: secret.toString("base64url"),
     launchNonce: randomBytes(32).toString("base64url"),
     createdAtUnixMs: now,
     expiresAtUnixMs: now + 60_000,
   });
   const path = join(directory, `runtime-${input.project.projectId}-${input.runId}.json`);
-  await writeFile(path, `${JSON.stringify(descriptor)}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 });
+  const ownerLeasePath = descriptor.ownerLeasePath;
+  await writeFile(ownerLeasePath, "owner\n", { encoding: "utf8", flag: "wx", mode: 0o600 });
+  try {
+    await writeFile(path, `${JSON.stringify(descriptor)}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 });
+  } catch (error) {
+    await rm(ownerLeasePath, { force: true }).catch(() => undefined);
+    throw error;
+  }
+  const heartbeat = setInterval(() => {
+    const heartbeatAt = new Date();
+    void utimes(ownerLeasePath, heartbeatAt, heartbeatAt).catch(() => undefined);
+  }, 250);
+  heartbeat.unref();
+  let consumed = false;
   let cleaned = false;
   return {
     path,
     descriptor,
     secret,
+    async consume(): Promise<void> {
+      if (consumed || cleaned) return;
+      secret.fill(0);
+      descriptor.secret = "";
+      await rm(path, { force: true });
+      consumed = true;
+    },
     async cleanup(): Promise<void> {
       if (cleaned) return;
+      clearInterval(heartbeat);
       secret.fill(0);
-      await rm(path, { force: true });
+      descriptor.secret = "";
+      await Promise.all([rm(path, { force: true }), rm(ownerLeasePath, { force: true })]);
       cleaned = true;
     },
   };

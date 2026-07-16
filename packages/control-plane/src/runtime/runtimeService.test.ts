@@ -16,7 +16,7 @@ it("serializes one runtime generation and rejects stale handles", async () => {
     sessionId: () => "session_12345678",
     createDescriptor: async (input) => ({
       path: "/private/runtime/descriptor.json",
-      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001 },
+      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001, ownerLeasePath: "/private/runtime/runtime-owner.lease" },
       secret: Buffer.alloc(32),
       cleanup: async () => undefined,
     }),
@@ -69,7 +69,7 @@ it("rejects an authenticated debugger session from a different process", async (
     sessionId: () => "session_12345678",
     createDescriptor: async (input) => ({
       path: "/private/runtime/descriptor.json",
-      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001 },
+      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001, ownerLeasePath: "/private/runtime/runtime-owner.lease" },
       secret: Buffer.alloc(32),
       cleanup: async () => undefined,
     }),
@@ -93,7 +93,7 @@ it("reconciles an unexpected owned-process exit exactly once", async () => {
     sessionId: () => "session_12345678",
     createDescriptor: async (input) => ({
       path: "/private/runtime/descriptor.json",
-      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001 },
+      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001, ownerLeasePath: "/private/runtime/runtime-owner.lease" },
       secret: Buffer.alloc(32),
       cleanup: async () => undefined,
     }),
@@ -120,7 +120,7 @@ it("cleans the owned process when cooperative stop fails", async () => {
     sessionId: () => "session_12345678",
     createDescriptor: async (input) => ({
       path: "/private/runtime/descriptor.json",
-      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001 },
+      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001, ownerLeasePath: "/private/runtime/runtime-owner.lease" },
       secret: Buffer.alloc(32), cleanup: async () => undefined,
     }),
     prepare: async () => ({ debugPort: 6007 }),
@@ -142,7 +142,7 @@ it("blocks relaunch when owned-process cleanup fails", async () => {
     sessionId: () => "session_12345678",
     createDescriptor: async (input) => ({
       path: "/private/runtime/descriptor.json",
-      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001 },
+      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001, ownerLeasePath: "/private/runtime/runtime-owner.lease" },
       secret: Buffer.alloc(32), cleanup: async () => undefined,
     }),
     prepare: async () => ({ debugPort: 6007 }),
@@ -164,7 +164,7 @@ it("cancels an in-progress launch before shutdown returns", async () => {
     sessionId: () => "session_12345678",
     createDescriptor: async (input) => ({
       path: "/private/runtime/descriptor.json",
-      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001 },
+      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001, ownerLeasePath: "/private/runtime/runtime-owner.lease" },
       secret: Buffer.alloc(32), cleanup: async () => undefined,
     }),
     prepare: async () => { await prepareBlocked; return { debugPort: 6007 }; },
@@ -193,7 +193,7 @@ it("cleans every generation across editor disconnects", async () => {
     sessionId: () => "session_12345678",
     createDescriptor: async (input) => ({
       path: `/private/runtime/descriptor-${input.generation}.json`,
-      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001 },
+      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001, ownerLeasePath: "/private/runtime/runtime-owner.lease" },
       secret: Buffer.alloc(32), cleanup: async () => undefined,
     }),
     prepare: async () => ({ debugPort: 6007 }),
@@ -222,7 +222,7 @@ it("retries debugger cleanup after reconnect before preparing a new runtime", as
     sessionId: () => attached ? "session_12345678" : null,
     createDescriptor: async (input) => ({
       path: `/private/runtime/descriptor-${input.generation}.json`,
-      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001 },
+      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001, ownerLeasePath: "/private/runtime/runtime-owner.lease" },
       secret: Buffer.alloc(32), cleanup: async () => undefined,
     }),
     prepare: async () => { calls.push("prepare"); return { debugPort: 6007 }; },
@@ -261,7 +261,7 @@ it("does not publish running after the owned process exits during authentication
     sessionId: () => "session_12345678",
     createDescriptor: async (input) => ({
       path: "/private/runtime/descriptor.json",
-      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001 },
+      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001, ownerLeasePath: "/private/runtime/runtime-owner.lease" },
       secret: Buffer.alloc(32), cleanup: async () => undefined,
     }),
     prepare: async () => ({ debugPort: 6007 }),
@@ -291,7 +291,7 @@ it("retains a failed descriptor cleanup for a later close retry", async () => {
     sessionId: () => "session_12345678",
     createDescriptor: async (input) => ({
       path: "/private/runtime/descriptor.json",
-      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001 },
+      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001, ownerLeasePath: "/private/runtime/runtime-owner.lease" },
       secret: Buffer.alloc(32),
       cleanup: async () => {
         cleanupCalls += 1;

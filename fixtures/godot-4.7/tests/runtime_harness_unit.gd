@@ -14,6 +14,10 @@ func _init() -> void:
 	assert(not RuntimeHarness.operation_is_allowed("eval"))
 	var hello := {"runId": "run", "generation": 1, "projectId": "project", "sessionId": "session", "launchNonce": "nonce", "pid": 42}
 	assert(RuntimeHarness.hello_signing_text(hello) == RuntimeDebugger.hello_signing_text(hello))
+	assert(RuntimeHarness.owner_lease_path_is_allowed("/tmp/godot-mcp/runtime-a.lease", "/tmp/godot-mcp"))
+	assert(not RuntimeHarness.owner_lease_path_is_allowed("/tmp/else/runtime-a.lease", "/tmp/godot-mcp"))
+	assert(RuntimeHarness.owner_lease_is_fresh(100, 102000))
+	assert(not RuntimeHarness.owner_lease_is_fresh(100, 104000))
 	await process_frame
 	var runtime_root := Node.new()
 	root.add_child(runtime_root)

@@ -51,7 +51,7 @@ The runtime harness opens no listener. It is launched only for an authorized run
 
 ### 3.1 Runtime preparation
 
-Before process launch, the control plane creates a run record and a one-use runtime descriptor in the private Godot MCP runtime directory. The descriptor is a regular owner-readable file with mode `0600`, an expiry no longer than 60 seconds, and no project-controlled path components. It contains the run identifier, generation, project identity, MCP session identifier, launch nonce, and a random 256-bit secret.
+Before process launch, the control plane creates a run record, a one-use runtime descriptor, and an owner heartbeat lease in the private Godot MCP runtime directory. Both files are regular owner-readable files with mode `0600`, bounded server-generated names, and no project-controlled path components. The descriptor expires after no more than 60 seconds and contains the run identifier, generation, project identity, MCP session identifier, heartbeat lease path, launch nonce, and a random 256-bit secret. The MCP owner refreshes the lease while the run is active; the harness exits when it becomes stale, including after an ungraceful owner-process death.
 
 The control plane sends the expected run identity and proof-verification material to the attached addon through the existing authenticated editor bridge. The addon accepts only one prepared run for the current MCP session and expires unused preparation state.
 

@@ -42,9 +42,16 @@ func _setup_session(debugger_session_id: int) -> void:
 	)
 
 func prepare(descriptor: Dictionary, debug_port: int, editor_pid: int) -> Dictionary:
-	if not _prepared.is_empty() or _bound_session_id >= 0:
+	if _bound_session_id >= 0:
 		return _error("CONFLICT", "A runtime is already prepared or attached")
-	for field in ["project", "sessionId", "runId", "generation", "scenePath", "secret", "launchNonce", "expiresAtUnixMs"]:
+	if not _prepared.is_empty():
+		var expired := _now_ms() > int(_prepared.get("expiresAtUnixMs", 0))
+		var replacement_session := String(_prepared.get("sessionId", "")) != String(descriptor.get("sessionId", ""))
+		if expired or replacement_session:
+			clear()
+		else:
+			return _error("CONFLICT", "A runtime is already prepared or attached")
+	for field in ["project", "sessionId", "runId", "generation", "scenePath", "ownerLeasePath", "secret", "launchNonce", "expiresAtUnixMs"]:
 		if not descriptor.has(field):
 			return _error("INVALID_REQUEST", "Runtime preparation is missing required fields")
 	if typeof(descriptor.project) != TYPE_DICTIONARY or not descriptor.project.has("projectId"):

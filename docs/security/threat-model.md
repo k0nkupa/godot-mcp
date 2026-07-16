@@ -47,7 +47,7 @@ Future project operations must stay inside approved `res://` roots and deny `.gi
 | Scene or node escape | Bounded `res://` scene paths, relative node paths, traversal and subname rejection, no caller-selected host paths |
 | Enumeration or memory pressure | 1,000 nodes/depth 32, 128 properties/signals, 500 logs, 30-second waits, one-to-120-frame steps |
 | Capture pressure or byte confusion | One-to-eight sequential PNGs, 2048×2048 and 8 MiB per frame, existing signed chunk limits, metadata/digest verification |
-| Runtime/editor/server crash | Owned child exit watcher plus one idempotent descriptor/debugger/process cleanup path |
+| Runtime/editor/server crash | Owned child exit watcher, descriptor-bound owner heartbeat watchdog, and one idempotent descriptor/debugger/process cleanup path |
 | Secret or image leakage | Descriptor paths and secrets excluded from receipts; structured/audit output contains metadata/opaque URIs, not PNG base64 |
 
 The child runtime opens no listener. Its harness communicates only through Godot's debugger channel to the registered editor plugin. Loopback contains that channel but authentication comes from the runtime descriptor proof and identity binding.

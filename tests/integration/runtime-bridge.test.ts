@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 
 import { startBridgeServer } from "@godot-mcp/bridge-client";
 import { initProject } from "@godot-mcp/cli";
-import { JsonlAuditSink, OwnedGodotProcess, readProjectIdentity, RuntimeService } from "@godot-mcp/control-plane";
+import { createRuntimeDescriptor, JsonlAuditSink, OwnedGodotProcess, readProjectIdentity, RuntimeService, type RuntimeDescriptorMaterial } from "@godot-mcp/control-plane";
 import type { RuntimeCaptureFrameMetadata } from "@godot-mcp/protocol";
 import { copyFixture, findGodotBinary, reserveLoopbackPort, runGodot, waitUntil } from "@godot-mcp/testkit";
 import { expect, test } from "vitest";
@@ -39,10 +39,15 @@ test("launches, inspects, controls, and cleans one authenticated runtime", async
       editor.stdout?.on("data", (chunk: Buffer) => { editorOutput += chunk.toString(); });
       editor.stderr?.on("data", (chunk: Buffer) => { editorOutput += chunk.toString(); });
       const session = await bridge.waitForAttachment(15_000);
+      let activeDescriptor: RuntimeDescriptorMaterial | undefined;
       const runtime = new RuntimeService({
         project: identity,
         sessionId: () => session.sessionId,
         godotBin: await findGodotBinary(),
+        createDescriptor: async (input) => {
+          activeDescriptor = await createRuntimeDescriptor(input);
+          return activeDescriptor;
+        },
         launchProcess: async (input) => {
           const owned = await OwnedGodotProcess.launch(input);
           const diagnostics = owned.diagnostics.bind(owned);
@@ -120,8 +125,9 @@ test("launches, inspects, controls, and cleans one authenticated runtime", async
           return transitionedTree.nodes.some((entry) => entry.nodePath === "TransitionedMarker");
         }, 5_000, 50);
         expect(transitionedTree?.nodes.map((entry) => entry.nodePath)).toEqual([".", "TransitionedMarker"]);
-        phase = "stop-transition-generation";
-        await runtime.execute({ operation: "stop", handle: transitionRun.handle });
+        phase = "owner-heartbeat-watchdog";
+        await activeDescriptor?.cleanup();
+        await waitUntil(() => runtime.snapshot().state === "stopped", 5_000, 50);
         expect(runtime.snapshot().state).toBe("stopped");
       } finally {
         await runtime.close();

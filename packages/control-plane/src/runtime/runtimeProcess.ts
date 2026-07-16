@@ -145,35 +145,41 @@ export class OwnedGodotProcess implements OwnedRuntimeProcess {
   }
 
   stop(graceMs = 2_000): Promise<void> {
-    this.stopPromise ??= (async () => {
-      if (childHasExited(this.child)) return;
-      const current = await processFingerprint(this.pid).catch(() => "");
-      if (shouldRefuseProcessSignal(this.child, current, this.fingerprint)) {
-        throw new GodotMcpException({
-          code: "CONFLICT",
-          message: "Owned runtime process fingerprint changed; refusing to signal",
-          retryable: false,
-          correlationId: this.fingerprint,
-          partialEffects: false,
-          rollback: "not_attempted",
-        });
-      }
-      if (childHasExited(this.child)) return;
-      this.child.kill("SIGTERM");
-      const stopped = await Promise.race([
-        waitForExit(this.child).then(() => true),
-        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), graceMs)),
-      ]);
-      if (!stopped && !childHasExited(this.child)) {
-        const beforeKill = await processFingerprint(this.pid).catch(() => "");
-        if (shouldRefuseProcessSignal(this.child, beforeKill, this.fingerprint)) {
-          throw new Error("Owned runtime fingerprint changed before escalation");
+    if (!this.stopPromise) {
+      const activeStop = (async () => {
+        if (childHasExited(this.child)) return;
+        const current = await processFingerprint(this.pid).catch(() => "");
+        if (shouldRefuseProcessSignal(this.child, current, this.fingerprint)) {
+          throw new GodotMcpException({
+            code: "CONFLICT",
+            message: "Owned runtime process fingerprint changed; refusing to signal",
+            retryable: false,
+            correlationId: this.fingerprint,
+            partialEffects: false,
+            rollback: "not_attempted",
+          });
         }
         if (childHasExited(this.child)) return;
-        this.child.kill("SIGKILL");
-        await waitForExit(this.child);
-      }
-    })();
+        this.child.kill("SIGTERM");
+        const stopped = await Promise.race([
+          waitForExit(this.child).then(() => true),
+          new Promise<boolean>((resolve) => setTimeout(() => resolve(false), graceMs)),
+        ]);
+        if (!stopped && !childHasExited(this.child)) {
+          const beforeKill = await processFingerprint(this.pid).catch(() => "");
+          if (shouldRefuseProcessSignal(this.child, beforeKill, this.fingerprint)) {
+            throw new Error("Owned runtime fingerprint changed before escalation");
+          }
+          if (childHasExited(this.child)) return;
+          this.child.kill("SIGKILL");
+          await waitForExit(this.child);
+        }
+      })();
+      this.stopPromise = activeStop;
+      void activeStop.catch(() => {
+        if (this.stopPromise === activeStop) this.stopPromise = undefined;
+      });
+    }
     return this.stopPromise;
   }
 }

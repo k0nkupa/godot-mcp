@@ -17,6 +17,7 @@ var _logger: Logger
 var _query: RefCounted
 var _control: RefCounted
 var _runtime_capture: RefCounted
+var _next_owner_check_ms := 0
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -30,7 +31,11 @@ func _ready() -> void:
 		get_tree().quit(2)
 		return
 	_descriptor = parsed
-	if int(_descriptor.expiresAtUnixMs) < _now_ms() or not EngineDebugger.is_active():
+	if (
+		int(_descriptor.expiresAtUnixMs) < _now_ms()
+		or not EngineDebugger.is_active()
+		or not owner_lease_path_is_allowed(String(_descriptor.ownerLeasePath), DescriptorReader.runtime_directory())
+	):
 		get_tree().quit(2)
 		return
 	_secret = SessionCrypto.base64url_decode(String(_descriptor.secret))
@@ -48,6 +53,14 @@ func _ready() -> void:
 	}
 	hello.proof = SessionCrypto.hmac_sha256(_secret, hello_signing_text(hello)).hex_encode()
 	EngineDebugger.send_message("godot_mcp_runtime:hello", [hello])
+
+func _process(_delta: float) -> void:
+	if _descriptor.is_empty() or _now_ms() < _next_owner_check_ms:
+		return
+	_next_owner_check_ms = _now_ms() + 500
+	var modified_unix_s := FileAccess.get_modified_time(String(_descriptor.get("ownerLeasePath", "")))
+	if not owner_lease_is_fresh(modified_unix_s, _now_ms()):
+		get_tree().quit(4)
 
 func _exit_tree() -> void:
 	if EngineDebugger.has_capture("godot_mcp_runtime"):
@@ -170,13 +183,22 @@ static func descriptor_path_is_allowed(path: String, runtime_directory: String) 
 	return normalized_path.get_base_dir() == normalized_directory and normalized_path.get_file().begins_with("runtime-") and normalized_path.get_extension() == "json"
 
 static func descriptor_has_required_fields(descriptor: Dictionary) -> bool:
-	for field in ["project", "sessionId", "runId", "generation", "scenePath", "secret", "launchNonce", "expiresAtUnixMs"]:
+	for field in ["project", "sessionId", "runId", "generation", "scenePath", "ownerLeasePath", "secret", "launchNonce", "expiresAtUnixMs"]:
 		if not descriptor.has(field):
 			return false
 	return typeof(descriptor.project) == TYPE_DICTIONARY and descriptor.project.has("projectId")
 
 static func operation_is_allowed(operation: String) -> bool:
 	return operation in ["status", "tree", "node", "logs", "wait", "pause", "resume", "step", "stop", "capture"]
+
+static func owner_lease_path_is_allowed(path: String, runtime_directory: String) -> bool:
+	if path.is_empty() or runtime_directory.is_empty() or not path.is_absolute_path():
+		return false
+	var normalized_path := path.simplify_path()
+	return normalized_path.get_base_dir() == runtime_directory.simplify_path() and normalized_path.get_file().begins_with("runtime-") and normalized_path.get_extension() == "lease"
+
+static func owner_lease_is_fresh(modified_unix_s: int, now_unix_ms: int) -> bool:
+	return modified_unix_s > 0 and now_unix_ms - modified_unix_s * 1000 <= 3000
 
 static func hello_signing_text(payload: Dictionary) -> String:
 	return "godot-mcp:runtime-hello:v1\n%s\n%s\n%s\n%s\n%s\n%s" % [

@@ -75,10 +75,12 @@ describe("hostile runtime boundaries", () => {
       const expired = await createRuntimeDescriptor(input);
       await expect(consumeRuntimeDescriptor(expired.path, { ...input, now: 60_002 })).rejects.toMatchObject({ code: "AUTHENTICATION_FAILED" });
       await expect(access(expired.path)).rejects.toThrow();
+      await expired.cleanup();
 
       const mismatch = await createRuntimeDescriptor({ ...input, runId: "019f644c-1379-79c0-825e-66a4b7653bd4" });
       await expect(consumeRuntimeDescriptor(mismatch.path, { ...input, sessionId: "session_wrong_1234" })).rejects.toMatchObject({ code: "AUTHENTICATION_FAILED" });
       await expect(consumeRuntimeDescriptor(mismatch.path, input)).rejects.toMatchObject({ code: "AUTHENTICATION_FAILED" });
+      await mismatch.cleanup();
 
       expect(await readdir(join(project.root, "runtime/godot-mcp"))).toEqual([]);
     } finally {

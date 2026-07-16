@@ -35,6 +35,7 @@ it("creates an owner-only one-use runtime descriptor", async () => {
   cleanups.push(material.cleanup);
 
   expect((await lstat(material.path)).mode & 0o777).toBe(0o600);
+  expect((await lstat(material.descriptor.ownerLeasePath)).mode & 0o777).toBe(0o600);
   expect(material.descriptor.secret).toMatch(/^[A-Za-z0-9_-]{43}$/);
   await expect(consumeRuntimeDescriptor(material.path, input)).resolves.toMatchObject(input);
   await expect(consumeRuntimeDescriptor(material.path, input)).rejects.toMatchObject({ code: "AUTHENTICATION_FAILED" });
