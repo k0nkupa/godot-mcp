@@ -100,4 +100,34 @@ describe("Phase 2 editor schemas", () => {
       }).error?.code).toBe(code);
     },
   );
+
+  it("preserves bounded editor mutation rollback facts", () => {
+	const parsed = BridgeCommandResultSchema.parse({
+		requestId: "00000000-0000-4000-8000-000000000000",
+		ok: false,
+		error: {
+			code: "ROLLBACK_FAILED",
+			message: "mutation failed",
+			retryable: false,
+			failedPhase: "save",
+			partialEffects: true,
+			rollback: "failed",
+			safeRecovery: "Reload the affected scene and preview again.",
+		},
+	});
+	expect(parsed.error).toMatchObject({
+		failedPhase: "save",
+		partialEffects: true,
+		rollback: "failed",
+		safeRecovery: "Reload the affected scene and preview again.",
+	});
+	expect(() => BridgeCommandResultSchema.parse({
+		requestId: "00000000-0000-4000-8000-000000000000",
+		ok: false,
+		error: {
+			code: "ROLLBACK_FAILED", message: "mutation failed", retryable: false,
+			failedPhase: "x".repeat(129), partialEffects: true, rollback: "maybe", safeRecovery: "reload",
+		},
+	})).toThrow();
+  });
 });

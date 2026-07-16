@@ -67,7 +67,12 @@ func _deliver_command(command: Dictionary, outcome: Dictionary) -> void:
 	var request_id := String(command.get("requestId", ""))
 	var deadline_unix_ms := int(command.get("deadlineUnixMs", 0))
 	if not bool(outcome.get("ok", false)):
-		bridge.send_command_error(request_id, String(outcome.get("code", "GODOT_RUNTIME_ERROR")), String(outcome.get("message", "Godot command failed")), bool(outcome.get("retryable", false)))
+		bridge.send_command_error(request_id, String(outcome.get("code", "GODOT_RUNTIME_ERROR")), String(outcome.get("message", "Godot command failed")), bool(outcome.get("retryable", false)), {
+			"failedPhase": outcome.get("failedPhase", "request"),
+			"partialEffects": outcome.get("partialEffects", false),
+			"rollback": outcome.get("rollback", "not_needed"),
+			"safeRecovery": outcome.get("safeRecovery", "Review the error and retry only after correcting the request"),
+		})
 		return
 	var chunks: Array = outcome.get("chunks", [])
 	var binary: Dictionary = outcome.get("binary", {})

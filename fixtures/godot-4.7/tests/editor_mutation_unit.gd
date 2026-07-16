@@ -84,6 +84,16 @@ func _init() -> void:
 		{"operation": "set_property", "scenePath": "res://main.tscn", "nodePath": "StatusLabel", "property": "text", "value": "x"},
 		{"operation": "create_resource", "resourcePath": "res://mutation/new.tres", "className": "Resource"},
 	]}).code == "CONFLICT")
+	assert(mutation.execute({"operation": "preview", "steps": [{
+		"operation": "create_resource", "resourcePath": "res://addons/blocked.tres", "className": "Resource",
+	}]}).code == "INVALID_REQUEST")
+	assert(mutation.execute({"operation": "preview", "steps": [{
+		"operation": "duplicate_resource", "resourcePath": "res://observation/fixture_resource.tres",
+		"destinationPath": "res://.godot/blocked.tres",
+	}]}).code == "INVALID_REQUEST")
+	assert(mutation.execute({"operation": "preview", "steps": [{
+		"operation": "duplicate_scene", "scenePath": "res://main.tscn", "destinationPath": "res://main.tscn",
+	}]}).code == "CONFLICT")
 	_test_file_operations(mutation)
 	mutation.clear()
 	undo_redo.clear_history(false)

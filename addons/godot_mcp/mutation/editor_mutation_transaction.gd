@@ -33,7 +33,7 @@ func prepare(step_value: Dictionary) -> Dictionary:
 		if not decoded.ok: return decoded
 		step._node = node; step._before = node.get(String(step.property)); step._after = decoded.value
 	elif operation in ["set_metadata", "remove_metadata"]:
-		step._node = node; step._had_before = node.has_meta(String(step.key)); step._before = node.get_meta(String(step.key), null)
+		step._node = node; step._had_before = node.has_meta(String(step.key)); step._before = node.get_meta(String(step.key)) if step._had_before else null
 		if operation == "set_metadata":
 			var decoded := VariantDecoder.decode(step.value, editor_filesystem)
 			if not decoded.ok: return decoded

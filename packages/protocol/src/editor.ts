@@ -172,6 +172,10 @@ export const BridgeCommandResultSchema = z
         ]),
         message: z.string().max(4096),
         retryable: z.boolean(),
+		failedPhase: z.string().min(1).max(128).default("request"),
+		partialEffects: z.boolean().default(false),
+		rollback: z.enum(["not_needed", "succeeded", "failed", "not_attempted"]).default("not_needed"),
+		safeRecovery: z.string().min(1).max(1024).default("Review the error and retry only after correcting the request"),
       })
       .strict()
       .optional(),

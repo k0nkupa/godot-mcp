@@ -1,0 +1,15 @@
+[gd_scene format=3 uid="uid://djc7resfa63qi"]
+
+[ext_resource type="Script" uid="uid://cfyxslhq2tdx7" path="res://mutation/editor_mutation_fixture.gd" id="1_script"]
+
+[node name="EditorMutation" type="Node2D" unique_id=364204958]
+script = ExtResource("1_script")
+
+[node name="Target" type="Node2D" parent="." unique_id=2092072881 groups=["initial_group"]]
+position = Vector2(2, 4)
+metadata/initial = "preimage"
+
+[node name="Sibling" type="Node2D" parent="." unique_id=32817142]
+position = Vector2(6, 8)
+
+[node name="Container" type="Node2D" parent="." unique_id=351962243]

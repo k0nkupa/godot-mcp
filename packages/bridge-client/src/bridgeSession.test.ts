@@ -116,6 +116,32 @@ describe("BridgeSession requests", () => {
     await expect(request).resolves.toMatchObject({ requestId, data: { state: "ready" } });
   });
 
+  it("preserves editor mutation rollback facts on command failure", async () => {
+	const request = peer.session.request("editor.mutate", { operation: "preview", steps: [] }, { timeoutMs: 1_000 });
+	const sent = await peer.nextEnvelope();
+	const requestId = String((sent.params as { requestId: string }).requestId);
+	peer.send("command.result", {
+		requestId,
+		ok: false,
+		error: {
+			code: "ROLLBACK_FAILED",
+			message: "mutation failed",
+			retryable: false,
+			failedPhase: "save",
+			partialEffects: true,
+			rollback: "failed",
+			safeRecovery: "Reload the affected scene and preview again.",
+		},
+	});
+	await expect(request).rejects.toMatchObject({
+		code: "ROLLBACK_FAILED",
+		failedPhase: "save",
+		partialEffects: true,
+		rollback: "failed",
+		safeRecovery: "Reload the affected scene and preview again.",
+	});
+  });
+
   it("assembles contiguous chunks and verifies size and digest", async () => {
     const first = Buffer.from("chunk-a");
     const second = Buffer.from("chunk-b");

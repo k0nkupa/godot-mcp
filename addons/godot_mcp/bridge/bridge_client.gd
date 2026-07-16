@@ -242,9 +242,15 @@ func send_command_chunk_flow_controlled(request_id: String, index: int, total: i
 		return false
 	return _send_signed("command.chunk", {"requestId": request_id, "index": index, "total": total, "sha256": sha256, "data": data}, mini(remaining_ms, 5000)) == OK
 
-func send_command_error(request_id: String, code: String, message: String, retryable: bool = false) -> void:
+func send_command_error(request_id: String, code: String, message: String, retryable: bool = false, facts: Dictionary = {}) -> void:
 	if is_attached():
-		_send_signed("command.result", {"requestId": request_id, "ok": false, "error": {"code": code, "message": message.left(4096), "retryable": retryable}}, 5000)
+		_send_signed("command.result", {"requestId": request_id, "ok": false, "error": {
+			"code": code, "message": message.left(4096), "retryable": retryable,
+			"failedPhase": String(facts.get("failedPhase", "request")).left(128),
+			"partialEffects": bool(facts.get("partialEffects", false)),
+			"rollback": String(facts.get("rollback", "not_needed")),
+			"safeRecovery": String(facts.get("safeRecovery", "Review the error and retry only after correcting the request")).left(1024),
+		}}, 5000)
 
 func close(reason: String = "closed") -> void:
 	if _closed:

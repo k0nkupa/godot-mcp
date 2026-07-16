@@ -58,15 +58,19 @@ function bridgeError(
   message: string,
   retryable = false,
   correlationId: string = randomUUID(),
+	facts: Partial<Pick<GodotMcpError, "failedPhase" | "partialEffects" | "rollback" | "safeRecovery">> = {},
 ): GodotMcpException {
-  return new GodotMcpException({
+  const input: ConstructorParameters<typeof GodotMcpException>[0] = {
     code,
     message,
     retryable,
     correlationId,
-    partialEffects: false,
-    rollback: "not_needed",
-  });
+	partialEffects: facts.partialEffects ?? false,
+	rollback: facts.rollback ?? "not_needed",
+	};
+	if (facts.failedPhase !== undefined) input.failedPhase = facts.failedPhase;
+	if (facts.safeRecovery !== undefined) input.safeRecovery = facts.safeRecovery;
+	return new GodotMcpException(input);
 }
 
 export class BridgeSession {
@@ -258,6 +262,12 @@ export class BridgeSession {
     if (!pending) return;
     if (!parsed.ok) {
       const error = parsed.error;
+	  const facts = error === undefined ? {} : {
+		failedPhase: error.failedPhase,
+		partialEffects: error.partialEffects,
+		rollback: error.rollback,
+		safeRecovery: error.safeRecovery,
+	  };
       this.finishPending(
         parsed.requestId,
         undefined,
@@ -266,6 +276,7 @@ export class BridgeSession {
           error?.message ?? "Godot command failed",
           error?.retryable ?? false,
           parsed.requestId,
+		  facts,
         ),
       );
       return;
