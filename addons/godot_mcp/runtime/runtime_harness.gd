@@ -272,8 +272,8 @@ static func server_proof_signing_text(payload: Dictionary) -> String:
 		String(payload.proof),
 	]
 
-static func valid_server_proof(secret: PackedByteArray, hello: Dictionary, received: String) -> bool:
-	var expected := SessionCrypto.hmac_sha256(secret, server_proof_signing_text(hello)).hex_encode()
+static func valid_server_proof(proof_key: PackedByteArray, hello: Dictionary, received: String) -> bool:
+	var expected := SessionCrypto.hmac_sha256(proof_key, server_proof_signing_text(hello)).hex_encode()
 	return SessionCrypto.constant_time_equal(received, expected)
 
 static func _now_ms() -> int:
