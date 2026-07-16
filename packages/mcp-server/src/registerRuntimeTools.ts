@@ -96,7 +96,7 @@ export function registerRuntimeTools(server: McpServer, dependencies: RuntimeToo
       ) throw new Error("Runtime capture metadata does not match verified PNG bytes or request bounds");
       const stored = await dependencies.evidence.putPng(attachment.sessionId, frame.data, {
         source: "runtime",
-        viewport: "2d",
+        viewport: "runtime",
         width: metadata.width,
         height: metadata.height,
         runId: input.handle.runId,

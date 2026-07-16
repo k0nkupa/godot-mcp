@@ -44,7 +44,7 @@ async function fixture() {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
   cleanups.push(async () => Promise.all([client.close(), server.close()]).then(() => undefined));
-  return { auditPath, client };
+  return { auditPath, client, directory };
 }
 
 it("registers runtime tools only for the explicit runtime grants", async () => {
@@ -59,7 +59,7 @@ it("registers runtime tools only for the explicit runtime grants", async () => {
 });
 
 it("returns ordered runtime images without putting bytes in structured or audit output", async () => {
-  const { auditPath, client } = await fixture();
+  const { auditPath, client, directory } = await fixture();
   const capture = await client.callTool({ name: "godot_runtime_capture", arguments: { handle, frameCount: 2, maxWidth: 640, maxHeight: 360 } });
   const content = capture.content as Array<{ type: string; data?: string; mimeType?: string }>;
   expect(content.filter((item) => item.type === "image")).toEqual([
@@ -69,4 +69,6 @@ it("returns ordered runtime images without putting bytes in structured or audit 
   expect(capture.structuredContent).toMatchObject({ ok: true, data: { frames: [{ frameIndex: 0 }, { frameIndex: 1 }] } });
   expect(JSON.stringify(capture.structuredContent)).not.toContain(png.toString("base64"));
   expect(await readFile(auditPath, "utf8")).not.toContain(png.toString("base64"));
+  await expect(readFile(join(directory, ".godot/evidence/godot-mcp/sessions/session_12345678", `${sha256}.json`), "utf8"))
+    .resolves.toContain('"viewport":"runtime"');
 });

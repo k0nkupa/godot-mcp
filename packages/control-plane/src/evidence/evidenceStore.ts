@@ -9,7 +9,7 @@ const PNG_SIGNATURE = Buffer.from("89504e470d0a1a0a", "hex");
 const SESSION_PATTERN = /^session_[A-Za-z0-9_-]{8,128}$/;
 
 export interface PngEvidenceMetadata {
-  viewport: "2d" | "3d";
+  viewport: "2d" | "3d" | "runtime";
   width: number;
   height: number;
   viewportIndex?: number;

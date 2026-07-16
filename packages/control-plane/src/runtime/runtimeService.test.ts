@@ -30,7 +30,9 @@ it("serializes one runtime generation and rejects stale handles", async () => {
     command: async (operation, _input, timeoutMs) => {
       calls.push(operation);
       timeouts.push(timeoutMs);
-      return operation === "await_ready" ? { pid: 42, root: "." } : { ok: true };
+      if (operation === "await_ready") return { pid: 42, root: "." };
+      if (operation === "status") return { paused: true };
+      return { ok: true };
     },
     capture: async (input) => ({
       data: { mimeType: "image/png", width: 1, height: 1, byteLength: 8, sha256: "c".repeat(64), frameIndex: Number(input.frameIndex) },
@@ -42,7 +44,7 @@ it("serializes one runtime generation and rejects stale handles", async () => {
   const launched = await service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 });
   expect(launched.handle.generation).toBe(1);
   expect(service.snapshot()).toMatchObject({ state: "running", handle: launched.handle });
-  await expect(service.execute({ operation: "status", handle: launched.handle })).resolves.toMatchObject({ state: "running", handle: launched.handle });
+  await expect(service.execute({ operation: "status", handle: launched.handle })).resolves.toMatchObject({ state: "paused", paused: true, handle: launched.handle });
   expect(calls.at(-1)).toBe("status");
   await expect(service.execute({ operation: "status", handle: { ...launched.handle, generation: 2 } })).rejects.toMatchObject({ code: "STALE_HANDLE" });
   await expect(service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 })).rejects.toMatchObject({ code: "CONFLICT" });

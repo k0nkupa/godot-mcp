@@ -189,9 +189,11 @@ export class RuntimeService {
       if (input.handle) this.assertHandleIdentity(input.handle);
       if (!this.handle || !["running", "paused"].includes(this.state)) return this.snapshot();
       const runtimeStatus = await this.dependencies.command("status", { handle: this.handle });
-      return typeof runtimeStatus === "object" && runtimeStatus !== null
-        ? { ...this.snapshot(), ...runtimeStatus }
-        : this.snapshot();
+      if (typeof runtimeStatus !== "object" || runtimeStatus === null) return this.snapshot();
+      if ("paused" in runtimeStatus && typeof runtimeStatus.paused === "boolean") {
+        this.state = runtimeStatus.paused ? "paused" : "running";
+      }
+      return { ...this.snapshot(), ...runtimeStatus };
     }
     this.assertHandle(input.handle);
     if (input.operation === "stop") {
