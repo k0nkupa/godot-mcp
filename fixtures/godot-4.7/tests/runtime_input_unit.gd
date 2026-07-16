@@ -119,6 +119,7 @@ func _init() -> void:
 	assert(stopped_trace.trace.events[0].frameOffset == 0 and stopped_trace.trace.events[255].frameOffset == 255)
 	assert(trace.start(0).ok)
 	assert(trace.append({"type": "action", "action": "phase_4_accept", "pressed": true, "strengthMillionths": 1000000}, 100).ok)
+	assert(trace.validate_append(1901).code == "PAYLOAD_TOO_LARGE")
 	assert(trace.append({"type": "action", "action": "phase_4_accept", "pressed": false, "strengthMillionths": 0}, 1901).code == "PAYLOAD_TOO_LARGE")
 	assert(trace.stop().trace.events.size() == 1)
 
@@ -143,6 +144,16 @@ func _init() -> void:
 	var released: Dictionary = runtime_input.release_all("unit")
 	assert(released.ok and released.releases.is_empty())
 	assert(runtime_input.release_all("again").releases.is_empty())
+	var held_before_precondition: Dictionary = await runtime_input.execute({
+		"operation": "send", "handle": handle,
+		"event": {"type": "action", "action": "phase_4_accept", "pressed": true, "strengthMillionths": 1000000},
+	}, _now_ms() + 5000)
+	assert(held_before_precondition.ok and Input.is_action_pressed("phase_4_accept"))
+	var rejected_mode: Dictionary = await runtime_input.execute({
+		"operation": "replay", "handle": handle, "mode": "deterministic", "timeoutMs": 5000,
+		"trace": {"schemaVersion": 1, "events": []},
+	}, _now_ms() + 5000)
+	assert(rejected_mode.code == "PRECONDITION_FAILED" and not Input.is_action_pressed("phase_4_accept"))
 
 	paused = true
 	var empty_replay: Dictionary = await runtime_input.execute({

@@ -236,12 +236,6 @@ export class RuntimeService {
 
   private async inputExclusive(input: InputOperationInput): Promise<InputOperationResult> {
     this.assertHandle(input.handle);
-    if ((input.operation === "replay" || (input.operation === "sequence" && input.mode === "deterministic")) && this.state !== "paused") {
-      throw runtimeError("PRECONDITION_FAILED", "Deterministic input requires a paused runtime");
-    }
-    if (input.operation === "sequence" && input.mode === "realtime" && this.state !== "running") {
-      throw runtimeError("PRECONDITION_FAILED", "Realtime input requires a running runtime");
-    }
     const timeoutMs = input.operation === "sequence" || input.operation === "replay"
       ? input.timeoutMs + 1_000
       : undefined;

@@ -79,10 +79,13 @@ func _execute_events(input: Dictionary, value: Variant, deterministic: bool, dea
 	var tree := _root.get_tree() if is_instance_valid(_root) else null
 	if tree == null: return _error("TARGET_NOT_FOUND", "Runtime scene changed", true)
 	if deterministic and not tree.paused:
+		_release_held_state()
 		return _error("PRECONDITION_FAILED", "Deterministic input requires a paused runtime")
 	if not deterministic and String(input.operation) == "sequence" and tree.paused:
+		_release_held_state()
 		return _error("PRECONDITION_FAILED", "Realtime input requires a running runtime")
 	if not _trace.can_append(value.size()):
+		_release_held_state()
 		return _error("PAYLOAD_TOO_LARGE", "Input recording would exceed 256 events")
 	if value.is_empty():
 		var empty_trace := {"schemaVersion": 1, "events": []}
@@ -114,6 +117,10 @@ func _execute_events(input: Dictionary, value: Variant, deterministic: bool, dea
 				_release_held_state()
 				return advanced
 			current_offset = target_offset
+		var appendable := _trace.validate_append(Engine.get_process_frames())
+		if not appendable.ok:
+			_release_held_state()
+			return appendable
 		var delivered := _deliver_spec(item.event, not deterministic)
 		if not delivered.ok:
 			_release_held_state()
@@ -140,22 +147,32 @@ func _advance(frames: int, deterministic: bool, deadline_unix_ms: int) -> Dictio
 		await _root.get_tree().process_frame
 		if not is_instance_valid(_root):
 			return _error("TARGET_NOT_FOUND", "Runtime scene changed", true)
+		if _now_ms() >= deadline_unix_ms:
+			return _error("TIMEOUT", "Input sequence deadline expired", true)
 	return {"ok": true}
 
 func _deliver_spec(spec: Variant, flush_global := true) -> Dictionary:
 	var built := EventFactory.build(spec)
 	if not built.ok: return built
 	if built.route == "global":
+		_state.observe(spec)
 		for event: InputEvent in built.events:
 			Input.parse_input_event(event)
 		if flush_global:
 			Input.flush_buffered_events()
 	else:
+		var resolved_events: Array[Dictionary] = []
 		for event: InputEvent in built.events:
 			var resolved := InputCoordinates.resolve(_root, event, spec)
 			if not resolved.ok: return resolved
-			resolved.viewport.push_input(event, bool(resolved.inLocalCoords))
-	_state.observe(spec)
+			resolved_events.append({"event": event, "target": resolved})
+		_state.observe(spec)
+		for item: Dictionary in resolved_events:
+			var resolved: Dictionary = item.target
+			resolved.viewport.push_input(item.event, bool(resolved.inLocalCoords))
+	if not is_instance_valid(_root):
+		_release_held_state()
+		return _error("TARGET_NOT_FOUND", "Runtime scene changed", true)
 	return {"ok": true}
 
 func _handle(input: Dictionary) -> Dictionary:

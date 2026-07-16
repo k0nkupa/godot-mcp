@@ -498,6 +498,9 @@ it("serializes bounded input with runtime operations and rejects stale receipts"
   await resuming;
   expect(calls.slice(-2).map((call) => call.operation)).toEqual(["input", "resume"]);
   expect(calls.find((call) => call.operation === "input")?.timeoutMs).toBe(31_000);
+  const inputCallsBeforeModeMismatch = calls.filter((call) => call.operation === "input").length;
+  await expect(service.input(input)).resolves.toMatchObject({ receipt: { deterministic: true } });
+  expect(calls.filter((call) => call.operation === "input")).toHaveLength(inputCallsBeforeModeMismatch + 1);
   await expect(service.input({ ...input, handle: { ...launched.handle, generation: 2 } })).rejects.toMatchObject({ code: "STALE_HANDLE" });
   corruptReceipt = true;
   const realtimeInput = InputOperationInputSchema.parse({ ...input, mode: "realtime" });
