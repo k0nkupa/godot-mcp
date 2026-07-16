@@ -8,14 +8,11 @@ static func resolve(game_root: Node, event: InputEvent, target: Variant) -> Dict
 		return _error("INVALID_REQUEST", "Input coordinate target is invalid")
 	for field in ["position", "viewportPath", "coordinateSpace"]:
 		if not target.has(field): return _error("INVALID_REQUEST", "Input coordinate target is incomplete")
-	for key: Variant in target.keys():
-		if String(key) not in ["position", "viewportPath", "coordinateSpace"]:
-			return _error("INVALID_REQUEST", "Input coordinate target contains an unsupported field")
 	var viewport_path := String(target.viewportPath)
 	if not path_is_allowed(viewport_path): return _error("INVALID_REQUEST", "Input viewport path is invalid")
 	var viewport: Viewport = game_root.get_viewport() if viewport_path == "." else game_root.get_node_or_null(NodePath(viewport_path)) as Viewport
-	if viewport == null: return _error("TARGET_NOT_FOUND", "Input viewport was not found")
-	if typeof(target.position) != TYPE_DICTIONARY or not target.position.has("x") or not target.position.has("y"):
+	if viewport == null or not viewport.is_inside_tree(): return _error("TARGET_NOT_FOUND", "Input viewport was not found")
+	if typeof(target.position) != TYPE_DICTIONARY or target.position.keys().size() != 2 or not target.position.has("x") or not target.position.has("y"):
 		return _error("INVALID_REQUEST", "Input position is invalid")
 	var space := String(target.coordinateSpace)
 	var position := Vector2(float(target.position.x), float(target.position.y))

@@ -17,6 +17,13 @@ window/size/viewport_height=360
 window/size/window_width_override=640
 window/size/window_height_override=360
 
+[input]
+
+phase_4_accept={
+"deadzone": 0.5,
+"events": []
+}
+
 [rendering]
 
 renderer/rendering_method="gl_compatibility"

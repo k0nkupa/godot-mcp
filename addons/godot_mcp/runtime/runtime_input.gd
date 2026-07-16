@@ -107,7 +107,7 @@ func _execute_events(input: Dictionary, value: Variant, deterministic: bool, dea
 				release_all("advance_failed")
 				return advanced
 			current_offset = target_offset
-		var delivered := _deliver_spec(item.event)
+		var delivered := _deliver_spec(item.event, not deterministic)
 		if not delivered.ok:
 			release_all("delivery_failed")
 			return delivered
@@ -116,6 +116,11 @@ func _execute_events(input: Dictionary, value: Variant, deterministic: bool, dea
 			release_all("recording_failed")
 			return recorded
 		receipts.append(_event_receipt(index, item.event, target_offset, current_offset))
+	if deterministic:
+		var final_advance := await _advance(1, true, deadline_unix_ms)
+		if not final_advance.ok:
+			release_all("final_advance_failed")
+			return final_advance
 	var trace := {"schemaVersion": 1, "events": value.duplicate(true)}
 	return {"ok": true, "data": {"receipt": _receipt(handle.value, String(input.operation), receipts, deterministic, _trace.is_active(), [], trace)}}
 
@@ -130,12 +135,14 @@ func _advance(frames: int, deterministic: bool, deadline_unix_ms: int) -> Dictio
 			return _error("TARGET_NOT_FOUND", "Runtime scene changed", true)
 	return {"ok": true}
 
-func _deliver_spec(spec: Variant) -> Dictionary:
+func _deliver_spec(spec: Variant, flush_global := true) -> Dictionary:
 	var built := EventFactory.build(spec)
 	if not built.ok: return built
 	if built.route == "global":
 		for event: InputEvent in built.events:
 			Input.parse_input_event(event)
+		if flush_global:
+			Input.flush_buffered_events()
 	else:
 		for event: InputEvent in built.events:
 			var resolved := InputCoordinates.resolve(_root, event, spec)

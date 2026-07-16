@@ -23,7 +23,8 @@ class UnitFrameClock:
 		return {"ok": true}
 
 func _init() -> void:
-	InputMap.add_action("phase_4_accept")
+	if not InputMap.has_action("phase_4_accept"):
+		InputMap.add_action("phase_4_accept")
 	var action: Dictionary = EventFactory.build({
 		"type": "action", "action": "phase_4_accept", "pressed": true, "strengthMillionths": 500000,
 	})
@@ -81,6 +82,10 @@ func _init() -> void:
 	assert(normalized.ok and normalized.viewport == embedded and normalized.inLocalCoords)
 	assert(normalized.events[0].position == Vector2(80, 135))
 	assert(normalized.receipt == {"viewportPath": "Embedded", "coordinateSpace": "normalized", "visibleWidth": 320, "visibleHeight": 180})
+	assert(InputCoordinates.resolve(game_root, touch.events[0], {
+		"type": "touch", "position": {"x": 250000, "y": 750000}, "viewportPath": "Embedded",
+		"coordinateSpace": "normalized", "index": 3, "pressed": true, "canceled": false, "doubleTap": false,
+	}).ok)
 	assert(InputCoordinates.resolve(game_root, touch.events[0], {"position": {"x": 0, "y": 0}, "viewportPath": "../Escape", "coordinateSpace": "viewport"}).code == "INVALID_REQUEST")
 	var not_viewport := Node.new()
 	not_viewport.name = "NotViewport"
@@ -116,13 +121,11 @@ func _init() -> void:
 		"operation": "send", "handle": handle,
 		"event": {"type": "action", "action": "phase_4_accept", "pressed": true, "strengthMillionths": 1000000},
 	}, _now_ms() + 5000)
-	await process_frame
 	assert(sent.ok and sent.data.receipt.eventCount == 1 and Input.is_action_pressed("phase_4_accept"))
 	var recording_stopped: Dictionary = await runtime_input.execute({"operation": "record_stop", "handle": handle}, _now_ms() + 5000)
 	assert(recording_stopped.ok and recording_stopped.data.trace.events.size() == 1)
 	assert(recording_stopped.data.receipt.traceSha256 == RuntimeInput.trace_sha256(recording_stopped.data.trace))
 	var released: Dictionary = runtime_input.release_all("unit")
-	await process_frame
 	assert(released.ok and released.releases == ["action"] and not Input.is_action_pressed("phase_4_accept"))
 	assert(runtime_input.release_all("again").releases.is_empty())
 
@@ -136,17 +139,14 @@ func _init() -> void:
 		],
 	}, _now_ms() + 5000)
 	assert(deterministic.ok and deterministic.data.receipt.deterministic and deterministic.data.receipt.deliveredCount == 2)
-	assert(Engine.get_process_frames() - before_frames == 2 and paused)
-	await process_frame
+	assert(Engine.get_process_frames() - before_frames == 3 and paused)
 	assert(not Input.is_action_pressed("phase_4_accept"))
 	var replayed: Dictionary = await runtime_input.execute({
 		"operation": "replay", "handle": handle, "mode": "deterministic", "timeoutMs": 5000,
 		"trace": {"schemaVersion": 1, "events": [{"frameOffset": 0, "event": {"type": "action", "action": "phase_4_accept", "pressed": true, "strengthMillionths": 1000000}}]},
 	}, _now_ms() + 5000)
-	await process_frame
 	assert(replayed.ok and replayed.data.receipt.deterministic and Input.is_action_pressed("phase_4_accept"))
 	runtime_input.release_all("replay")
-	await process_frame
 	var expired: Dictionary = await runtime_input.execute({
 		"operation": "sequence", "handle": handle, "mode": "deterministic", "timeoutMs": 1,
 		"events": [{"frameOffset": 1, "event": {"type": "action", "action": "phase_4_accept", "pressed": true, "strengthMillionths": 1000000}}],
