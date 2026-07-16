@@ -6,6 +6,7 @@ const CanonicalJson = preload("res://addons/godot_mcp/bridge/canonical_json.gd")
 const VariantDecoder = preload("res://addons/godot_mcp/mutation/editor_variant_decoder.gd")
 const VariantEncoder = preload("res://addons/godot_mcp/observation/variant_encoder.gd")
 const MutationTransaction = preload("res://addons/godot_mcp/mutation/editor_mutation_transaction.gd")
+const ProjectFileTransaction = preload("res://addons/godot_mcp/mutation/project_file_transaction.gd")
 const MAX_STEPS := 32
 const FILE_OPERATIONS := ["create_scene", "duplicate_scene", "move_scene", "delete_scene", "create_resource", "duplicate_resource", "move_resource", "delete_resource"]
 
@@ -39,8 +40,10 @@ func _apply(arguments: Dictionary) -> Dictionary:
 	if not preview.ok: return preview
 	if String(arguments.get("expectedPlanDigest", "")) != String(preview.data.planDigest):
 		return _error("CONFLICT", "Editor targets changed after preview")
-	if preview.data.history.kind != "scene": return _error("INVALID_REQUEST", "Global file mutation is implemented in the Phase 5 file transaction")
 	if _undo_redo == null: return _error("GODOT_RUNTIME_ERROR", "Editor Undo/Redo manager is unavailable")
+	var action_id := _uuid()
+	if preview.data.history.kind == "global":
+		return _apply_files(arguments, preview.data, action_id)
 	var root := _find_open_root(String(preview.data.history.scenePath))
 	var transaction := MutationTransaction.new(root, _editor.get_resource_filesystem())
 	var prepared: Array[Dictionary] = []
@@ -48,7 +51,6 @@ func _apply(arguments: Dictionary) -> Dictionary:
 		var result: Dictionary = transaction.prepare(step)
 		if not result.ok: return result
 		prepared.append(result.step)
-	var action_id := _uuid()
 	if _undo_redo is EditorUndoRedoManager:
 		_undo_redo.create_action("Godot MCP %s" % action_id, UndoRedo.MERGE_DISABLE, root, true, true)
 		for step in prepared: _undo_redo.add_do_method(transaction, "apply_step", step, true)
@@ -68,6 +70,28 @@ func _apply(arguments: Dictionary) -> Dictionary:
 	_actions[action_id] = {"history": _history_for(root), "transaction": transaction, "state": "applied", "preview": preview.data}
 	return _action_result("applied", action_id, preview.data)
 
+func _apply_files(arguments: Dictionary, preview: Dictionary, action_id: String) -> Dictionary:
+	var transaction := ProjectFileTransaction.new(_project_root, _editor.get_resource_filesystem(), action_id)
+	var prepared_result: Dictionary = transaction.prepare_steps(arguments.steps)
+	if not prepared_result.ok: return prepared_result
+	var history: UndoRedo
+	if _undo_redo is EditorUndoRedoManager:
+		_undo_redo.create_action("Godot MCP %s" % action_id, UndoRedo.MERGE_DISABLE, null, true, false)
+		_undo_redo.add_do_method(transaction, "apply_all", true)
+		_undo_redo.add_undo_method(transaction, "apply_all", false)
+		_undo_redo.commit_action()
+		history = _undo_redo.get_history_undo_redo(EditorUndoRedoManager.GLOBAL_HISTORY)
+	else:
+		_undo_redo.create_action("Godot MCP %s" % action_id, UndoRedo.MERGE_DISABLE, true)
+		_undo_redo.add_do_method(Callable(transaction, "apply_all").bind(true))
+		_undo_redo.add_undo_method(Callable(transaction, "apply_all").bind(false))
+		_undo_redo.commit_action()
+		history = _undo_redo
+	if not transaction.failure.is_empty():
+		return {"ok": false, "code": "ROLLBACK_FAILED" if transaction.partial_effects else "GODOT_RUNTIME_ERROR", "message": transaction.failure, "retryable": false, "partialEffects": transaction.partial_effects, "rollback": transaction.rollback}
+	_actions[action_id] = {"history": history, "transaction": transaction, "state": "applied", "preview": preview}
+	return _action_result("applied", action_id, preview)
+
 func _change_action(arguments: Dictionary, redo: bool) -> Dictionary:
 	var action_id := String(arguments.get("actionId", ""))
 	if not _actions.has(action_id): return _error("CONFLICT", "Requested MCP action is not available in this session")
@@ -79,7 +103,7 @@ func _change_action(arguments: Dictionary, redo: bool) -> Dictionary:
 	if not changed: return _error("CONFLICT", "Editor Undo/Redo history changed outside MCP")
 	record.state = "applied" if redo else "undone"
 	_actions[action_id] = record
-	if _editor.has_method("save_scene") and _editor.save_scene() != OK:
+	if record.preview.history.kind == "scene" and _editor.has_method("save_scene") and _editor.save_scene() != OK:
 		return _error("GODOT_RUNTIME_ERROR", "Failed to save the scene after Undo/Redo")
 	return _action_result("redone" if redo else "undone", action_id, record.preview)
 
@@ -177,6 +201,12 @@ func _validate_file_step(step: Dictionary) -> Dictionary:
 	var path := String(step.get(path_key, ""))
 	var valid := _valid_resource_path(path) if path_key == "resourcePath" else _valid_scene_path(path)
 	if not valid: return _error("INVALID_REQUEST", "Invalid project file path")
+	if not _allowed_project_file_path(path): return _error("INVALID_REQUEST", "Project file path is protected")
+	var destination := String(step.get("destinationPath", ""))
+	if not destination.is_empty():
+		var destination_valid := _valid_resource_path(destination) if path_key == "resourcePath" else _valid_scene_path(destination)
+		if not destination_valid or not _allowed_project_file_path(destination): return _error("INVALID_REQUEST", "Invalid destination project file path")
+		if FileAccess.file_exists(destination): return _error("CONFLICT", "Destination already exists")
 	if operation.begins_with("create_"):
 		var requested_class := String(step.get("className", step.get("rootClassName", "")))
 		var base := "Resource" if path_key == "resourcePath" else "Node"
@@ -219,6 +249,7 @@ func _tag_floats(value: Variant) -> Variant:
 
 func _sha256(value: Variant) -> String:
 	var bytes: PackedByteArray = value.to_utf8_buffer() if typeof(value) == TYPE_STRING else value
+	if bytes.is_empty(): return "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 	var context := HashingContext.new(); context.start(HashingContext.HASH_SHA256); context.update(bytes)
 	return context.finish().hex_encode()
 
@@ -241,6 +272,13 @@ func _valid_scene_path(path: String) -> bool:
 
 func _valid_resource_path(path: String) -> bool:
 	return path.begins_with("res://") and (path.ends_with(".tres") or path.ends_with(".res")) and ".." not in path.trim_prefix("res://").split("/") and not _contains_nul(path)
+
+func _allowed_project_file_path(path: String) -> bool:
+	var relative := path.trim_prefix("res://")
+	var first := relative.get_slice("/", 0)
+	if first in ["addons", ".git", ".godot"]: return false
+	var lowered := path.to_lower()
+	return not ("/.env" in lowered or "credential" in lowered or "secret" in lowered)
 
 func _contains_nul(value: String) -> bool:
 	for index in value.length():

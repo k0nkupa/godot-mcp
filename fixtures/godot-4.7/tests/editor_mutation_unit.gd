@@ -84,6 +84,7 @@ func _init() -> void:
 		{"operation": "set_property", "scenePath": "res://main.tscn", "nodePath": "StatusLabel", "property": "text", "value": "x"},
 		{"operation": "create_resource", "resourcePath": "res://mutation/new.tres", "className": "Resource"},
 	]}).code == "CONFLICT")
+	_test_file_operations(mutation)
 	mutation.clear()
 	undo_redo.clear_history(false)
 	root.remove_child(root_node)
@@ -94,3 +95,86 @@ func _init() -> void:
 	packed = null
 	print("GODOT_MCP_EDITOR_MUTATION_UNIT_OK")
 	quit(0)
+
+func _test_file_operations(mutation: RefCounted) -> void:
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://mutation"))
+	_assert_file_action(mutation, {
+		"operation": "create_scene", "scenePath": "res://mutation/generated_scene.tscn",
+		"rootClassName": "Node2D", "rootName": "Generated",
+	}, false, "res://mutation/generated_scene.tscn", "")
+	_assert_file_action(mutation, {
+		"operation": "create_resource", "resourcePath": "res://mutation/generated_resource.tres",
+		"className": "Resource",
+	}, false, "res://mutation/generated_resource.tres", "")
+	_assert_file_action(mutation, {
+		"operation": "duplicate_scene", "scenePath": "res://main.tscn",
+		"destinationPath": "res://mutation/duplicated_scene.tscn",
+	}, true, "res://main.tscn", "res://mutation/duplicated_scene.tscn")
+	_assert_file_action(mutation, {
+		"operation": "duplicate_resource", "resourcePath": "res://observation/fixture_resource.tres",
+		"destinationPath": "res://mutation/duplicated_resource.tres",
+	}, true, "res://observation/fixture_resource.tres", "res://mutation/duplicated_resource.tres")
+	_copy_file("res://main.tscn", "res://mutation/move_source.tscn")
+	_assert_file_action(mutation, {
+		"operation": "move_scene", "scenePath": "res://mutation/move_source.tscn",
+		"destinationPath": "res://mutation/moved_scene.tscn",
+	}, true, "res://mutation/move_source.tscn", "res://mutation/moved_scene.tscn")
+	_copy_file("res://observation/fixture_resource.tres", "res://mutation/move_source.tres")
+	_assert_file_action(mutation, {
+		"operation": "move_resource", "resourcePath": "res://mutation/move_source.tres",
+		"destinationPath": "res://mutation/moved_resource.tres",
+	}, true, "res://mutation/move_source.tres", "res://mutation/moved_resource.tres")
+	_copy_file("res://main.tscn", "res://mutation/delete_scene.tscn")
+	_assert_file_action(mutation, {
+		"operation": "delete_scene", "scenePath": "res://mutation/delete_scene.tscn",
+	}, true, "res://mutation/delete_scene.tscn", "")
+	_copy_file("res://observation/fixture_resource.tres", "res://mutation/delete_resource.tres")
+	_assert_file_action(mutation, {
+		"operation": "delete_resource", "resourcePath": "res://mutation/delete_resource.tres",
+	}, true, "res://mutation/delete_resource.tres", "")
+
+func _assert_file_action(mutation: RefCounted, step: Dictionary, source_exists_before: bool, source_path: String, destination_path: String) -> void:
+	var source_before := FileAccess.get_file_as_bytes(source_path) if source_exists_before else PackedByteArray()
+	var preview: Dictionary = mutation.execute({"operation": "preview", "steps": [step]})
+	assert(preview.ok and preview.data.history.kind == "global")
+	assert(FileAccess.file_exists(source_path) == source_exists_before)
+	if not destination_path.is_empty(): assert(not FileAccess.file_exists(destination_path))
+	var apply: Dictionary = mutation.execute({
+		"operation": "apply", "idempotencyKey": _new_key(),
+		"expectedPlanDigest": preview.data.planDigest, "steps": [step],
+	})
+	assert(apply.ok)
+	var operation := String(step.operation)
+	var result_path := source_path if operation.begins_with("create_") else destination_path
+	if operation.begins_with("delete_"):
+		assert(not FileAccess.file_exists(source_path))
+	elif operation.begins_with("move_"):
+		assert(not FileAccess.file_exists(source_path) and FileAccess.file_exists(destination_path))
+	else:
+		assert(FileAccess.file_exists(result_path))
+	var post_bytes := FileAccess.get_file_as_bytes(result_path) if not result_path.is_empty() and FileAccess.file_exists(result_path) else PackedByteArray()
+	var undo: Dictionary = mutation.execute({"operation": "undo", "actionId": apply.data.actionId, "idempotencyKey": _new_key()})
+	assert(undo.ok)
+	assert(FileAccess.file_exists(source_path) == source_exists_before)
+	if source_exists_before: assert(FileAccess.get_file_as_bytes(source_path) == source_before)
+	if not destination_path.is_empty(): assert(not FileAccess.file_exists(destination_path))
+	var redo: Dictionary = mutation.execute({"operation": "redo", "actionId": apply.data.actionId, "idempotencyKey": _new_key()})
+	assert(redo.ok)
+	if not result_path.is_empty() and not operation.begins_with("delete_"):
+		assert(FileAccess.get_file_as_bytes(result_path) == post_bytes)
+	assert(mutation.execute({"operation": "undo", "actionId": apply.data.actionId, "idempotencyKey": _new_key()}).ok)
+	if source_exists_before and source_path.begins_with("res://mutation/"):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(source_path))
+
+func _copy_file(source: String, destination: String) -> void:
+	var file := FileAccess.open(destination, FileAccess.WRITE)
+	assert(file != null)
+	file.store_buffer(FileAccess.get_file_as_bytes(source))
+	file.close()
+
+func _new_key() -> String:
+	var bytes := Crypto.new().generate_random_bytes(16)
+	bytes[6] = (bytes[6] & 0x0f) | 0x40
+	bytes[8] = (bytes[8] & 0x3f) | 0x80
+	var value := bytes.hex_encode()
+	return "%s-%s-%s-%s-%s" % [value.substr(0, 8), value.substr(8, 4), value.substr(12, 4), value.substr(16, 4), value.substr(20, 12)]
