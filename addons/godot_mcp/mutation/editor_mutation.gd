@@ -5,6 +5,7 @@ extends RefCounted
 const CanonicalJson = preload("res://addons/godot_mcp/bridge/canonical_json.gd")
 const VariantDecoder = preload("res://addons/godot_mcp/mutation/editor_variant_decoder.gd")
 const VariantEncoder = preload("res://addons/godot_mcp/observation/variant_encoder.gd")
+const MutationTransaction = preload("res://addons/godot_mcp/mutation/editor_mutation_transaction.gd")
 const MAX_STEPS := 32
 const FILE_OPERATIONS := ["create_scene", "duplicate_scene", "move_scene", "delete_scene", "create_resource", "duplicate_resource", "move_resource", "delete_resource"]
 
@@ -12,6 +13,7 @@ var _editor: Variant
 var _undo_redo: Variant
 var _project_root: String
 var _session_generation: Callable
+var _actions := {}
 
 func _init(editor: Variant, undo_redo: Variant, project_root: String, session_generation: Callable) -> void:
 	_editor = editor
@@ -20,13 +22,80 @@ func _init(editor: Variant, undo_redo: Variant, project_root: String, session_ge
 	_session_generation = session_generation
 
 func execute(arguments: Dictionary) -> Dictionary:
-	if String(arguments.get("operation", "")) != "preview":
-		return _error("INVALID_REQUEST", "Phase 5 mutation operation is not implemented")
-	return _preview(arguments)
+	match String(arguments.get("operation", "")):
+		"preview": return _preview(arguments)
+		"apply": return _apply(arguments)
+		"undo": return _change_action(arguments, false)
+		"redo": return _change_action(arguments, true)
+	return _error("INVALID_REQUEST", "Unknown editor mutation operation")
 
 func clear() -> void:
 	_editor = null
 	_undo_redo = null
+	_actions.clear()
+
+func _apply(arguments: Dictionary) -> Dictionary:
+	var preview := _preview({"operation": "preview", "steps": arguments.get("steps", [])})
+	if not preview.ok: return preview
+	if String(arguments.get("expectedPlanDigest", "")) != String(preview.data.planDigest):
+		return _error("CONFLICT", "Editor targets changed after preview")
+	if preview.data.history.kind != "scene": return _error("INVALID_REQUEST", "Global file mutation is implemented in the Phase 5 file transaction")
+	if _undo_redo == null: return _error("GODOT_RUNTIME_ERROR", "Editor Undo/Redo manager is unavailable")
+	var root := _find_open_root(String(preview.data.history.scenePath))
+	var transaction := MutationTransaction.new(root, _editor.get_resource_filesystem())
+	var prepared: Array[Dictionary] = []
+	for step in arguments.steps:
+		var result: Dictionary = transaction.prepare(step)
+		if not result.ok: return result
+		prepared.append(result.step)
+	var action_id := _uuid()
+	if _undo_redo is EditorUndoRedoManager:
+		_undo_redo.create_action("Godot MCP %s" % action_id, UndoRedo.MERGE_DISABLE, root, true, true)
+		for step in prepared: _undo_redo.add_do_method(transaction, "apply_step", step, true)
+		for index in range(prepared.size() - 1, -1, -1): _undo_redo.add_undo_method(transaction, "apply_step", prepared[index], false)
+		_undo_redo.commit_action()
+	else:
+		_undo_redo.create_action("Godot MCP %s" % action_id, UndoRedo.MERGE_DISABLE, true)
+		for step in prepared: _undo_redo.add_do_method(Callable(transaction, "apply_step").bind(step, true))
+		for index in range(prepared.size() - 1, -1, -1): _undo_redo.add_undo_method(Callable(transaction, "apply_step").bind(prepared[index], false))
+		_undo_redo.commit_action()
+	if not transaction.failure.is_empty():
+		_history_for(root).undo()
+		return {"ok": false, "code": "ROLLBACK_FAILED" if not transaction.failure.is_empty() else "GODOT_RUNTIME_ERROR", "message": transaction.failure, "retryable": false, "partialEffects": false, "rollback": "succeeded"}
+	if _editor.has_method("save_scene") and _editor.save_scene() != OK:
+		_history_for(root).undo()
+		return _error("GODOT_RUNTIME_ERROR", "Failed to save the mutated scene")
+	_actions[action_id] = {"history": _history_for(root), "transaction": transaction, "state": "applied", "preview": preview.data}
+	return _action_result("applied", action_id, preview.data)
+
+func _change_action(arguments: Dictionary, redo: bool) -> Dictionary:
+	var action_id := String(arguments.get("actionId", ""))
+	if not _actions.has(action_id): return _error("CONFLICT", "Requested MCP action is not available in this session")
+	var record: Dictionary = _actions[action_id]
+	if (redo and record.state != "undone") or (not redo and record.state != "applied"):
+		return _error("CONFLICT", "Requested MCP action is not at the expected undo state")
+	var history: UndoRedo = record.history
+	var changed: bool = history.redo() if redo else history.undo()
+	if not changed: return _error("CONFLICT", "Editor Undo/Redo history changed outside MCP")
+	record.state = "applied" if redo else "undone"
+	_actions[action_id] = record
+	if _editor.has_method("save_scene") and _editor.save_scene() != OK:
+		return _error("GODOT_RUNTIME_ERROR", "Failed to save the scene after Undo/Redo")
+	return _action_result("redone" if redo else "undone", action_id, record.preview)
+
+func _history_for(root: Node) -> UndoRedo:
+	if _undo_redo is EditorUndoRedoManager:
+		return _undo_redo.get_history_undo_redo(_undo_redo.get_object_history_id(root))
+	return _undo_redo
+
+func _action_result(state: String, action_id: String, preview: Dictionary) -> Dictionary:
+	return {"ok": true, "data": {"state": state, "actionId": action_id, "planDigest": preview.planDigest, "history": preview.history, "preconditions": preview.preconditions, "changes": preview.changes, "warnings": [], "audit": {"targetIdentities": preview.audit.targetIdentities, "preconditions": preview.preconditions, "idempotencyKeySha256": null, "partialEffects": false, "rollback": "not_needed"}}}
+
+func _uuid() -> String:
+	var bytes := Crypto.new().generate_random_bytes(16)
+	bytes[6] = (bytes[6] & 0x0f) | 0x40; bytes[8] = (bytes[8] & 0x3f) | 0x80
+	var value := bytes.hex_encode()
+	return "%s-%s-%s-%s-%s" % [value.substr(0, 8), value.substr(8, 4), value.substr(12, 4), value.substr(16, 4), value.substr(20, 12)]
 
 func _preview(arguments: Dictionary) -> Dictionary:
 	var steps: Array = arguments.get("steps", [])
