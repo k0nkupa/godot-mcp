@@ -330,6 +330,6 @@ export class RuntimeService {
   private onProcessExit(process: OwnedRuntimeProcess): void {
     if (this.process !== process || this.processStopped) return;
     this.processStopped = true;
-    void this.cleanup();
+    void this.cleanup().catch(() => undefined);
   }
 }

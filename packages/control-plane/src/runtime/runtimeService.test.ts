@@ -307,3 +307,34 @@ it("retains a failed descriptor cleanup for a later close retry", async () => {
   expect(cleanupCalls).toBe(2);
   expect(service.snapshot().state).toBe("stopped");
 });
+
+it("contains background cleanup rejection after an unexpected process exit", async () => {
+  let finishProcess: ((exitCode: number) => void) | undefined;
+  const processExit = new Promise<number>((resolve) => { finishProcess = resolve; });
+  let cleanupCalls = 0;
+  const service = new RuntimeService({
+    project,
+    sessionId: () => "session_12345678",
+    createDescriptor: async (input) => ({
+      path: "/private/runtime/descriptor.json",
+      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001, ownerLeasePath: "/private/runtime/runtime-owner.lease" },
+      secret: Buffer.alloc(32),
+      cleanup: async () => {
+        cleanupCalls += 1;
+        if (cleanupCalls === 1) throw new Error("transient background delete failure");
+      },
+    }),
+    prepare: async () => ({ debugPort: 6007 }),
+    launchProcess: async () => ({ pid: 42, fingerprint: "42:start", stop: async () => undefined, wait: async () => processExit }),
+    command: async (operation) => operation === "await_ready" ? { pid: 42 } : { ok: true },
+  });
+
+  await service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 });
+  finishProcess?.(17);
+  for (let attempt = 0; attempt < 20 && service.snapshot().state !== "failed"; attempt += 1) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 1));
+  }
+  expect(service.snapshot().state).toBe("failed");
+  await expect(service.close()).resolves.toBeUndefined();
+  expect(cleanupCalls).toBe(2);
+});
