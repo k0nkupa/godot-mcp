@@ -369,3 +369,45 @@ it("cancels launch while descriptor consumption is in progress", async () => {
   expect(stopped).toBe(true);
   expect(service.snapshot().state).toBe("stopped");
 });
+
+it("serializes overlapping runtime controls before committing lifecycle state", async () => {
+  let releaseStep: (() => void) | undefined;
+  const stepBlocked = new Promise<void>((resolve) => { releaseStep = resolve; });
+  let stepStarted: (() => void) | undefined;
+  const stepEntered = new Promise<void>((resolve) => { stepStarted = resolve; });
+  const calls: string[] = [];
+  const service = new RuntimeService({
+    project,
+    sessionId: () => "session_12345678",
+    createDescriptor: async (input) => ({
+      path: "/private/runtime/descriptor.json",
+      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001, ownerLeasePath: "/private/runtime/runtime-owner.lease" },
+      secret: Buffer.alloc(32),
+      cleanup: async () => undefined,
+    }),
+    prepare: async () => ({ debugPort: 6007 }),
+    launchProcess: async () => ({ pid: 42, fingerprint: "42:start", stop: async () => undefined, wait: async () => new Promise<number>(() => undefined) }),
+    command: async (operation) => {
+      calls.push(operation);
+      if (operation === "await_ready") return { pid: 42 };
+      if (operation === "step") {
+        stepStarted?.();
+        await stepBlocked;
+      }
+      return { ok: true };
+    },
+  });
+
+  const launched = await service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 });
+  await service.execute({ operation: "pause", handle: launched.handle });
+  const stepping = service.execute({ operation: "step", handle: launched.handle, frames: 1 });
+  await stepEntered;
+  const resuming = service.execute({ operation: "resume", handle: launched.handle });
+  await Promise.resolve();
+  expect(calls.at(-1)).toBe("step");
+  releaseStep?.();
+  await Promise.all([stepping, resuming]);
+  expect(calls.slice(-2)).toEqual(["step", "resume"]);
+  expect(service.snapshot().state).toBe("running");
+  await service.close();
+});

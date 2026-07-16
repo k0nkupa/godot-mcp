@@ -81,6 +81,7 @@ export class RuntimeService {
   private debuggerCleaned = true;
   private lifecycleEpoch = 0;
   private closed = false;
+  private operationTail: Promise<void> = Promise.resolve();
 
   constructor(private readonly dependencies: RuntimeServiceDependencies) {}
 
@@ -179,7 +180,11 @@ export class RuntimeService {
     }
   }
 
-  async execute(input: Exclude<RuntimeOperationInput, LaunchInput>): Promise<unknown> {
+  execute(input: Exclude<RuntimeOperationInput, LaunchInput>): Promise<unknown> {
+    return this.runExclusive(() => this.executeExclusive(input));
+  }
+
+  private async executeExclusive(input: Exclude<RuntimeOperationInput, LaunchInput>): Promise<unknown> {
     if (input.operation === "status") {
       if (input.handle) this.assertHandle(input.handle);
       if (!this.handle || !["running", "paused"].includes(this.state)) return this.snapshot();
@@ -213,7 +218,13 @@ export class RuntimeService {
     return result;
   }
 
-  async capture(input: RuntimeCaptureInput): Promise<{
+  capture(input: RuntimeCaptureInput): Promise<{
+    frames: Array<{ data: Uint8Array; metadata: RuntimeCaptureFrameMetadata }>;
+  }> {
+    return this.runExclusive(() => this.captureExclusive(input));
+  }
+
+  private async captureExclusive(input: RuntimeCaptureInput): Promise<{
     frames: Array<{ data: Uint8Array; metadata: RuntimeCaptureFrameMetadata }>;
   }> {
     this.assertHandle(input.handle);
@@ -254,7 +265,7 @@ export class RuntimeService {
     this.lifecycleEpoch += 1;
     const activeDisconnect = (async () => {
       await this.launchPromise?.catch(() => undefined);
-      await this.cleanup();
+      await this.runExclusive(() => this.cleanup());
     })();
     this.disconnectPromise = activeDisconnect;
     void activeDisconnect.finally(() => {
@@ -270,6 +281,12 @@ export class RuntimeService {
     if (!["running", "paused"].includes(this.state)) throw runtimeError("CONFLICT", "Runtime is not controllable in its current state");
   }
 
+  private runExclusive<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.operationTail.then(operation);
+    this.operationTail = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
   private assertLaunchCurrent(epoch: number): void {
     if (this.closed || epoch !== this.lifecycleEpoch) {
       throw runtimeError("CONFLICT", "Runtime launch was cancelled by shutdown");
@@ -278,8 +295,14 @@ export class RuntimeService {
 
   private async stopProcess(): Promise<void> {
     if (!this.process || this.processStopped) return;
-    await this.process.stop();
+    const ownedProcess = this.process;
     this.processStopped = true;
+    try {
+      await ownedProcess.stop();
+    } catch (error) {
+      if (this.process === ownedProcess) this.processStopped = false;
+      throw error;
+    }
   }
 
   private async cleanup(): Promise<void> {
@@ -331,6 +354,6 @@ export class RuntimeService {
   private onProcessExit(process: OwnedRuntimeProcess): void {
     if (this.process !== process || this.processStopped) return;
     this.processStopped = true;
-    void this.cleanup().catch(() => undefined);
+    void this.runExclusive(() => this.cleanup()).catch(() => undefined);
   }
 }

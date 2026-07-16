@@ -39,10 +39,16 @@ func _step(frames: int, deadline_unix_ms: int) -> Dictionary:
 		var post_draw := RuntimeDeadline.post_draw_latch(tree, deadline_unix_ms)
 		tree.paused = false
 		await tree.process_frame
+		if not is_instance_valid(_root):
+			tree.paused = true
+			post_draw.release()
+			return _error("TARGET_NOT_FOUND", "Runtime scene changed")
 		if not post_draw.finished:
 			await post_draw.completed
 		tree.paused = true
 		post_draw.release()
+		if not is_instance_valid(_root):
+			return _error("TARGET_NOT_FOUND", "Runtime scene changed")
 		if not post_draw.drew_frame or _now_ms() >= deadline_unix_ms:
 			return _error("TIMEOUT", "Runtime step deadline expired", true)
 	return {"ok": true, "data": _frame_state()}
@@ -146,6 +152,8 @@ func _condition_state(condition: Dictionary, started_process_frame: int, propert
 		_: return {"satisfied": false}
 
 func _frame_state() -> Dictionary:
+	if not is_instance_valid(_root):
+		return {}
 	return {"paused": _root.get_tree().paused, "processFrames": Engine.get_process_frames(), "physicsFrames": Engine.get_physics_frames()}
 
 static func _now_ms() -> int:

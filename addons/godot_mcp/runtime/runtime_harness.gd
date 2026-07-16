@@ -220,7 +220,9 @@ static func owner_lease_path_is_allowed(path: String, runtime_directory: String)
 	return normalized_path.get_base_dir() == runtime_directory.simplify_path() and normalized_path.get_file().begins_with("runtime-") and normalized_path.get_extension() == "lease"
 
 static func owner_lease_is_fresh(modified_unix_s: int, now_unix_ms: int) -> bool:
-	return modified_unix_s > 0 and now_unix_ms - modified_unix_s * 1000 <= 3000
+	# FileAccess reports whole seconds. The extra 999 ms prevents expiry before
+	# the lease is actually three seconds old while retaining a strict bound.
+	return modified_unix_s > 0 and now_unix_ms - modified_unix_s * 1000 <= 3999
 
 static func hello_signing_text(payload: Dictionary) -> String:
 	return "godot-mcp:runtime-hello:v1\n%s\n%s\n%s\n%s\n%s\n%s" % [
