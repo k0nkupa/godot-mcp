@@ -3,6 +3,24 @@ extends SceneTree
 const EventFactory = preload("res://addons/godot_mcp/runtime/runtime_input_event_factory.gd")
 const InputCoordinates = preload("res://addons/godot_mcp/runtime/runtime_input_coordinates.gd")
 const InputState = preload("res://addons/godot_mcp/runtime/runtime_input_state.gd")
+const RuntimeInput = preload("res://addons/godot_mcp/runtime/runtime_input.gd")
+const RuntimeInputTrace = preload("res://addons/godot_mcp/runtime/runtime_input_trace.gd")
+
+class UnitFrameClock:
+	extends RefCounted
+	var tree: SceneTree
+
+	func _init(root_node: Node) -> void:
+		tree = root_node.get_tree()
+
+	func advance_paused(frames: int, deadline_unix_ms: int) -> Dictionary:
+		for _frame in frames:
+			if Time.get_unix_time_from_system() * 1000.0 >= deadline_unix_ms:
+				return {"ok": false, "code": "TIMEOUT", "message": "Unit deadline expired", "retryable": true}
+			tree.paused = false
+			await tree.process_frame
+			tree.paused = true
+		return {"ok": true}
 
 func _init() -> void:
 	InputMap.add_action("phase_4_accept")
@@ -80,5 +98,64 @@ func _init() -> void:
 	assert(releases.any(func(spec: Dictionary) -> bool: return spec.type == "joypad_motion" and spec.axisValueMillionths == 0))
 	assert(state.release_specs().is_empty())
 
+	var trace := RuntimeInputTrace.new()
+	assert(trace.start(Engine.get_process_frames()).ok)
+	assert(trace.start(Engine.get_process_frames()).code == "CONFLICT")
+	for index in 256:
+		assert(trace.append({"type": "action", "action": "phase_4_accept", "pressed": true, "strengthMillionths": 1000000}, 100 + index).ok)
+	assert(trace.append({"type": "action", "action": "phase_4_accept", "pressed": false, "strengthMillionths": 0}, 256).code == "PAYLOAD_TOO_LARGE")
+	var stopped_trace: Dictionary = trace.stop()
+	assert(stopped_trace.ok and stopped_trace.trace.events.size() == 256 and not trace.is_active())
+	assert(stopped_trace.trace.events[0].frameOffset == 0 and stopped_trace.trace.events[255].frameOffset == 255)
+
+	var runtime_input := RuntimeInput.new(game_root, UnitFrameClock.new(game_root))
+	var handle := {"runId": "019f644c-1379-79c0-825e-66a4b7653bd1", "generation": 1}
+	var recording_started: Dictionary = await runtime_input.execute({"operation": "record_start", "handle": handle}, _now_ms() + 5000)
+	assert(recording_started.ok and recording_started.data.receipt.recording)
+	var sent: Dictionary = await runtime_input.execute({
+		"operation": "send", "handle": handle,
+		"event": {"type": "action", "action": "phase_4_accept", "pressed": true, "strengthMillionths": 1000000},
+	}, _now_ms() + 5000)
+	await process_frame
+	assert(sent.ok and sent.data.receipt.eventCount == 1 and Input.is_action_pressed("phase_4_accept"))
+	var recording_stopped: Dictionary = await runtime_input.execute({"operation": "record_stop", "handle": handle}, _now_ms() + 5000)
+	assert(recording_stopped.ok and recording_stopped.data.trace.events.size() == 1)
+	assert(recording_stopped.data.receipt.traceSha256 == RuntimeInput.trace_sha256(recording_stopped.data.trace))
+	var released: Dictionary = runtime_input.release_all("unit")
+	await process_frame
+	assert(released.ok and released.releases == ["action"] and not Input.is_action_pressed("phase_4_accept"))
+	assert(runtime_input.release_all("again").releases.is_empty())
+
+	paused = true
+	var before_frames := Engine.get_process_frames()
+	var deterministic: Dictionary = await runtime_input.execute({
+		"operation": "sequence", "handle": handle, "mode": "deterministic", "timeoutMs": 5000,
+		"events": [
+			{"frameOffset": 0, "event": {"type": "action", "action": "phase_4_accept", "pressed": true, "strengthMillionths": 1000000}},
+			{"frameOffset": 2, "event": {"type": "action", "action": "phase_4_accept", "pressed": false, "strengthMillionths": 0}},
+		],
+	}, _now_ms() + 5000)
+	assert(deterministic.ok and deterministic.data.receipt.deterministic and deterministic.data.receipt.deliveredCount == 2)
+	assert(Engine.get_process_frames() - before_frames == 2 and paused)
+	await process_frame
+	assert(not Input.is_action_pressed("phase_4_accept"))
+	var replayed: Dictionary = await runtime_input.execute({
+		"operation": "replay", "handle": handle, "mode": "deterministic", "timeoutMs": 5000,
+		"trace": {"schemaVersion": 1, "events": [{"frameOffset": 0, "event": {"type": "action", "action": "phase_4_accept", "pressed": true, "strengthMillionths": 1000000}}]},
+	}, _now_ms() + 5000)
+	await process_frame
+	assert(replayed.ok and replayed.data.receipt.deterministic and Input.is_action_pressed("phase_4_accept"))
+	runtime_input.release_all("replay")
+	await process_frame
+	var expired: Dictionary = await runtime_input.execute({
+		"operation": "sequence", "handle": handle, "mode": "deterministic", "timeoutMs": 1,
+		"events": [{"frameOffset": 1, "event": {"type": "action", "action": "phase_4_accept", "pressed": true, "strengthMillionths": 1000000}}],
+	}, 1)
+	assert(expired.code == "TIMEOUT" and paused)
+	paused = false
+
 	print("GODOT_MCP_RUNTIME_INPUT_UNIT_OK")
 	quit(0)
+
+static func _now_ms() -> int:
+	return int(Time.get_unix_time_from_system() * 1000.0)

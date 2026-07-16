@@ -2,16 +2,18 @@ class_name GodotMcpRuntimeControl
 extends RefCounted
 
 const VariantEncoder = preload("res://addons/godot_mcp/observation/variant_encoder.gd")
-const RuntimeDeadline = preload("res://addons/godot_mcp/runtime/runtime_deadline.gd")
+const RuntimeFrameClock = preload("res://addons/godot_mcp/runtime/runtime_frame_clock.gd")
 
 var _root: Node
 var _query: RefCounted
 var _logger: Logger
+var _frame_clock: RefCounted
 
-func _init(root: Node, query: RefCounted, logger: Logger) -> void:
+func _init(root: Node, query: RefCounted, logger: Logger, frame_clock: RefCounted = null) -> void:
 	_root = root
 	_query = query
 	_logger = logger
+	_frame_clock = frame_clock if frame_clock != null else RuntimeFrameClock.new(root)
 
 func execute(operation: String, arguments: Dictionary, deadline_unix_ms: int) -> Dictionary:
 	match operation:
@@ -22,36 +24,10 @@ func execute(operation: String, arguments: Dictionary, deadline_unix_ms: int) ->
 			_root.get_tree().paused = false
 			return {"ok": true, "data": _frame_state()}
 		"step":
-			return await _step(clampi(int(arguments.get("frames", 1)), 1, 120), deadline_unix_ms)
+			return await _frame_clock.advance_paused(clampi(int(arguments.get("frames", 1)), 1, 120), deadline_unix_ms)
 		"wait":
 			return await _wait(arguments.get("condition", {}), mini(deadline_unix_ms, _now_ms() + clampi(int(arguments.get("timeoutMs", 10000)), 1, 30000)))
 		_: return _error("INVALID_REQUEST", "Runtime control operation is not allowed")
-
-func _step(frames: int, deadline_unix_ms: int) -> Dictionary:
-	if not is_instance_valid(_root):
-		return _error("TARGET_NOT_FOUND", "Runtime scene changed")
-	var tree := _root.get_tree()
-	if not tree.paused:
-		return _error("PRECONDITION_FAILED", "Runtime must be paused before frame stepping")
-	for _frame in frames:
-		if _now_ms() >= deadline_unix_ms:
-			return _error("TIMEOUT", "Runtime step deadline expired", true)
-		var post_draw := RuntimeDeadline.post_draw_latch(tree, deadline_unix_ms)
-		tree.paused = false
-		await tree.process_frame
-		if not is_instance_valid(_root):
-			tree.paused = true
-			post_draw.release()
-			return _error("TARGET_NOT_FOUND", "Runtime scene changed")
-		if not post_draw.finished:
-			await post_draw.completed
-		tree.paused = true
-		post_draw.release()
-		if not is_instance_valid(_root):
-			return _error("TARGET_NOT_FOUND", "Runtime scene changed")
-		if not post_draw.drew_frame or _now_ms() >= deadline_unix_ms:
-			return _error("TIMEOUT", "Runtime step deadline expired", true)
-	return {"ok": true, "data": _frame_state()}
 
 func _wait(condition: Variant, deadline_unix_ms: int) -> Dictionary:
 	if typeof(condition) != TYPE_DICTIONARY:
