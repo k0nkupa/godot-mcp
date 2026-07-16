@@ -1,8 +1,8 @@
-# Phase 0–3 threat model
+# Phase 0–4 threat model
 
 ## Security boundary
 
-Phase 0–3 protects a Godot project from unauthenticated network clients, accidental cross-project attachment, replay, stale messages, and ordinary local clients that do not possess the short-lived secrets. It bounds editor metadata/evidence and an explicitly authorized instrumented runtime. It does not defend against a process that has already compromised the same operating-system user, and the runtime harness is not a sandbox for hostile game code.
+Phase 0–4 protects a Godot project from unauthenticated network clients, accidental cross-project attachment, replay, stale messages, and ordinary local clients that do not possess the short-lived secrets. It bounds editor metadata/evidence and an explicitly authorized instrumented runtime. It does not defend against a process that has already compromised the same operating-system user, and the runtime harness is not a sandbox for hostile game code.
 
 The MCP process listens only on IPv4 loopback (`127.0.0.1`). The Godot addon never opens a listener; it reads the descriptor for its exact project identity and connects outward. Loopback is transport containment, not authentication.
 
@@ -17,7 +17,7 @@ The MCP process listens only on IPv4 loopback (`127.0.0.1`). The Godot addon nev
 
 ## Project and host containment
 
-Default sessions expose six observe-tier tools. Phase 3 adds two tools only when both the `runtime_control` tier and `runtime` pack are explicit. It exposes no arbitrary filesystem path, host shell, general process launcher, network client, GDScript evaluation, generic method invocation, or project mutation tool. Project discovery resolves real paths, rejects symlinked configuration files, and fingerprints `project.godot`. Addon install/uninstall uses a hash manifest and refuses to overwrite or remove independently changed files.
+Default sessions expose six observe-tier tools. Phase 3 adds two tools only when `runtime_control` and `runtime` are explicit; Phase 4 adds one input tool only when `runtime_control` and `input` are explicit. It exposes no arbitrary filesystem path, host shell, general process launcher, network client, GDScript evaluation, generic method invocation, or project mutation tool. Project discovery resolves real paths, rejects symlinked configuration files, and fingerprints `project.godot`. Addon install/uninstall uses a hash manifest and refuses to overwrite or remove independently changed files.
 
 Editor queries inspect only roots already open in the editor and resources already indexed by `EditorFileSystem`. Caller paths must be bounded `res://` paths; no query loads a caller-supplied resource or reads source/file bytes. Node properties are encoded through a depth- and entry-limited Variant encoder. Project settings are limited to approved namespaces and secret-shaped names are omitted.
 
@@ -54,10 +54,22 @@ Future project operations must stay inside approved `res://` roots and deny `.gi
 
 The child runtime opens no listener. Its harness communicates only through Godot's debugger channel to the registered editor plugin. Loopback contains that channel but authentication comes from the runtime descriptor proof and identity binding.
 
+## Input automation abuse controls
+
+| Abuse case | Control |
+|---|---|
+| Accidental input exposure | Separate explicit `input` pack plus `runtime_control`; default remains six tools, input-only is seven, runtime-only eight, and combined is nine |
+| OS/editor or arbitrary event injection | Owned authenticated child only; closed event union; named Godot classes constructed internally; no OS-global/editor path, arbitrary class/property/method, text input, or ambient-input hook |
+| Coordinate escape | Only `.` or relative descendant `Viewport`; traversal, absolute paths, subnames, nonexistent and non-Viewport targets rejected; pixel and normalized fixed-point bounds |
+| Batch or timing abuse | At most 256 events, offsets 0–1,800 and nondecreasing, deadline at most 30 seconds, serialized with all runtime operations, paused precondition for deterministic work |
+| Nondeterministic replay claims | Deterministic mode advances rendered zero-based frames and remains paused; certification pins Godot, project, scene, viewport, renderer, locale, seed, and time-step conditions |
+| Passive surveillance or audit leakage | Recording captures only successfully injected MCP events; audit stores kind counts, frame range, and digest, not action/key/coordinate/trace payloads |
+| Stuck held state | MCP-held actions, keys, buttons, touches, and axes are tracked separately and neutralized on errors/timeouts when reachable, scene replacement, stop, exit, debugger loss, and owner shutdown |
+
 ## Audit and redaction
 
 Receipts are append-only JSONL under `.godot/evidence/godot-mcp/`. Audit values recursively redact token-, secret-, key-, password-, credential-, and authorization-shaped fields. Tests build checks from the real pairing token and derived session key to prove neither appears in audit output. Pairing descriptors are never CI artifacts.
 
 ## Explicitly out of scope
 
-Unsafe fixture mode is not implemented in Phase 3. Input injection, mutation, debugger stacks/breakpoints, profiling, build/export, arbitrary evidence retrieval, and arbitrary method invocation remain out of scope. When unsafe fixture mode is implemented, it will require a disposable registered fixture, separate process, scrubbed environment, short grant, and interactive approval. It will reduce accidental exposure but will not be described as a secure sandbox for hostile code running as the current user.
+Unsafe fixture mode is not implemented in Phase 4. Project mutation, debugger stacks/breakpoints, profiling, build/export, arbitrary evidence retrieval, and arbitrary method invocation remain out of scope. When unsafe fixture mode is implemented, it will require a disposable registered fixture, separate process, scrubbed environment, short grant, and interactive approval. It will reduce accidental exposure but will not be described as a secure sandbox for hostile code running as the current user.

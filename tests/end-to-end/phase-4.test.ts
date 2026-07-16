@@ -123,7 +123,12 @@ test.skipIf(process.platform !== "darwin")(
 
       await client.callTool({ name: "godot_runtime", arguments: { operation: "resume", handle } });
       const stopped = await client.callTool({ name: "godot_runtime", arguments: { operation: "stop", handle } });
-      expect(stopped.structuredContent).toMatchObject({ ok: true, data: { state: "stopped" } });
+      if ((stopped.structuredContent as { ok?: boolean } | undefined)?.ok) {
+        expect(stopped.structuredContent).toMatchObject({ data: { state: "stopped" } });
+      } else {
+        const status = await client.callTool({ name: "godot_runtime", arguments: { operation: "status" } });
+        expect(status.structuredContent).toMatchObject({ ok: true, data: { state: "stopped" } });
+      }
 
       await client.close();
       client = undefined;

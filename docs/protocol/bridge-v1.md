@@ -1,6 +1,6 @@
 # Godot MCP bridge protocol v1
 
-The Phase 3 editor bridge is JSON over a loopback WebSocket at `ws://127.0.0.1:<ephemeral-port>/bridge`. The server writes the address and one-use authentication material to an owner-only pairing descriptor. The addon initiates the connection; it opens no port.
+The Phase 4 editor bridge is JSON over a loopback WebSocket at `ws://127.0.0.1:<ephemeral-port>/bridge`. The server writes the address and one-use authentication material to an owner-only pairing descriptor. The addon initiates the connection; it opens no port.
 
 ## Pair request
 
@@ -10,7 +10,7 @@ No other unauthenticated message is accepted. Invalid JSON or an incomplete shap
 
 ## Pair response and proof
 
-The server consumes the descriptor, creates a session ID and server nonce, and returns `pair_ok` with the session's granted tiers/packs and an HMAC server proof. Grants are observe/core by default; runtime requires both explicit `runtime_control` and `runtime`. The addon validates the proof, derives the session key, and sends a signed `pair.ack` containing the proof. The server answers with signed `pair.complete`; the addon clears the token and sends signed `addon.ready` with its identity, version, feature tags, addon hash, and plugin state.
+The server consumes the descriptor, creates a session ID and server nonce, and returns `pair_ok` with the session's granted tiers/packs and an HMAC server proof. Grants are observe/core by default; runtime requires explicit `runtime_control` and `runtime`, while input requires explicit `runtime_control` and `input`. The addon validates the proof, derives the session key, and sends a signed `pair.ack` containing the proof. The server answers with signed `pair.complete`; the addon clears the token and sends signed `addon.ready` with its identity, version, feature tags, addon hash, and plugin state.
 
 Protocol or product mismatches are rejected. Phase 1 requires Godot `4.7.stable`; support for earlier 4.x releases is not yet certified.
 
@@ -55,9 +55,17 @@ An explicitly runtime-authorized session may additionally send `runtime.prepare`
 
 `runtime.prepare` supplies a bounded descriptor for one run. Separately from the editor pairing descriptor, the control plane creates an owner-only runtime descriptor containing project identity, MCP session, run UUID, positive generation, scene path, owner heartbeat lease, launch nonce, 256-bit secret, and expiry. The owned Godot child consumes and deletes it, then proves possession in its first `godot_mcp_runtime:hello` debugger message. The editor debugger plugin verifies all identities, expiry, and HMAC before returning a second domain-separated HMAC over the complete hello transcript. The harness verifies that server proof in constant time before enabling commands or erasing its secret, providing mutual authentication across the debugger channel. The control plane accepts readiness only when the mutually authenticated PID equals its owned child PID.
 
-`runtime.command` permits only status, bounded tree/node/log reads, typed waits, pause, resume, deterministic frame step, and stop. Every command carries the run handle, strictly increasing runtime sequence, and deadline. Stale generations, replayed/reordered messages, wrong debugger sessions, and expired commands are rejected. `runtime.capture` returns one bounded PNG per bridge request; the MCP layer issues sequential requests for ordered multi-frame capture and verifies every digest before evidence persistence. `runtime.cleanup` clears prepared identity, pending requests, ready state, and debugger binding idempotently.
+`runtime.command` permits only status, bounded tree/node/log reads, typed waits, pause, resume, deterministic frame step, stop, and the separately input-pack-gated `input` operation. Input arguments contain one validated operation and owned-run handle; public variants are `send`, `sequence`, `record_start`, `record_stop`, and `replay`. Every command carries the run handle, strictly increasing runtime sequence, and deadline. Stale generations, replayed/reordered messages, wrong debugger sessions, and expired commands are rejected. `runtime.capture` returns one bounded PNG per bridge request; the MCP layer issues sequential requests for ordered multi-frame capture and verifies every digest before evidence persistence. `runtime.cleanup` clears prepared identity, pending requests, ready state, and debugger binding idempotently.
 
 The runtime opens no listener and receives no WebSocket credentials. It connects only to the editor's loopback Godot debugger server. The TypeScript process owner launches only the fixed harness scene, scrubs the child environment, records PID/start fingerprint, and signals only that verified child during cleanup. The harness checks a descriptor-bound owner-only heartbeat lease twice per second and exits when a hard-killed MCP owner stops refreshing it.
+
+## Phase 4 input receipts and traces
+
+Input uses canonical JSON v1 safe integers. Strengths, pressure, tilt, magnification, normalized coordinates, and joy axes are fixed-point integer millionths; viewport/embedder pixels remain bounded integers. Sequences and traces contain at most 256 events with nondecreasing frame offsets 0–1,800 and deadlines no longer than 30 seconds. Positional targets are only `.` or relative descendant viewports; the harness constructs only the closed action, key, mouse, touch, gesture, and joypad event union.
+
+Realtime sequences are marked non-deterministic. Deterministic sequences and replay require a paused runtime, process zero-based rendered frames through the shared frame clock, and leave the runtime paused. A trace records only successfully injected MCP events relative to its first delivery; no ambient OS event is observed. `record_stop` is the only operation returning a trace payload.
+
+Every success includes a summary receipt: run handle, operation, requested/delivered counts, event kinds, scheduled/delivered offsets, optional viewport/coordinate metadata, release kinds, deterministic and recording flags, and canonical trace SHA-256. Audit records replace raw arguments with kind counts, frame range, mode, and digest. Action names, keycodes, coordinates, and trace payloads are excluded. Held MCP input is neutralized on terminal paths when the harness remains reachable.
 
 ## Limits and closes
 

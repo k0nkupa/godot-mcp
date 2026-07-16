@@ -1,6 +1,6 @@
 # Godot MCP
 
-Godot MCP is an open-source, security-first MCP server and Godot editor addon. Phase 3 provides reversible installation, authenticated Godot 4.7 editor attachment, six default observe-only tools, and an explicitly authorized two-tool ephemeral runtime surface. Runtime input, editor mutation, debugger stacks, builds, exports, and unsafe evaluation remain roadmap capabilities.
+Godot MCP is an open-source, security-first MCP server and Godot editor addon. Phase 4 provides reversible installation, authenticated Godot 4.7 editor attachment, six default observe-only tools, an explicitly authorized two-tool ephemeral runtime surface, and one separately gated runtime-input tool.
 
 ## Requirements
 
@@ -32,6 +32,12 @@ The default registration remains observe-only. To opt into one MCP-owned instrum
 codex mcp add godot-runtime -- node /absolute/path/to/godot-mcp/packages/cli/dist/bin.js connect --project /absolute/path/to/godot-project --grant runtime_control --pack runtime
 ```
 
+To launch and automate the owned runtime, grant the input pack separately:
+
+```bash
+codex mcp add godot-runtime-input -- node /absolute/path/to/godot-mcp/packages/cli/dist/bin.js connect --project /absolute/path/to/godot-project --grant runtime_control --pack runtime --pack input
+```
+
 Start a fresh Codex task after registration so the newly registered MCP server is exposed. To stop using the addon while retaining its files, or remove the verified installation completely:
 
 ```bash
@@ -54,6 +60,7 @@ The default six tools are read-only and closed-world. A runtime-authorized sessi
 
 - `godot_runtime` — launch, status, bounded tree/node/log queries, waits, pause, step, resume, and stop for one authenticated child runtime
 - `godot_runtime_capture` — one to eight ordered running-game PNG frames with verified evidence metadata
+- `godot_input` — bounded events, frame-indexed sequences, non-passive recording, and deterministic replay for the owned runtime
 
 For example:
 
@@ -61,9 +68,10 @@ For example:
 { "operation": "scene_tree", "scenePath": "res://main.tscn", "maxDepth": 8, "maxNodes": 250 }
 { "viewport": "2d", "maxWidth": 1280, "maxHeight": 720 }
 { "operation": "launch", "scenePath": "res://main.tscn" }
+{ "operation": "sequence", "handle": { "runId": "<run UUID>", "generation": 1 }, "mode": "deterministic", "events": [{ "frameOffset": 0, "event": { "type": "action", "action": "jump", "pressed": true, "strengthMillionths": 1000000 } }, { "frameOffset": 1, "event": { "type": "action", "action": "jump", "pressed": false, "strengthMillionths": 0 } }] }
 ```
 
-Runtime control is off unless both explicit flags are present. The server owns one exact Godot child process, authenticates its debugger harness with a one-use descriptor, binds it to the MCP/editor/project/run identity, and accepts only closed typed operations. It exposes no arbitrary process, filesystem, network, method-call, or GDScript-evaluation primitive.
+Runtime control and input are off unless their explicit flags are present. Deterministic sequences/replay require a paused owned runtime; offsets are zero-based, so offsets 0–1 process across two rendered frames and leave it paused. Recording captures only MCP-injected events. Receipts and audit summaries omit raw action names, keycodes, coordinates, and trace payloads. There is no OS-global/editor input, arbitrary text, process, filesystem, network, method-call, or GDScript-evaluation primitive.
 
 ## Development and certification
 
@@ -71,10 +79,11 @@ Runtime control is off unless both explicit flags are present. The server owns o
 GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-0-1
 GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-2
 GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-3
+GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-4
 ```
 
-The Phase 3 gate certifies explicit tool visibility, owned-process authentication, bounded runtime truth, deterministic stepping, running-game evidence, hostile inputs, crash/disconnect cleanup, published stdio behavior, and zero fixture diff. Earlier gates remain required regressions. See [Phase 3 testing](docs/testing/phase-3.md), [Phase 2 testing](docs/testing/phase-2.md), [Phase 0–1 testing](docs/testing/phase-0-1.md), the [threat model](docs/security/threat-model.md), the [bridge protocol](docs/protocol/bridge-v1.md), and the [master design](docs/superpowers/specs/2026-07-15-godot-mcp-master-design.md).
+The Phase 4 gate additionally certifies the closed input union, coordinate routing, deterministic record/replay parity, hostile input rejection, audit redaction, release cleanup, exact nine-tool stdio surface, and zero fixture diff. Earlier gates remain required regressions. See [Phase 4 testing](docs/testing/phase-4.md), [Phase 3 testing](docs/testing/phase-3.md), [Phase 2 testing](docs/testing/phase-2.md), [Phase 0–1 testing](docs/testing/phase-0-1.md), the [threat model](docs/security/threat-model.md), the [bridge protocol](docs/protocol/bridge-v1.md), and the [master design](docs/superpowers/specs/2026-07-15-godot-mcp-master-design.md).
 
 ## Roadmap
 
-Later phases add input automation, scene/resource authoring with Undo/Redo, debugger stacks and profiler integration, declarative playtests, imports/builds/exports, evidence retrieval, compatibility lanes, and explicitly gated disposable-fixture unsafe mode. None of those capabilities are claimed by Phase 3.
+Later phases add scene/resource authoring with Undo/Redo, debugger stacks and profiler integration, declarative playtests, imports/builds/exports, evidence retrieval, compatibility lanes, and explicitly gated disposable-fixture unsafe mode. None of those capabilities are claimed by Phase 4.
