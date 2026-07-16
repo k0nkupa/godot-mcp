@@ -1,7 +1,11 @@
+import { join } from "node:path";
+
 import { startBridgeServer, type BridgeServer } from "@godot-mcp/bridge-client";
 import {
-  JsonlAuditSink,
+  EditorMutationService,
   EvidenceStore,
+  JsonlAuditSink,
+  MutationLedger,
   RuntimeService,
   SessionService,
   readProjectIdentity,
@@ -29,20 +33,24 @@ function normalizeRuntimeGrants(grants: SessionGrants | undefined): SessionGrant
   const tiers = new Set(grants.tiers);
   const packs = new Set(grants.packs);
   for (const tier of tiers) {
-    if (tier !== "observe" && tier !== "runtime_control") throw new Error(`Unsupported runtime tier: ${tier}`);
+    if (tier !== "observe" && tier !== "runtime_control" && tier !== "project_mutate") throw new Error(`Unsupported runtime tier: ${tier}`);
   }
   for (const pack of packs) {
-    if (pack !== "core" && pack !== "runtime" && pack !== "input") throw new Error(`Unsupported runtime pack: ${pack}`);
+    if (pack !== "core" && pack !== "runtime" && pack !== "input" && pack !== "editor") throw new Error(`Unsupported runtime pack: ${pack}`);
   }
   if (!tiers.has("observe") || !packs.has("core")) throw new Error("observe and core grants are required");
   const hasRuntimePack = packs.has("runtime") || packs.has("input");
   if (tiers.has("runtime_control") !== hasRuntimePack) {
     throw new Error("runtime_control must be granted with runtime or input packs");
   }
-  if (!hasRuntimePack) return { tiers: ["observe"], packs: ["core"] };
+  const hasEditorPack = packs.has("editor");
+  if (tiers.has("project_mutate") !== hasEditorPack) {
+    throw new Error("project_mutate must be granted with the editor pack");
+  }
+  if (!hasRuntimePack && !hasEditorPack) return { tiers: ["observe"], packs: ["core"] };
   return {
-    tiers: ["observe", "runtime_control"],
-    packs: ["core", ...(packs.has("runtime") ? ["runtime" as const] : []), ...(packs.has("input") ? ["input" as const] : [])],
+    tiers: ["observe", ...(tiers.has("runtime_control") ? ["runtime_control" as const] : []), ...(tiers.has("project_mutate") ? ["project_mutate" as const] : [])],
+    packs: ["core", ...(packs.has("runtime") ? ["runtime" as const] : []), ...(packs.has("input") ? ["input" as const] : []), ...(packs.has("editor") ? ["editor" as const] : [])],
   };
 }
 
@@ -93,6 +101,9 @@ export async function createRuntime(options: RuntimeOptions): Promise<GodotMcpRu
   let bridge: BridgeServer | undefined;
   let runtime: RuntimeService | undefined;
   let mcp: GodotMcpServer | undefined;
+  const mutationLedger = grants.packs.includes("editor")
+    ? await MutationLedger.open(join(project.rootRealPath, ".godot/evidence/godot-mcp/mutation-journal.jsonl"))
+    : undefined;
 
   try {
     bridge = await startBridgeServer({
@@ -156,6 +167,19 @@ export async function createRuntime(options: RuntimeOptions): Promise<GodotMcpRu
         await attached.request("runtime.cleanup", {}, { timeoutMs: 5_000 });
       },
     });
+    const editor = mutationLedger
+      ? new EditorMutationService(
+          () => {
+            const attached = bridge?.session;
+            if (!attached) return null;
+            return {
+              request: <T>(method: "editor.mutate", params: unknown, requestOptions: { timeoutMs: number; maxResponseBytes: number; correlationId: string }) =>
+                attached.request<T>(method, params, requestOptions),
+            };
+          },
+          mutationLedger,
+        )
+      : undefined;
     mcp = createGodotMcpServer({
       project,
       grants,
@@ -164,6 +188,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<GodotMcpRu
       bridge: () => bridge?.session ?? null,
       evidence: new EvidenceStore(project.rootRealPath),
       runtime,
+      ...(editor === undefined ? {} : { editor }),
     });
     return new GodotMcpRuntime(project, audit, session, bridge, runtime, mcp);
   } catch (error) {

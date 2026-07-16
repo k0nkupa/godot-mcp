@@ -33,7 +33,13 @@ describe("connect grants", () => {
     });
     expect(() => parseConnectGrants(["runtime_control"], [])).toThrow("must be granted with runtime or input packs");
     expect(() => parseConnectGrants([], ["runtime"])).toThrow("must be granted with runtime or input packs");
-    expect(() => parseConnectGrants(["project_mutate"], ["runtime"])).toThrow("Unsupported connect grant");
+    expect(parseConnectGrants(["project_mutate"], ["editor"])).toEqual({
+      tiers: ["observe", "project_mutate"],
+      packs: ["core", "editor"],
+    });
+    expect(() => parseConnectGrants(["project_mutate"], ["runtime"])).toThrow("runtime_control");
+    expect(() => parseConnectGrants(["project_mutate"], [])).toThrow("editor");
+    expect(() => parseConnectGrants([], ["editor"])).toThrow("project_mutate");
 
     expect(parseConnectGrants(["runtime_control"], ["input"])).toEqual({
       tiers: ["observe", "runtime_control"],
@@ -44,6 +50,13 @@ describe("connect grants", () => {
       packs: ["core", "runtime", "input"],
     });
     expect(() => parseConnectGrants([], ["input"])).toThrow("runtime_control");
+  });
+
+  it("combines runtime and editor grants without widening either pack", () => {
+    expect(parseConnectGrants(["runtime_control,project_mutate"], ["runtime,editor"])).toEqual({
+      tiers: ["observe", "runtime_control", "project_mutate"],
+      packs: ["core", "runtime", "editor"],
+    });
   });
 
   it("forwards the explicitly selected Godot binary to runtime launch", async () => {
