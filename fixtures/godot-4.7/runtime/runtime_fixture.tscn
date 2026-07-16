@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource path="res://runtime/runtime_fixture.gd" type="Script" id="1"]
+[ext_resource path="res://runtime/freeing_signal_fixture.gd" type="Script" id="2"]
 
 [node name="RuntimeFixture" type="Node2D"]
 script = ExtResource("1")
@@ -27,3 +28,6 @@ text = "Phase 3 Runtime"
 [node name="Nested" type="Node" parent="."]
 
 [node name="Marker" type="Node" parent="Nested"]
+
+[node name="FreeingSignal" type="Node" parent="."]
+script = ExtResource("2")

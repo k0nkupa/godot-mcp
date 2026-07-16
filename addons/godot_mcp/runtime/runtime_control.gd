@@ -44,9 +44,14 @@ func _wait(condition: Variant, deadline_unix_ms: int) -> Dictionary:
 		var property := String(condition.get("property", ""))
 		if node == null or not _has_property(node, property):
 			return _error("TARGET_NOT_FOUND", "Runtime wait property was not found")
+	var property_regex: RegEx
+	if String(condition.get("type", "")) == "property_matches":
+		property_regex = RegEx.new()
+		if property_regex.compile(String(condition.get("pattern", ""))) != OK:
+			return _error("INVALID_REQUEST", "Runtime wait pattern is invalid")
 	var started_process_frame := Engine.get_process_frames()
 	while _now_ms() < deadline_unix_ms:
-		var observed := _condition_state(condition, started_process_frame)
+		var observed := _condition_state(condition, started_process_frame, property_regex)
 		if bool(observed.get("satisfied", false)):
 			return {"ok": true, "data": observed}
 		await _root.get_tree().process_frame
@@ -79,13 +84,17 @@ func _wait_signal(condition: Dictionary, deadline_unix_ms: int) -> Dictionary:
 	node.connect(signal_name, callback, CONNECT_ONE_SHOT)
 	while not observed[0] and _now_ms() < deadline_unix_ms:
 		await _root.get_tree().process_frame
-	if node.is_connected(signal_name, callback):
+		if not is_instance_valid(node):
+			break
+	if is_instance_valid(node) and node.is_connected(signal_name, callback):
 		node.disconnect(signal_name, callback)
 	if observed[0]:
 		return {"ok": true, "data": {"satisfied": true, "signal": String(signal_name)}}
+	if not is_instance_valid(node):
+		return _error("TARGET_NOT_FOUND", "Runtime wait signal target was freed")
 	return _error("TIMEOUT", "Runtime wait condition timed out", true)
 
-func _condition_state(condition: Dictionary, started_process_frame: int) -> Dictionary:
+func _condition_state(condition: Dictionary, started_process_frame: int, property_regex: RegEx = null) -> Dictionary:
 	var kind := String(condition.get("type", ""))
 	var node: Node = _query.resolve_node(String(condition.get("nodePath", ".")))
 	match kind:
@@ -96,10 +105,7 @@ func _condition_state(condition: Dictionary, started_process_frame: int) -> Dict
 		"property_matches":
 			if node == null:
 				return {"satisfied": false}
-			var regex := RegEx.new()
-			if regex.compile(String(condition.get("pattern", ""))) != OK:
-				return {"satisfied": false}
-			return {"satisfied": regex.search(str(node.get(String(condition.get("property", ""))))) != null}
+			return {"satisfied": property_regex != null and property_regex.search(str(node.get(String(condition.get("property", ""))))) != null}
 		"log_matches":
 			var levels: Array = [String(condition.level)] if condition.has("level") else ["log", "warning", "error", "script", "shader"]
 			var records: Array[Dictionary] = _logger.read_after(0, levels, 500)
