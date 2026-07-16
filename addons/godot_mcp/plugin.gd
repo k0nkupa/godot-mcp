@@ -8,6 +8,7 @@ const EditorQuery = preload("res://addons/godot_mcp/observation/editor_query.gd"
 const EditorCapture = preload("res://addons/godot_mcp/observation/editor_capture.gd")
 const MainThreadQueue = preload("res://addons/godot_mcp/commands/main_thread_queue.gd")
 const RuntimeDebugger = preload("res://addons/godot_mcp/runtime/runtime_debugger.gd")
+const EditorMutation = preload("res://addons/godot_mcp/mutation/editor_mutation.gd")
 
 var bridge: Node
 var command_queue: Node
@@ -15,12 +16,14 @@ var diagnostic_logger: Logger
 var editor_query: RefCounted
 var editor_capture: RefCounted
 var runtime_debugger: EditorDebuggerPlugin
+var editor_mutation: RefCounted
 
 func _enter_tree() -> void:
 	diagnostic_logger = DiagnosticLogger.new(ProjectSettings.globalize_path("res://"))
 	OS.add_logger(diagnostic_logger)
 	editor_query = EditorQuery.new(get_editor_interface(), diagnostic_logger)
 	editor_capture = EditorCapture.new(get_editor_interface())
+	editor_mutation = EditorMutation.new(get_editor_interface(), get_undo_redo(), ProjectSettings.globalize_path("res://"), func() -> int: return bridge.session_generation() if is_instance_valid(bridge) else 0)
 	runtime_debugger = RuntimeDebugger.new()
 	add_debugger_plugin(runtime_debugger)
 	command_queue = MainThreadQueue.new()
@@ -42,6 +45,8 @@ func _execute_command(command: Dictionary) -> Dictionary:
 		outcome = editor_query.execute(command.arguments)
 	elif String(command.method) == "editor.capture":
 		outcome = await editor_capture.execute(command.arguments)
+	elif String(command.method) == "editor.mutate":
+		outcome = editor_mutation.execute(command.arguments)
 	elif String(command.method) == "runtime.prepare":
 		outcome = runtime_debugger.prepare(
 			command.arguments.get("descriptor", {}),
@@ -106,3 +111,6 @@ func _exit_tree() -> void:
 	diagnostic_logger = null
 	editor_query = null
 	editor_capture = null
+	if editor_mutation != null:
+		editor_mutation.clear()
+	editor_mutation = null

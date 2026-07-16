@@ -26,6 +26,10 @@ var _session_key := PackedByteArray()
 var _token_bytes := PackedByteArray()
 var _send_sequence := 0
 var _receive_sequence := 0
+var _session_generation := 0
+
+func session_generation() -> int:
+	return _session_generation
 
 func _godot_version() -> String:
 	var info := Engine.get_version_info()
@@ -118,13 +122,16 @@ func _handle_message(text: String) -> void:
 	if not _paired and message.method == "pair.complete":
 		_complete_pairing()
 		return
-	if message.method in ["editor.query", "editor.capture", "runtime.prepare", "runtime.command", "runtime.capture", "runtime.cleanup"]:
+	if message.method in ["editor.query", "editor.capture", "editor.mutate", "runtime.prepare", "runtime.command", "runtime.capture", "runtime.cleanup"]:
 		var params: Variant = message.params
 		if typeof(params) != TYPE_DICTIONARY or not params.has("requestId") or typeof(params.get("arguments")) != TYPE_DICTIONARY:
 			rejected.emit("INVALID_REQUEST", "Bridge command parameters are invalid")
 			return
 		if String(message.method).begins_with("runtime.") and not _runtime_granted():
 			send_command_error(String(params.requestId), "PERMISSION_REQUIRED", "Runtime control was not granted for this session")
+			return
+		if String(message.method) == "editor.mutate" and not _editor_granted():
+			send_command_error(String(params.requestId), "PERMISSION_REQUIRED", "Project mutation and editor pack were not granted for this session")
 			return
 		command_received.emit({"requestId": String(params.requestId), "deadlineUnixMs": int(message.deadlineUnixMs), "method": String(message.method), "arguments": params.arguments})
 		return
@@ -162,8 +169,17 @@ func _runtime_granted() -> bool:
 		and "runtime" in grants.get("packs", [])
 	)
 
+func _editor_granted() -> bool:
+	var grants: Variant = _descriptor.get("grants", {})
+	return (
+		typeof(grants) == TYPE_DICTIONARY
+		and "project_mutate" in grants.get("tiers", [])
+		and "editor" in grants.get("packs", [])
+	)
+
 func _complete_pairing() -> void:
 	_paired = true
+	_session_generation += 1
 	DescriptorReader.delete_descriptor(_descriptor.descriptorPath)
 	_token_bytes.fill(0)
 	_token_bytes = PackedByteArray()
