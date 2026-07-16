@@ -30,6 +30,10 @@ test.skipIf(process.platform !== "darwin")(
           const result = await next.callTool({ name: "godot_session", arguments: {} });
           return (result.structuredContent as { data?: { state?: string } } | undefined)?.data?.state === "attached";
         }, 15_000, 100);
+		await waitUntil(async () => {
+		  const result = await next.callTool({ name: "godot_query", arguments: { operation: "editor_state" } });
+		  return (result.structuredContent as { data?: { editedScene?: string } } | undefined)?.data?.editedScene === scene;
+		}, 10_000, 100);
         return next;
       };
       client = await connect();
