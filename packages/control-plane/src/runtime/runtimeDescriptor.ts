@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { lstat, readFile, rename, rm, utimes, writeFile } from "node:fs/promises";
+import { lstat, readFile, readdir, rename, rm, utimes, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
 import { ProjectIdentitySchema, RuntimeHandleSchema, type ProjectIdentity } from "@godot-mcp/protocol";
@@ -66,9 +66,47 @@ function assertExpected(descriptor: RuntimeDescriptor, expected: RuntimeDescript
   }
 }
 
+async function pruneOrphanedRuntimeFiles(directory: string, now: number): Promise<void> {
+  const names = (await readdir(directory).catch(() => []))
+    .filter((name) => name.startsWith("runtime-") || name.startsWith(".consuming-runtime-"))
+    .slice(0, 256);
+  const referencedLeases = new Set<string>();
+  for (const name of names) {
+    if (!name.startsWith("runtime-") || !name.endsWith(".json")) continue;
+    const path = join(directory, name);
+    let descriptor: RuntimeDescriptor | undefined;
+    try {
+      descriptor = RuntimeDescriptorSchema.parse(JSON.parse(await readFile(path, "utf8")));
+    } catch {
+      const metadata = await lstat(path).catch(() => undefined);
+      if (metadata && now - metadata.mtimeMs > 60_000) await rm(path, { force: true });
+      continue;
+    }
+    const leaseName = basename(descriptor.ownerLeasePath);
+    const leasePath = join(directory, leaseName);
+    if (dirname(descriptor.ownerLeasePath) !== directory || !leaseName.startsWith("runtime-") || !leaseName.endsWith(".lease")) continue;
+    referencedLeases.add(leaseName);
+    const lease = await lstat(leasePath).catch(() => undefined);
+    if (descriptor.expiresAtUnixMs < now || !lease || now - lease.mtimeMs > 4_000) {
+      await Promise.all([rm(path, { force: true }), rm(leasePath, { force: true })]);
+    }
+  }
+  for (const name of names) {
+    const path = join(directory, name);
+    if (name.startsWith("runtime-") && name.endsWith(".lease") && !referencedLeases.has(name)) {
+      const metadata = await lstat(path).catch(() => undefined);
+      if (metadata && now - metadata.mtimeMs > 4_000) await rm(path, { force: true });
+    } else if (name.startsWith(".consuming-runtime-")) {
+      const metadata = await lstat(path).catch(() => undefined);
+      if (metadata && now - metadata.mtimeMs > 60_000) await rm(path, { force: true });
+    }
+  }
+}
+
 export async function createRuntimeDescriptor(input: RuntimeDescriptorInput): Promise<RuntimeDescriptorMaterial> {
   const directory = await ensureRuntimeDirectory();
   const now = input.now ?? Date.now();
+  await pruneOrphanedRuntimeFiles(directory, now);
   const secret = randomBytes(32);
   const descriptor = RuntimeDescriptorSchema.parse({
     project: input.project,

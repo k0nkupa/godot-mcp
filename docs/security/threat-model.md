@@ -29,6 +29,8 @@ Editor queries inspect only roots already open in the editor and resources alrea
 | Secret-bearing settings or logs | Approved setting prefixes, secret-name omission, diagnostic token/path redaction, 4,096-character strings, redacted audit arguments |
 | Oversized properties or diagnostics | 128 properties, encoder depth 4 and 128 entries, 500-record diagnostic ring and request limit |
 | Capture memory/encoding pressure | Current editor viewport only, PNG only, 2048×2048 and 8 MiB decoded caps, one command active per addon queue |
+| Oversized runtime source readback | Texture dimensions are checked before CPU readback; sources above 4096×4096 or 16 megapixels are rejected, then output is resized within 2048×2048 and capped at 8 MiB |
+| Pathological runtime property regex | Restricted 64-character regex subset, no grouping/repetition/backreferences, and at most 4,096 subject characters |
 | Chunk confusion or stale response | UUID correlation, signed sequences/deadlines, contiguous 0-based chunks, common count/digest, terminal-result rule, pending cleanup on timeout/disconnect |
 | Hidden or unready viewport | Capture never changes screens; an unavailable or placeholder viewport returns `TARGET_NOT_FOUND`; certification opens explicit disposable visible fixtures |
 | Evidence path leakage, overwrite, or duplicate-frame provenance loss | Content-addressed PNGs and append-only per-capture observation receipts under the validated session directory in `.godot/evidence/godot-mcp`; atomic owner-only writes; only opaque `godot-mcp://evidence/...` references returned publicly |
@@ -46,8 +48,8 @@ Future project operations must stay inside approved `res://` roots and deny `.gi
 | Host process abuse | Exact Godot binary and fixed harness arguments, scrubbed environment, no shell, recorded PID/start fingerprint, no process-name kill |
 | Scene or node escape | Bounded `res://` scene paths, relative node paths, traversal and subname rejection, no caller-selected host paths |
 | Enumeration or memory pressure | 1,000 nodes/depth 32, 128 properties/signals, 500 logs, 30-second waits, one-to-120-frame steps |
-| Capture pressure or byte confusion | One-to-eight sequential PNGs, 2048×2048 and 8 MiB per frame, existing signed chunk limits, metadata/digest verification |
-| Runtime/editor/server crash | Owned child exit watcher, descriptor-bound owner heartbeat watchdog, and one idempotent descriptor/debugger/process cleanup path |
+| Capture pressure or byte confusion | One-to-eight sequential PNGs, bounded source readback, 2048×2048 and 8 MiB per frame, existing signed chunk limits, metadata/digest verification |
+| Runtime/editor/server crash | Owned child exit watcher, descriptor-bound owner heartbeat watchdog, harness lease removal, bounded startup pruning of expired/orphaned runtime files, and one idempotent cleanup path |
 | Secret or image leakage | Descriptor paths and secrets excluded from receipts; structured/audit output contains metadata/opaque URIs, not PNG base64 |
 
 The child runtime opens no listener. Its harness communicates only through Godot's debugger channel to the registered editor plugin. Loopback contains that channel but authentication comes from the runtime descriptor proof and identity binding.

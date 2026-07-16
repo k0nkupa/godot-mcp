@@ -28,6 +28,7 @@ describe("hostile runtime boundaries", () => {
     { operation: "logs", handle, limit: 501 },
     { operation: "step", handle, frames: 121 },
     { operation: "wait", handle, timeoutMs: 30_001, condition: { type: "frames_elapsed", frames: 1 } },
+    { operation: "wait", handle, condition: { type: "property_matches", nodePath: ".", property: "phase", pattern: "(a+)+$" } },
   ])("rejects hostile runtime input %# before dispatch", (input) => {
     expect(() => RuntimeOperationInputSchema.parse(input)).toThrow();
   });

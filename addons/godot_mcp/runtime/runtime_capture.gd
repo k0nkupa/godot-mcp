@@ -4,6 +4,8 @@ extends RefCounted
 const EditorCapture = preload("res://addons/godot_mcp/observation/editor_capture.gd")
 const RuntimeDeadline = preload("res://addons/godot_mcp/runtime/runtime_deadline.gd")
 const MAX_BYTES := 8 * 1024 * 1024
+const MAX_SOURCE_DIMENSION := 4096
+const MAX_SOURCE_PIXELS := 4096 * 4096
 
 var _root: Node
 var _control: RefCounted
@@ -40,7 +42,10 @@ func execute(arguments: Dictionary, deadline_unix_ms: int) -> Dictionary:
 		return _error("TIMEOUT", "Runtime capture deadline expired", true)
 	if not is_instance_valid(_root):
 		return _error("TARGET_NOT_FOUND", "Runtime scene changed")
-	var image := _root.get_viewport().get_texture().get_image()
+	var texture := _root.get_viewport().get_texture()
+	if texture == null or not source_dimensions_allowed(texture.get_width(), texture.get_height()):
+		return _error("PAYLOAD_TOO_LARGE", "Runtime source viewport exceeds the safe readback bound")
+	var image := texture.get_image()
 	if image == null or image.is_empty():
 		return _error("TARGET_NOT_FOUND", "Runtime viewport returned no image")
 	var max_width := clampi(int(arguments.get("maxWidth", 1280)), 1, 2048)
@@ -73,3 +78,6 @@ static func _error(code: String, message: String, retryable := false) -> Diction
 
 static func _deadline_expired(deadline_unix_ms: int) -> bool:
 	return int(Time.get_unix_time_from_system() * 1000.0) >= deadline_unix_ms
+
+static func source_dimensions_allowed(width: int, height: int) -> bool:
+	return width > 0 and height > 0 and width <= MAX_SOURCE_DIMENSION and height <= MAX_SOURCE_DIMENSION and width * height <= MAX_SOURCE_PIXELS

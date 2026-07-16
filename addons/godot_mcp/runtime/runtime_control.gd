@@ -70,6 +70,8 @@ func _wait(condition: Variant, deadline_unix_ms: int) -> Dictionary:
 			return _error("TARGET_NOT_FOUND", "Runtime wait property was not found")
 	var property_regex: RegEx
 	if String(condition.get("type", "")) == "property_matches":
+		if not safe_property_pattern(String(condition.get("pattern", ""))):
+			return _error("INVALID_REQUEST", "Runtime wait pattern uses unsupported regex features")
 		property_regex = RegEx.new()
 		if property_regex.compile(String(condition.get("pattern", ""))) != OK:
 			return _error("INVALID_REQUEST", "Runtime wait pattern is invalid")
@@ -138,7 +140,8 @@ func _condition_state(condition: Dictionary, started_process_frame: int, propert
 			var property := String(condition.get("property", ""))
 			if node == null or not _has_property(node, property):
 				return {"satisfied": false, "targetMissing": true}
-			return {"satisfied": property_regex != null and property_regex.search(str(node.get(property))) != null}
+			var subject := str(node.get(property)).left(4096)
+			return {"satisfied": property_regex != null and property_regex.search(subject) != null}
 		"log_matches":
 			var levels: Array = [String(condition.level)] if condition.has("level") else ["log", "warning", "error", "script", "shader"]
 			var records: Array[Dictionary] = _logger.read_after(0, levels, 500)
@@ -164,6 +167,14 @@ static func _has_property(node: Node, property: String) -> bool:
 		if String(property_info.get("name", "")) == property:
 			return true
 	return false
+
+static func safe_property_pattern(pattern: String) -> bool:
+	if pattern.is_empty() or pattern.length() > 64:
+		return false
+	for forbidden in ["\\", "+", "{", "}", "(", ")", "|"]:
+		if forbidden in pattern:
+			return false
+	return pattern.count("*") <= 1 and "**" not in pattern and "*?" not in pattern and "?*" not in pattern
 
 static func _error(code: String, message: String, retryable := false) -> Dictionary:
 	return {"ok": false, "code": code, "message": message, "retryable": retryable}

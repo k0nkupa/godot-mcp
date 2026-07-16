@@ -73,6 +73,9 @@ func _exit_tree() -> void:
 	_query = null
 	_control = null
 	_runtime_capture = null
+	var owner_lease_path := String(_descriptor.get("ownerLeasePath", ""))
+	if owner_lease_path_is_allowed(owner_lease_path, DescriptorReader.runtime_directory()):
+		DirAccess.remove_absolute(owner_lease_path)
 	_secret.fill(0)
 	_secret = PackedByteArray()
 	_descriptor.clear()

@@ -24,6 +24,19 @@ const RuntimeNodePathSchema = z
   );
 
 const PrimitiveSchema = z.union([z.string().max(4096), z.number().finite(), z.boolean(), z.null()]);
+const SafeRuntimePropertyPatternSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .refine(
+    (pattern) =>
+      !/[\\+{}()|]/.test(pattern) &&
+      (pattern.match(/\*/g)?.length ?? 0) <= 1 &&
+      !pattern.includes("**") &&
+      !pattern.includes("*?") &&
+      !pattern.includes("?*"),
+    { message: "Runtime property pattern uses unsupported regex features" },
+  );
 
 export const RuntimeHandleSchema = z
   .object({
@@ -48,7 +61,7 @@ const RuntimeWaitConditionSchema = z.discriminatedUnion("type", [
       type: z.literal("property_matches"),
       nodePath: RuntimeNodePathSchema,
       property: z.string().min(1).max(128).regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
-      pattern: z.string().min(1).max(256),
+      pattern: SafeRuntimePropertyPatternSchema,
     })
     .strict(),
   z

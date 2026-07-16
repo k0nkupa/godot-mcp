@@ -19,6 +19,11 @@ func _init() -> void:
 	assert(RuntimeHarness.owner_lease_is_fresh(100, 102000))
 	assert(RuntimeHarness.owner_lease_is_fresh(100, 103999))
 	assert(not RuntimeHarness.owner_lease_is_fresh(100, 104000))
+	assert(RuntimeCapture.source_dimensions_allowed(4096, 4096))
+	assert(not RuntimeCapture.source_dimensions_allowed(4097, 1))
+	assert(not RuntimeCapture.source_dimensions_allowed(4096, 4097))
+	assert(RuntimeControl.safe_property_pattern("^ready.*$"))
+	assert(not RuntimeControl.safe_property_pattern("(a+)+$"))
 	await process_frame
 	var runtime_root := Node.new()
 	root.add_child(runtime_root)

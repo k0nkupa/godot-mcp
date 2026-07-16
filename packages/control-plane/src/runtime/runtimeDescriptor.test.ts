@@ -1,4 +1,4 @@
-import { lstat } from "node:fs/promises";
+import { access, lstat } from "node:fs/promises";
 import { join } from "node:path";
 
 import { copyFixture } from "@godot-mcp/testkit";
@@ -64,4 +64,28 @@ it("rejects expired and mismatched descriptors", async () => {
   const mismatch = await createRuntimeDescriptor({ ...input, runId: "019f644c-1379-79c0-825e-66a4b7653bd4" });
   cleanups.push(mismatch.cleanup);
   await expect(consumeRuntimeDescriptor(mismatch.path, input)).rejects.toMatchObject({ code: "AUTHENTICATION_FAILED" });
+});
+
+it("prunes expired descriptor and lease residue before creating a new run", async () => {
+  const project = await copyFixture();
+  cleanups.push(project.cleanup);
+  process.env.XDG_RUNTIME_DIR = join(project.root, "runtime");
+  const base = {
+    project: {
+      projectId: "019f644c-1379-79c0-825e-66a4b7653bd1",
+      rootRealPath: project.root,
+      projectConfigSha256: "c".repeat(64),
+    },
+    sessionId: "session_12345678",
+    generation: 1,
+    scenePath: "res://runtime/runtime_fixture.tscn",
+  };
+  const abandoned = await createRuntimeDescriptor({ ...base, runId: "019f644c-1379-79c0-825e-66a4b7653bd5", now: 1 });
+  cleanups.push(abandoned.cleanup);
+  const replacement = await createRuntimeDescriptor({ ...base, runId: "019f644c-1379-79c0-825e-66a4b7653bd6", generation: 2, now: 60_002 });
+  cleanups.push(replacement.cleanup);
+
+  await expect(access(abandoned.path)).rejects.toThrow();
+  await expect(access(abandoned.descriptor.ownerLeasePath)).rejects.toThrow();
+  await expect(access(replacement.path)).resolves.toBeUndefined();
 });
