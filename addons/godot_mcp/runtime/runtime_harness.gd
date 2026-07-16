@@ -132,6 +132,17 @@ func _bind_game_scene() -> void:
 	_query = RuntimeQuery.new(_game_scene, _logger)
 	_control = RuntimeControl.new(_game_scene, _query, _logger)
 	_runtime_capture = RuntimeCapture.new(_game_scene, _control)
+	_game_scene.tree_exiting.connect(_invalidate_game_scene.bind(_game_scene), CONNECT_ONE_SHOT)
+
+func _invalidate_game_scene(scene: Node) -> void:
+	if _game_scene != scene:
+		return
+	_scene_revision += 1
+	_cancel_stale_commands()
+	_game_scene = null
+	_query = null
+	_control = null
+	_runtime_capture = null
 
 func _handle_command(command: Dictionary) -> void:
 	var request_id := String(command.get("requestId", ""))
@@ -145,7 +156,13 @@ func _handle_command(command: Dictionary) -> void:
 		outcome = _error("TIMEOUT", "Runtime command deadline expired", true)
 	elif not operation_is_allowed(operation):
 		outcome = _error("INVALID_REQUEST", "Runtime operation is not allowed")
-	elif operation != "stop" and (_query == null or _control == null or _runtime_capture == null):
+	elif operation != "stop" and (
+		_query == null
+		or _control == null
+		or _runtime_capture == null
+		or not is_instance_valid(_game_scene)
+		or _game_scene.get_tree() == null
+	):
 		outcome = _error("TARGET_NOT_FOUND", "Runtime scene is changing", true)
 	else:
 		_receive_sequence = sequence

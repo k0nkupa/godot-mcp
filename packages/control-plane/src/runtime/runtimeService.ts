@@ -186,7 +186,7 @@ export class RuntimeService {
 
   private async executeExclusive(input: Exclude<RuntimeOperationInput, LaunchInput>): Promise<unknown> {
     if (input.operation === "status") {
-      if (input.handle) this.assertHandle(input.handle);
+      if (input.handle) this.assertHandleIdentity(input.handle);
       if (!this.handle || !["running", "paused"].includes(this.state)) return this.snapshot();
       const runtimeStatus = await this.dependencies.command("status", { handle: this.handle });
       return typeof runtimeStatus === "object" && runtimeStatus !== null
@@ -275,10 +275,14 @@ export class RuntimeService {
   }
 
   private assertHandle(handle: RuntimeHandle): void {
+    this.assertHandleIdentity(handle);
+    if (!["running", "paused"].includes(this.state)) throw runtimeError("CONFLICT", "Runtime is not controllable in its current state");
+  }
+
+  private assertHandleIdentity(handle: RuntimeHandle): void {
     if (!this.handle || handle.runId !== this.handle.runId || handle.generation !== this.handle.generation) {
       throw runtimeError("STALE_HANDLE", "Runtime handle is stale");
     }
-    if (!["running", "paused"].includes(this.state)) throw runtimeError("CONFLICT", "Runtime is not controllable in its current state");
   }
 
   private runExclusive<T>(operation: () => Promise<T>): Promise<T> {

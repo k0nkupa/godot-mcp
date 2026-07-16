@@ -56,6 +56,7 @@ it("serializes one runtime generation and rejects stale handles", async () => {
   await expect(service.capture({ handle: launched.handle, maxWidth: 640, maxHeight: 360, frameCount: 2, intervalFrames: 3, advancePaused: false })).resolves.toMatchObject({ frames: [{ metadata: { frameIndex: 0 } }, { metadata: { frameIndex: 1 } }] });
   await service.execute({ operation: "stop", handle: launched.handle });
   expect(service.snapshot().state).toBe("stopped");
+  await expect(service.execute({ operation: "status", handle: launched.handle })).resolves.toMatchObject({ state: "stopped", handle: launched.handle });
   await service.close();
   await service.close();
   expect(calls.filter((call) => call === "process.stop")).toHaveLength(1);
