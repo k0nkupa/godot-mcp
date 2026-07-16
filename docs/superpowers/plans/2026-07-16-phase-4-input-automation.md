@@ -181,7 +181,7 @@ git commit -m "feat: serialize runtime input and redact receipts"
 - Modify: `fixtures/godot-4.7/project.godot`
 
 **Interfaces:**
-- `GodotMcpRuntimeInputEventFactory.build(spec: Dictionary) -> Dictionary` returns `{ ok, event, route, stateKey }` or a stable bounded error.
+- `GodotMcpRuntimeInputEventFactory.build(spec: Dictionary) -> Dictionary` returns `{ ok, events, route }` or a stable bounded error. Every input produces one event except scroll, which produces one matched press/release pair per nonzero axis.
 - `GodotMcpRuntimeInputCoordinates.resolve(root, target, position) -> Dictionary` resolves only `.` or a relative descendant `Viewport` and returns the transformed event, `inLocalCoords`, target viewport, visible size, and receipt metadata.
 - `GodotMcpRuntimeInputState.observe(eventSpec)` tracks only MCP-held state; `release_all()` constructs bounded release/neutral events for every held state.
 
