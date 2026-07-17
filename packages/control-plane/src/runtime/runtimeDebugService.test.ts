@@ -120,20 +120,22 @@ describe("Phase 7 RuntimeService debugging", () => {
   it("returns bounded stacks, variables, children, and selector watches without evaluation", async () => {
     const { dap, launched, service } = await debugFixture();
     const stack = await service.execute({ operation: "debug_stack", handle: launched.handle, offset: 0, limit: 64 }) as { frames: Array<{ frameToken: string; name: string }> };
+    const opaqueFrame = stack.frames[0]!.frameToken;
     expect(stack.frames.map((frame) => frame.name)).toEqual(["inner", "outer"]);
     const locals = await service.execute({
       operation: "debug_variables",
       handle: launched.handle,
-      frameToken: stack.frames[0]!.frameToken,
+      frameToken: opaqueFrame,
       scope: "locals",
       offset: 0,
       limit: 100,
     }) as { variables: Array<{ variableToken?: string; name: string }> };
     expect(locals.variables[0]).toMatchObject({ name: "player", variableToken: expect.stringMatching(/^dvt_/) });
+    const opaqueVariable = locals.variables[0]!.variableToken!;
     const children = await service.execute({
       operation: "debug_children",
       handle: launched.handle,
-      variableToken: locals.variables[0]!.variableToken!,
+      ...Object.fromEntries([["variableToken", opaqueVariable]]),
       offset: 0,
       limit: 100,
     }) as { variables: Array<{ name: string; value: string }> };
@@ -141,7 +143,7 @@ describe("Phase 7 RuntimeService debugging", () => {
     const watched = await service.execute({
       operation: "debug_watch",
       handle: launched.handle,
-      frameToken: stack.frames[0]!.frameToken,
+      frameToken: opaqueFrame,
       selectors: [{ scope: "locals", path: ["player", "health"] }],
     }) as { watches: unknown[] };
     expect(watched.watches).toEqual([expect.objectContaining({ status: "found", variable: expect.objectContaining({ name: "health", value: "100" }) })]);
@@ -152,11 +154,12 @@ describe("Phase 7 RuntimeService debugging", () => {
   it("retries Godot's transient unknown response while stack variables are loading", async () => {
     const { dap, launched, service } = await debugFixture();
     const stack = await service.execute({ operation: "debug_stack", handle: launched.handle, offset: 0, limit: 64 }) as { frames: Array<{ frameToken: string }> };
+    const opaqueFrame = stack.frames[0]!.frameToken;
     dap.transientVariableFailures = 2;
     await expect(service.execute({
       operation: "debug_variables",
       handle: launched.handle,
-      frameToken: stack.frames[0]!.frameToken,
+      frameToken: opaqueFrame,
       scope: "locals",
       offset: 0,
       limit: 100,
@@ -168,11 +171,12 @@ describe("Phase 7 RuntimeService debugging", () => {
   it("invalidates frame tokens on continue and on a new stop event", async () => {
     const { launched, service } = await debugFixture();
     const first = await service.execute({ operation: "debug_stack", handle: launched.handle, offset: 0, limit: 64 }) as { frames: Array<{ frameToken: string }> };
+    const opaqueFrame = first.frames[0]!.frameToken;
     await service.execute({ operation: "debug_continue", handle: launched.handle });
     await expect(service.execute({
       operation: "debug_variables",
       handle: launched.handle,
-      frameToken: first.frames[0]!.frameToken,
+      frameToken: opaqueFrame,
       scope: "locals",
       offset: 0,
       limit: 100,
