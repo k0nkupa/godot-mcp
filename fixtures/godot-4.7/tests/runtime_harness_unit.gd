@@ -21,6 +21,8 @@ func _init() -> void:
 	assert(RuntimeDebugger.debug_port_is_valid(6007))
 	assert(RuntimeDebugger.binding_is_unambiguous([7], 7))
 	assert(not RuntimeDebugger.binding_is_unambiguous([7, 8], 7))
+	assert(RuntimeDebugger.requires_external_continue_clear(false))
+	assert(not RuntimeDebugger.requires_external_continue_clear(true))
 	var hello := {"runId": "run", "generation": 1, "projectId": "project", "sessionId": "session", "launchNonce": "nonce", "pid": 42, "proof": "client-proof"}
 	assert(RuntimeHarness.hello_signing_text(hello) == RuntimeDebugger.hello_signing_text(hello))
 	assert(RuntimeHarness.server_proof_signing_text(hello) == RuntimeDebugger.server_proof_signing_text(hello))

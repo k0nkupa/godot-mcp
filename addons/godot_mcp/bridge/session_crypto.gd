@@ -35,7 +35,11 @@ static func signing_text(envelope: Dictionary) -> String:
 	]
 
 static func _canonical_signing_params(value: Variant) -> Variant:
-	if typeof(value) == TYPE_FLOAT and not is_nan(value) and not is_inf(value) and floor(value) != value:
+	if (
+		typeof(value) == TYPE_FLOAT
+		and is_finite(value)
+		and (floor(value) != value or absf(value) > float(MAX_SAFE_INTEGER))
+	):
 		return {"$godotMcpFloat64Le": float64_le_hex(value)}
 	if typeof(value) == TYPE_ARRAY:
 		var result: Array = []

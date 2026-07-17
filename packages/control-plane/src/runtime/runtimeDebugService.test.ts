@@ -250,11 +250,11 @@ describe("Phase 7 RuntimeService debugging", () => {
     const first = await service.execute({ operation: "debug_stack", handle: launched.handle, offset: 0, limit: 64 }) as { frames: Array<{ frameToken: string }> };
     const opaqueFrame = first.frames[0]!.frameToken;
     dap.stopped = false;
+    await expect(service.execute({ operation: "debug_status", handle: launched.handle })).resolves.toMatchObject({ stopped: false });
     await expect(service.execute({
       operation: "debug_variables", handle: launched.handle, frameToken: opaqueFrame, scope: "locals", offset: 0, limit: 100,
     })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
     dap.stopped = true;
-    dap.stopSequence += 1;
     await expect(service.execute({
       operation: "debug_variables", handle: launched.handle, frameToken: opaqueFrame, scope: "locals", offset: 0, limit: 100,
     })).rejects.toMatchObject({ code: "STALE_HANDLE" });

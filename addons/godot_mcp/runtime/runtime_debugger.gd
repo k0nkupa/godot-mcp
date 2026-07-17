@@ -17,6 +17,7 @@ var _stop_sequence := 0
 var _stop_events: Array[Dictionary] = []
 var _expected_stop_reason := "unknown"
 var _breakpoints: Dictionary = {}
+var _debug_data_cleared_for_transition := false
 
 const SCOPE_REFERENCE_BASE := 1000000
 
@@ -61,11 +62,32 @@ func _setup_session(debugger_session_id: int) -> void:
 		if _stop_events.size() > 512:
 			_stop_events.pop_front()
 		_expected_stop_reason = "unknown"
+		_debug_data_cleared_for_transition = false
 	)
 	session.continued.connect(func() -> void:
 		if debugger_session_id == _bound_session_id:
 			_expected_stop_reason = "unknown"
+			var already_cleared := _debug_data_cleared_for_transition
+			_debug_data_cleared_for_transition = false
+			if requires_external_continue_clear(already_cleared):
+				_forward_external_continue_clear(debugger_session_id)
 	)
+
+static func requires_external_continue_clear(already_cleared: bool) -> bool:
+	return not already_cleared
+
+func _forward_external_continue_clear(debugger_session_id: int) -> void:
+	if debugger_session_id != _bound_session_id or _ready_info.is_empty():
+		return
+	_send_sequence += 1
+	get_session(debugger_session_id).send_message("godot_mcp_runtime:command", [{
+		"handle": _ready_info.handle,
+		"requestId": "editor-continue-%d" % _send_sequence,
+		"sequence": _send_sequence,
+		"deadlineUnixMs": _now_ms() + 1000,
+		"operation": "debug_clear_data",
+		"arguments": {},
+	}])
 
 func _clear_after_session_stopped(debugger_session_id: int) -> void:
 	# The runtime sends its cooperative-stop result immediately before closing
@@ -207,6 +229,7 @@ func _execute_debug_adapter(command: Dictionary, deadline: int) -> Dictionary:
 			if not session.is_breaked(): return _error("PRECONDITION_FAILED", "Godot debugger must be stopped before continuing")
 			var clear_result := await _forward_runtime(command, "debug_clear_data", {}, deadline)
 			if not clear_result.ok: return clear_result
+			_debug_data_cleared_for_transition = true
 			session.send_message("continue", [])
 			while session.is_breaked() and _now_ms() < deadline:
 				await Engine.get_main_loop().process_frame
@@ -216,6 +239,7 @@ func _execute_debug_adapter(command: Dictionary, deadline: int) -> Dictionary:
 			if not session.is_breaked(): return _error("PRECONDITION_FAILED", "Godot debugger must be stopped before stepping")
 			var clear_result := await _forward_runtime(command, "debug_clear_data", {}, deadline)
 			if not clear_result.ok: return clear_result
+			_debug_data_cleared_for_transition = true
 			_expected_stop_reason = "step"
 			session.send_message("next" if adapter_command == "next" else "step", [])
 			return {"ok": true, "data": {"body": {}}}
@@ -281,6 +305,7 @@ func clear(_reason := "requested") -> void:
 	_stop_events.clear()
 	_expected_stop_reason = "unknown"
 	_breakpoints.clear()
+	_debug_data_cleared_for_transition = false
 
 func _accept_hello(payload: Dictionary, debugger_session_id: int) -> void:
 	if _prepared.is_empty() or _bound_session_id >= 0 or _now_ms() > int(_prepared.expiresAtUnixMs):

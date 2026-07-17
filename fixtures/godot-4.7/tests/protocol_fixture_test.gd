@@ -28,6 +28,10 @@ func _init() -> void:
 	var precise: float = JSON.parse_string("0.12345678901234567")
 	var tiny: float = JSON.parse_string("1e-300")
 	var huge: float = JSON.parse_string("1.2345678901234567e+100")
+	var unsafe_integral_float: float = JSON.parse_string("9007199254740992.0")
+	assert(SessionCrypto._canonical_signing_params(unsafe_integral_float) == {
+		"$godotMcpFloat64Le": SessionCrypto.float64_le_hex(unsafe_integral_float),
+	})
 	assert(SessionCrypto.float64_le_hex(precise) == "5ff64637dd9abf3f", SessionCrypto.float64_le_hex(precise))
 	assert(SessionCrypto.float64_le_hex(tiny) == "59f3f8c21f6ea501", SessionCrypto.float64_le_hex(tiny))
 	assert(SessionCrypto.float64_le_hex(huge) == "84f19de8d893b654", SessionCrypto.float64_le_hex(huge))

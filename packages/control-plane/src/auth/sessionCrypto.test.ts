@@ -43,6 +43,10 @@ describe("session crypto", () => {
     for (const godotEncoded of ["704b2f44612a403f", "5ff64637dd9abf3f", "59f3f8c21f6ea501", "84f19de8d893b654"]) {
       expect(canonicalFloat64Le(decodeFloat64Le(godotEncoded))).toBe(godotEncoded);
     }
+    const unsafeIntegralFloat = Number.MAX_SAFE_INTEGER + 1;
+    expect(signEnvelope(key, envelope({ params: { value: unsafeIntegralFloat } })).params).toEqual({
+      value: { $godotMcpFloat64Le: canonicalFloat64Le(unsafeIntegralFloat) },
+    });
   });
 
   it("rejects a repeated signed sequence", () => {

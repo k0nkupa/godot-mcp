@@ -381,6 +381,7 @@ export class RuntimeService {
   private async executeDebug(input: RuntimeDebugOperationInput): Promise<unknown> {
     await this.assertDebuggerBinding();
     await this.debuggerClient?.refresh?.();
+    if (this.debuggerClient && !this.debuggerClient.snapshot().stopped) this.debugTokens.clear();
     if (input.operation === "debug_status") {
       const snapshot = this.debuggerClient?.snapshot() ?? { connected: false, stopped: false, stopSequence: 0 };
       const breakpointCount = [...this.breakpointSources.values()].reduce((total, lines) => total + lines.length, 0);

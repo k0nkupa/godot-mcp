@@ -42,7 +42,7 @@ function isFloatWireValue(value: unknown): value is Record<typeof FLOAT_WIRE_KEY
 
 function encodeFloatParams(value: unknown, allowWireValues = false): unknown {
   if (typeof value === "number") {
-    if (Number.isFinite(value) && !Number.isInteger(value)) {
+    if (Number.isFinite(value) && !Number.isSafeInteger(value)) {
       return { [FLOAT_WIRE_KEY]: canonicalFloat64Le(value) };
     }
     return value;
