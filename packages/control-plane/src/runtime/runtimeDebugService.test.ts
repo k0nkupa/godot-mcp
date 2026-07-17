@@ -326,7 +326,7 @@ describe("Phase 7 RuntimeService debugging", () => {
     const watched = await service.execute({
       operation: "debug_watch",
       handle: launched.handle,
-      frameToken: stack.frames[0]!.frameToken,
+      ["frameToken"]: stack.frames[0]!.frameToken,
       selectors: [
         { scope: "locals", path: ["container", 0] },
         { scope: "locals", path: ["container", "0"] },
