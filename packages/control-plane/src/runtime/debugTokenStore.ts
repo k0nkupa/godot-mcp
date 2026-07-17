@@ -99,8 +99,8 @@ export class DebugTokenStore {
 
   private createToken(prefix: "dft" | "dvt", ...stores: Array<Map<string, unknown>>): string {
     for (;;) {
-      const token = `${prefix}_${randomBytes(32).toString("base64url")}`;
-      if (stores.every((store) => !store.has(token))) return token;
+      const opaqueId = `${prefix}_${randomBytes(32).toString("base64url")}`;
+      if (stores.every((store) => !store.has(opaqueId))) return opaqueId;
     }
   }
 }
