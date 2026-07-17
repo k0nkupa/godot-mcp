@@ -230,9 +230,12 @@ func _execute_operation(operation: String, arguments: Dictionary, deadline_unix_
 
 func _cooperative_stop() -> void:
 	_release_runtime_input("runtime_stop")
+	# Flush the command result in a separate debugger frame before announcing the
+	# stopped session. Otherwise the editor can clear its pending request when the
+	# debugger session closes before it observes the result under aggregate load.
+	await get_tree().process_frame
 	EngineDebugger.send_message("godot_mcp_runtime:stopped", [{"runId": String(_descriptor.runId)}])
-	# Let both the command result and stopped notification reach the editor before
-	# terminating the debugger transport.
+	# Let the stopped notification reach the editor before terminating transport.
 	await get_tree().process_frame
 	get_tree().quit(0)
 
