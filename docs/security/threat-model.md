@@ -1,8 +1,8 @@
-# Phase 0–5 threat model
+# Phase 0–7 threat model
 
 ## Security boundary
 
-Phase 0–5 protects a Godot project from unauthenticated network clients, accidental cross-project attachment, replay, stale messages, and ordinary local clients that do not possess the short-lived secrets. It bounds editor metadata/evidence, an explicitly authorized instrumented runtime, and permission-scoped editor mutations. It does not defend against a process that has already compromised the same operating-system user, and the runtime harness is not a sandbox for hostile game code.
+Phase 0–7 protects a Godot project from unauthenticated network clients, accidental cross-project attachment, replay, stale messages, and ordinary local clients that do not possess the short-lived secrets. It bounds editor metadata/evidence, an explicitly authorized instrumented runtime, permission-scoped editor mutations and authoring, native GDScript debugging, and structured performance evidence. It does not defend against a process that has already compromised the same operating-system user, and the runtime harness is not a sandbox for hostile game code.
 
 The MCP process listens only on IPv4 loopback (`127.0.0.1`). The Godot addon never opens a listener; it reads the descriptor for its exact project identity and connects outward. Loopback is transport containment, not authentication.
 
@@ -52,6 +52,20 @@ Future project operations must stay inside approved `res://` roots and deny `.gi
 | Runtime/editor/server crash | Owned child exit watcher, descriptor-bound owner heartbeat watchdog, harness lease removal, bounded startup pruning of expired/orphaned runtime files, and one idempotent cleanup path |
 | Secret or image leakage | Descriptor paths and secrets excluded from receipts; structured/audit output contains metadata/opaque URIs, not PNG base64 |
 
+### Phase 7 debugging and profiling controls
+
+| Abuse case | Control |
+|---|---|
+| Unauthenticated loopback DAP client | DAP is used only after the authenticated owned runtime is ready; the recorded editor PID must own both distinct loopback debugger listeners before attachment |
+| Wrong-run attachment or listener replacement | Runtime handle, generation, editor PID, debug port, and DAP port are bound during prepare; ownership is rechecked before the closed-world client connects |
+| Arbitrary debugger execution | Only initialize, attach, disconnect, breakpoints, threads, stack/scopes/variables, pause, continue, next, and step-in are emitted; no launch, terminate, evaluate, set-variable, method call, or raw DAP passthrough exists |
+| Source or addon escape | Breakpoints require canonical project-local `.gd` paths; traversal, symlinks, non-scripts, and `res://addons/godot_mcp` are rejected after real-path containment checks |
+| Stale-token disclosure | Frame and variable IDs are never exposed; 256-bit opaque tokens bind run, generation, DAP generation, and stop sequence and are cleared on continue, step, reconnect, stop, crash, disconnect, and close |
+| Variable-value exposure or memory pressure | Values are returned only on explicit authorized reads, with 64-frame, 256-entry/page, 2,048-entry/session, and depth-eight bounds; watches traverse exact returned names and never evaluate expressions |
+| DAP framing or event abuse | CRLF-only one-MiB Content-Length frames, serialized allowlisted requests, correlation checks, bounded event queue, deadlines, and fail-closed disconnect on malformed, unknown, late, duplicate, or overflowing input |
+| Profiling resource exhaustion | One job per runtime; 100 ms–30 s duration, interval 1–120 frames, 128 metrics, 2,048 retained samples, 4 MiB raw evidence, explicit cancellation, and bounded partial terminal evidence |
+| Performance evidence or audit leakage | Public engine monitors only; structured aggregates and optional bounded raw samples are returned to the caller, while audit retains operation/count/state/digest metadata and excludes samples, values, and profiler payloads |
+
 The child runtime opens no listener. Its harness communicates only through Godot's debugger channel to the registered editor plugin. Loopback contains that channel but authentication comes from the runtime descriptor proof and identity binding.
 
 ## Input automation abuse controls
@@ -89,4 +103,4 @@ Receipts are append-only JSONL under `.godot/evidence/godot-mcp/`. Audit values 
 
 ## Explicitly out of scope
 
-Unsafe fixture mode is not implemented in Phase 5. Script/shader authoring, imported-asset mutation, project settings/imports, debugger stacks/breakpoints, profiling, build/export, arbitrary evidence retrieval, and arbitrary method invocation remain out of scope. When unsafe fixture mode is implemented, it will require a disposable registered fixture, separate process, scrubbed environment, short grant, and interactive approval. It will reduce accidental exposure but will not be described as a secure sandbox for hostile code running as the current user.
+Unsafe fixture mode is not implemented in Phase 7. Imported-asset mutation, project settings/imports, build/export, arbitrary evidence retrieval, expression evaluation, variable mutation, arbitrary method invocation, and host-level profiling remain out of scope. When unsafe fixture mode is implemented, it will require a disposable registered fixture, separate process, scrubbed environment, short grant, and interactive approval. It will reduce accidental exposure but will not be described as a secure sandbox for hostile code running as the current user.

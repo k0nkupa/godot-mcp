@@ -1,6 +1,6 @@
 # Godot MCP bridge protocol v1
 
-The Phase 5 editor bridge is JSON over a loopback WebSocket at `ws://127.0.0.1:<ephemeral-port>/bridge`. The server writes the address and one-use authentication material to an owner-only pairing descriptor. The addon initiates the connection; it opens no port.
+The Phase 7 editor bridge is JSON over a loopback WebSocket at `ws://127.0.0.1:<ephemeral-port>/bridge`. The server writes the address and one-use authentication material to an owner-only pairing descriptor. The addon initiates the connection; it opens no port.
 
 ## Pair request
 
@@ -28,7 +28,7 @@ method
 canonicalJson(params)
 ```
 
-Canonical JSON sorts object keys, preserves array order, allows null, booleans, strings, and safe integers only, and rejects floating-point numbers. Godot’s JSON parser represents wire numbers as floats, so the addon accepts only finite integral values within JavaScript’s safe-integer range and renders them as integers for signing.
+Canonical JSON sorts object keys, preserves array order, and allows null, booleans, strings, and safe integers. Finite non-integral parameters are replaced only for MAC calculation with `{ "type": "FloatJson", "value": JSON.stringify(value) }`, using the exact decimal written to transport; the public payload remains numeric. Godot’s JSON parser represents integral wire numbers as floats, so the addon renders finite integral values within JavaScript’s safe-integer range as integers for signing.
 
 Sequences must increase strictly for each direction. Deadlines must be unexpired and no more than 60 seconds in the future. A bad MAC, repeated sequence, wrong session ID, malformed envelope, or invalid deadline closes the session.
 
@@ -76,6 +76,16 @@ A preview contains 1–32 closed-union steps and returns one history identity, o
 One batch resolves to one already-open scene history or global project-file history. Scene actions use native `EditorUndoRedoManager`; undo/redo refuses when the requested MCP action is not at the expected top-of-history state. File actions recheck containment and preimage hashes immediately before effect, use same-directory atomic replacement or journal tombstones, refresh only touched editor filesystem entries, and retain at most eight files or 4 MiB of preimages.
 
 Mutation errors extend the bounded command error with `failedPhase`, `partialEffects`, `rollback`, and `safeRecovery`. Receipts and audit records include identities, preconditions, changes, warnings, and rollback state, but never raw idempotency keys or sensitive property values.
+
+## Phase 7 runtime debugging and performance
+
+`runtime.prepare` also returns the editor PID and explicit DAP port. The control plane accepts DAP only on `127.0.0.1`, requires debugger and DAP ports to be distinct, and proves with the host process table that the recorded editor PID owns both listeners. It attaches only after the runtime descriptor handshake has authenticated the owned child PID.
+
+The DAP client has no public passthrough. Its complete outbound command set is initialize, attach, disconnect, setBreakpoints, threads, stackTrace, scopes, variables, pause, continue, next, and stepIn. Framing requires one CRLF-only Content-Length header and a JSON-object body of at most one MiB. Requests are serialized and bounded by deadlines; unknown response IDs, forbidden commands, malformed frames, event overflow, transport loss, and late responses fail closed.
+
+Debugger operations are carried by the existing `godot_runtime` tool: set/clear breakpoints, status, wait, pause, continue, step over/into, stack, variables, children, and selector watches. Breakpoints are canonical project-local GDScript locations outside the addon. DAP frame and variable IDs are replaced with opaque tokens bound to run ID, runtime generation, DAP generation, and stop sequence. Tokens become stale on execution, a new stop, reconnect, shutdown, or generation change. Watches traverse exact scope/name/index selectors in returned variable trees and never use DAP evaluate.
+
+Performance operations on the same tool are monitor snapshot, profile start/status/cancel/result. The harness samples public `Performance`, `EngineProfiler`, `RenderingServer`, and `RenderingDevice` APIs only. One job runs at a time for 100 ms–30 seconds with an interval of 1–120 frames, at most eight requested groups, 128 metrics, 2,048 retained samples, and four MiB of raw evidence. Terminal evidence records completeness, cancellation/failure reason, engine metadata, aggregates, optional bounded samples, optional GPU timestamp support, and a canonical SHA-256. Audit stores only bounded operation/count/state/digest metadata, never debugger values, watches, monitor samples, or raw profile evidence.
 
 ## Limits and closes
 
