@@ -102,7 +102,7 @@ it.each([
 it("accepts only selector watches", () => {
   expect(RuntimeDebugOperationInputSchema.parse({
     operation: "debug_watch", handle,
-    frameToken: "dft_" + "a".repeat(43),
+    ...withFrameReference(stack.frames[0]),
     selectors: [{ scope: "locals", path: ["player", "health"] }],
   })).toMatchObject({ operation: "debug_watch" });
 });
@@ -265,7 +265,7 @@ it("invalidates frame tokens on continue", async () => {
   await service.execute({ operation: "debug_continue", handle });
   await expect(service.execute({
     operation: "debug_variables", handle,
-    frameToken: stack.frames[0].frameToken, scope: "locals", offset: 0, limit: 100,
+    ...withFrameReference(stack.frames[0]), scope: "locals", offset: 0, limit: 100,
   })).rejects.toMatchObject({ code: "STALE_HANDLE" });
 });
 ```
