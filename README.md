@@ -1,6 +1,6 @@
 # Godot MCP
 
-Godot MCP is an open-source, security-first MCP server and Godot editor addon. Phase 5 provides reversible installation, authenticated Godot 4.7 editor attachment, six default observe-only tools, explicitly gated runtime/input surfaces, and one permission-scoped editor mutation tool with native Undo/Redo.
+Godot MCP is an open-source, security-first MCP server and Godot editor addon. Phase 6 provides reversible installation, authenticated Godot 4.7 editor attachment, six default observe-only tools, explicitly gated runtime/input surfaces, and one permission-scoped editor tool for native Undo/Redo transactions across scenes, resources, and constrained source files.
 
 ## Requirements
 
@@ -67,7 +67,7 @@ The default six tools are read-only and closed-world. A runtime-authorized sessi
 - `godot_runtime` — launch, status, bounded tree/node/log queries, waits, pause, step, resume, and stop for one authenticated child runtime
 - `godot_runtime_capture` — one to eight ordered running-game PNG frames with verified evidence metadata
 - `godot_input` — bounded events, frame-indexed sequences, non-passive recording, and deterministic replay for the owned runtime
-- `godot_editor` — preview, apply, undo, and redo one bounded scene/node/resource mutation batch with durable idempotency and native editor history
+- `godot_editor` — preview, apply, undo, and redo one bounded scene/node/resource/source authoring batch with durable idempotency and native editor history
 
 For example:
 
@@ -88,10 +88,11 @@ GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-2
 GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-3
 GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-4
 GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-5
+GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-6
 ```
 
-The Phase 5 gate certifies explicit tool exposure, preview/apply digest binding, idempotent replay, save/reload persistence, action-scoped Undo/Redo, protected-path rejection, rollback reporting, stdio cleanup, and zero fixture diff. Earlier gates remain required regressions. See [Phase 5 testing](docs/testing/phase-5.md), [Phase 4 testing](docs/testing/phase-4.md), the [threat model](docs/security/threat-model.md), the [bridge protocol](docs/protocol/bridge-v1.md), and the [master design](docs/superpowers/specs/2026-07-15-godot-mcp-master-design.md).
+The Phase 6 gate certifies resource and typed-domain authoring, constrained script/shader creation and replacement, imported-reference expectations, preview/apply digest binding, redacted audit hashes, action-scoped Undo/Redo, hostile-input rejection, reversible stdio lifecycle, and zero fixture diff. Earlier gates remain required regressions. See [Phase 6 testing](docs/testing/phase-6.md), [Phase 5 testing](docs/testing/phase-5.md), the [threat model](docs/security/threat-model.md), the [bridge protocol](docs/protocol/bridge-v1.md), and the [master design](docs/superpowers/specs/2026-07-15-godot-mcp-master-design.md).
 
 ## Roadmap
 
-Later phases add script/shader authoring, debugger stacks and profiler integration, declarative playtests, imports/builds/exports, evidence retrieval, compatibility lanes, and explicitly gated disposable-fixture unsafe mode. None of those capabilities are claimed by Phase 5.
+Later phases add debugger stacks and profiler integration, declarative playtests, imports/builds/exports, evidence retrieval, compatibility lanes, and explicitly gated disposable-fixture unsafe mode. None of those capabilities are claimed by Phase 6.

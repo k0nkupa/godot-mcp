@@ -3,10 +3,10 @@
 ## Start here
 
 - Product contract: `docs/superpowers/specs/2026-07-15-godot-mcp-master-design.md`
-- Current implementation plan: `docs/superpowers/plans/2026-07-16-phase-4-input-automation.md`
+- Current implementation plan: `docs/superpowers/plans/2026-07-17-phase-6-complete-authoring-surface.md`
 - Security boundary: `docs/security/threat-model.md`
 - Wire contract: `docs/protocol/bridge-v1.md`
-- Phase gate: `docs/testing/phase-4.md`
+- Phase gate: `docs/testing/phase-6.md`
 
 ## Guardrails
 
@@ -19,4 +19,4 @@
 
 ## Validation
 
-Use focused Vitest tests while developing. Before claiming Phase 4 complete, run `GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-4`, then the Phase 0–1, Phase 2, and Phase 3 regression gates. Never claim a skipped check passed.
+Use focused Vitest tests while developing. Before claiming Phase 6 complete, run `GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-6`, then the Phase 0–1 and Phase 2–5 regression gates. Never claim a skipped check passed.

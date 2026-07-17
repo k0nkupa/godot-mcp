@@ -34,9 +34,6 @@ describe("workspace package contract", () => {
     expect(gate).toContain("tests/end-to-end/phase-4.test.ts");
     expect(gate).toContain("await rm(failureArtifacts, { force: true, recursive: true })");
 
-    const agents = await readFile("AGENTS.md", "utf8");
-    expect(agents).toContain("docs/superpowers/plans/2026-07-16-phase-4-input-automation.md");
-    expect(agents).toContain("docs/testing/phase-4.md");
     const readme = await readFile("README.md", "utf8");
     expect(readme).toContain("pnpm qa:phase-4");
     expect(readme).toContain("--grant runtime_control --pack runtime --pack input");
@@ -55,5 +52,22 @@ describe("workspace package contract", () => {
 	expect(readme).toContain("pnpm qa:phase-5");
 	expect(readme).toContain("--grant project_mutate --pack editor");
 	expect(await readFile("docs/testing/phase-5.md", "utf8")).toContain("godot_editor");
+  });
+
+  it("defines the ordered Phase 6 certification gate and authoring documentation", async () => {
+    const packageJson = JSON.parse(await readFile("package.json", "utf8")) as { scripts?: Record<string, string> };
+    expect(packageJson.scripts?.["qa:phase-6"]).toBe("node scripts/qa-phase-6.mjs");
+    const gate = await readFile("scripts/qa-phase-6.mjs", "utf8");
+    expect(gate).toContain("4.7.stable.official.5b4e0cb0f");
+    for (let stage = 1; stage <= 15; stage += 1) expect(gate).toContain(`${stage}/15`);
+    expect(gate).toContain("tests/integration/editor-authoring.test.ts");
+    expect(gate).toContain("tests/security/editor-authoring-hostile.test.ts");
+    expect(gate).toContain("tests/end-to-end/phase-6.test.ts");
+    expect(gate).toContain("scripts/verify-phase-6-cleanup.mjs");
+    const agents = await readFile("AGENTS.md", "utf8");
+    expect(agents).toContain("docs/superpowers/plans/2026-07-17-phase-6-complete-authoring-surface.md");
+    expect(agents).toContain("docs/testing/phase-6.md");
+    expect(await readFile("README.md", "utf8")).toContain("pnpm qa:phase-6");
+    expect(await readFile("docs/testing/phase-6.md", "utf8")).toContain("create_script");
   });
 });
