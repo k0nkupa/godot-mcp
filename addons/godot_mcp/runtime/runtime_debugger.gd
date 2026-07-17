@@ -238,7 +238,11 @@ func _set_breakpoints(session: EditorDebuggerSession, arguments: Dictionary) -> 
 			return _error("INVALID_REQUEST", "Debugger breakpoint line is invalid")
 		var line := int(entry.line)
 		lines.append(line)
-		response.append({"verified": true, "line": line})
+		response.append({
+			"verified": false,
+			"line": line,
+			"message": "Godot accepted the breakpoint, but its editor API cannot confirm an executable source line",
+		})
 	var previous: Array = _breakpoints.get(localized, [])
 	for line: int in previous:
 		session.set_breakpoint(localized, line, false)

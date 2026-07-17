@@ -5,6 +5,7 @@ Phase 7 extends the existing runtime-authorized surface with native read-only GD
 ## Certified debugger contract
 
 - `debug_breakpoints_set` sets or clears at most 64 unique breakpoints across 16 canonical project-local `.gd` files outside `res://addons/godot_mcp`.
+- Breakpoint receipts remain honestly unverified because Godot 4.7's editor API does not confirm executable source lines; real stop behavior is certified by integration and E2E tests.
 - `debug_status`, `debug_wait`, and `debug_pause` expose bounded stop state; `debug_continue`, `debug_step_over`, and `debug_step_into` control only the authenticated owned child.
 - `debug_stack`, `debug_variables`, and `debug_children` return at most 64 frames, 256 entries per page, 2,048 entries per stop-bound token set, and depth eight.
 - `debug_watch` accepts at most 32 exact locals/members/globals selector paths of depth eight. It traverses returned variables and never evaluates expressions or invokes methods.

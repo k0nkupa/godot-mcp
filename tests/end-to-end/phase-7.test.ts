@@ -71,7 +71,10 @@ test.skipIf(process.platform !== "darwin")(
         operation: "debug_breakpoints_set", handle,
         breakpoints: [{ sourcePath: "res://debug/debug_fixture.gd", line: breakpointLine }],
       }) as { breakpoints: Array<{ verified: boolean }> };
-      expect(set.breakpoints).toEqual([expect.objectContaining({ verified: true })]);
+      expect(set.breakpoints).toEqual([expect.objectContaining({
+        verified: false,
+        message: expect.stringContaining("cannot confirm an executable source line"),
+      })]);
       await expect(call(client, { operation: "debug_wait", handle, afterSequence: 0, timeoutMs: 10_000 })).resolves.toMatchObject({ reason: "unknown" });
       const stack = await call(client, { operation: "debug_stack", handle, offset: 0, limit: 64 }) as { frames: Array<{ frameToken: string; name: string }> };
       const inner = stack.frames.find((frame) => frame.name === "_inner");

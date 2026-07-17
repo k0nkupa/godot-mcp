@@ -23,7 +23,11 @@ test("uses only the authenticated Godot debugger channel for breakpoints and bou
       handle: launched.handle,
       breakpoints: [{ sourcePath: "res://debug/debug_fixture.gd", line: breakpointLine }],
     }) as { breakpoints: Array<{ verified: boolean; resolvedLine: number }> };
-    expect(set.breakpoints).toEqual([expect.objectContaining({ verified: true, resolvedLine: breakpointLine })]);
+    expect(set.breakpoints).toEqual([expect.objectContaining({
+      verified: false,
+      resolvedLine: breakpointLine,
+      message: expect.stringContaining("cannot confirm an executable source line"),
+    })]);
 
     phase = "wait-breakpoint";
     const stopped = await fixture.runtime.execute({ operation: "debug_wait", handle: launched.handle, afterSequence: 0, timeoutMs: 10_000 });

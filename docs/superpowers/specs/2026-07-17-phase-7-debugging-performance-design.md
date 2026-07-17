@@ -57,6 +57,7 @@ Execution control uses the bound editor debugger session. Stack capture immediat
 - No traversal, symlink escape, hidden path, or `res://addons/godot_mcp` target.
 - Lines are one-based integers in `1..1_000_000`.
 - All entries are validated before any breakpoint side effect.
+- Godot's editor debugger API accepts source-line breakpoints but does not confirm whether a line is executable, so results remain `verified: false` with an explanatory message even when the breakpoint is installed.
 - Cleanup removes only MCP-owned breakpoints.
 
 ### 5.2 State and execution
