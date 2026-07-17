@@ -83,6 +83,8 @@ var _tick_values: Dictionary = {}
 var _engine_profiler: EngineProfiler
 var _profiler_registered := false
 var _rendering_device: RenderingDevice
+var _gpu_deltas: Array[float] = []
+var _gpu_seen_samples: Dictionary = {}
 
 func snapshot(groups: Array) -> Dictionary:
 	var valid := _validate_groups(groups, 9)
@@ -130,6 +132,8 @@ func start(input: Dictionary) -> Dictionary:
 	_raw_samples.clear()
 	_raw_bytes = 0
 	_tick_values.clear()
+	_gpu_deltas.clear()
+	_gpu_seen_samples.clear()
 	var now := Time.get_ticks_usec()
 	_job = {
 		"jobToken": _opaque_token(),
@@ -147,13 +151,9 @@ func start(input: Dictionary) -> Dictionary:
 		"invalidSamples": 0,
 		"droppedSamples": 0,
 		"terminalReason": "",
-		"gpuTimestampStartIndex": -1,
 	}
 	_register_engine_profiler()
 	_rendering_device = RenderingServer.get_rendering_device()
-	if _rendering_device != null:
-		_job.gpuTimestampStartIndex = _rendering_device.get_captured_timestamps_count()
-		_rendering_device.capture_timestamp("godot_mcp_profile_start")
 	_sample_frame(true)
 	return {"ok": true, "data": _status_receipt()}
 
@@ -169,8 +169,11 @@ func _sample_frame(force: bool) -> void:
 	var frame := Engine.get_process_frames()
 	if not force and (frame - int(_job.startFrame)) % int(_job.intervalFrames) != 0:
 		return
+	var sample_id := int(_job.observedSamples) + 1
+	_capture_profile_gpu_marker("start", sample_id)
 	var sampled := snapshot(_job.groups)
 	if not sampled.ok:
+		_capture_profile_gpu_marker("end", sample_id)
 		_finalize("failed", false, String(sampled.get("message", "Profile sampling failed")))
 		return
 	var values := _flatten_values(sampled.data.groups)
@@ -181,16 +184,17 @@ func _sample_frame(force: bool) -> void:
 	_job.observedSamples = int(_job.observedSamples) + 1
 	if values.is_empty():
 		_job.invalidSamples = int(_job.invalidSamples) + 1
+		_capture_profile_gpu_marker("end", sample_id)
 		return
 	_record_aggregates(values, int(_job.observedSamples))
 	if bool(_job.retainRaw):
 		_retain_raw({"frame": frame, "monotonicUsec": Time.get_ticks_usec(), "values": values}, int(_job.observedSamples))
-	if _rendering_device != null:
-		_rendering_device.capture_timestamp("godot_mcp_profile_%d" % int(_job.observedSamples))
+	_capture_profile_gpu_marker("end", sample_id)
 
 func _advance_deadline() -> void:
 	if _job.is_empty() or String(_job.get("state", "")) != "running":
 		return
+	_collect_profile_gpu_deltas()
 	if Time.get_ticks_usec() - int(_job.startedMonotonicUsec) >= int(_job.requestedDurationMs) * 1000:
 		_finalize("completed", true, "")
 
@@ -225,6 +229,8 @@ func clear() -> void:
 	_raw_samples.clear()
 	_raw_bytes = 0
 	_tick_values.clear()
+	_gpu_deltas.clear()
+	_gpu_seen_samples.clear()
 	_rendering_device = null
 
 func record_engine_tick(frame_time: float, process_time: float, physics_time: float, physics_frame_time: float) -> void:
@@ -316,7 +322,7 @@ func _finalize(state: String, complete: bool, reason: String) -> void:
 		"aggregates": aggregates,
 		"rawSamples": _raw_samples.duplicate(true) if bool(_job.retainRaw) else [],
 		"engine": _engine_metadata(),
-		"gpuTimestamps": _gpu_timestamps(int(_job.gpuTimestampStartIndex)),
+		"gpuTimestamps": _profile_gpu_timestamps(),
 	}
 	if not reason.is_empty():
 		evidence.terminalReason = reason.left(256)
@@ -432,12 +438,12 @@ func _unregister_engine_profiler() -> void:
 	_profiler_registered = false
 	_engine_profiler = null
 
-func _gpu_timestamps(start_index := -1) -> Dictionary:
+func _gpu_timestamps() -> Dictionary:
 	var device := _rendering_device if _rendering_device != null else RenderingServer.get_rendering_device()
 	if device == null:
 		return {"supported": false, "reason": "RenderingDevice is unavailable"}
 	var total := device.get_captured_timestamps_count()
-	var start := clampi(start_index, 0, total) if start_index >= 0 else maxi(0, total - (MAX_SAMPLES + 1))
+	var start := maxi(0, total - (MAX_SAMPLES + 1))
 	var count := mini(total - start, MAX_SAMPLES + 1)
 	if count < 2:
 		return {"supported": false, "reason": "Captured GPU timestamps are unavailable"}
@@ -449,6 +455,51 @@ func _gpu_timestamps(start_index := -1) -> Dictionary:
 			deltas.append(gpu_microseconds_delta(current - previous))
 		previous = current
 	return {"supported": true, "deltasUsec": deltas}
+
+func _capture_profile_gpu_marker(kind: String, sample_id: int) -> void:
+	if _rendering_device != null:
+		_rendering_device.capture_timestamp("godot_mcp_profile_%s_%d" % [kind, sample_id])
+
+func _collect_profile_gpu_deltas() -> void:
+	if _rendering_device == null or _gpu_deltas.size() >= MAX_SAMPLES:
+		return
+	var count := mini(_rendering_device.get_captured_timestamps_count(), 4096)
+	var names: Array[String] = []
+	var times: Array[int] = []
+	for index in count:
+		names.append(_rendering_device.get_captured_timestamp_name(index))
+		times.append(_rendering_device.get_captured_timestamp_gpu_time(index))
+	for pair: Dictionary in extract_profile_gpu_pairs(names, times):
+		var sample_id := int(pair.sampleId)
+		if not _gpu_seen_samples.has(sample_id) and _gpu_deltas.size() < MAX_SAMPLES:
+			_gpu_seen_samples[sample_id] = true
+			_gpu_deltas.append(float(pair.deltaUsec))
+
+func _profile_gpu_timestamps() -> Dictionary:
+	_collect_profile_gpu_deltas()
+	if _gpu_deltas.is_empty():
+		return {"supported": false, "reason": "Paired per-frame GPU timestamps are unavailable"}
+	return {"supported": true, "deltasUsec": _gpu_deltas.duplicate()}
+
+static func extract_profile_gpu_pairs(names: Array, times: Array) -> Array[Dictionary]:
+	var starts := {}
+	var pairs: Array[Dictionary] = []
+	var count := mini(names.size(), times.size())
+	for index in count:
+		var name := String(names[index])
+		if name.begins_with("godot_mcp_profile_start_"):
+			starts[int(name.trim_prefix("godot_mcp_profile_start_"))] = int(times[index])
+		elif name.begins_with("godot_mcp_profile_end_"):
+			var sample_id := int(name.trim_prefix("godot_mcp_profile_end_"))
+			if starts.has(sample_id) and int(times[index]) >= int(starts[sample_id]):
+				pairs.append({"sampleId": sample_id, "deltaUsec": gpu_microseconds_delta(int(times[index]) - int(starts[sample_id]))})
+	return pairs
+
+static func extract_profile_gpu_deltas(names: Array, times: Array) -> Array[float]:
+	var deltas: Array[float] = []
+	for pair: Dictionary in extract_profile_gpu_pairs(names, times):
+		deltas.append(float(pair.deltaUsec))
+	return deltas
 
 static func gpu_microseconds_delta(microseconds: int) -> float:
 	return float(maxi(0, microseconds))

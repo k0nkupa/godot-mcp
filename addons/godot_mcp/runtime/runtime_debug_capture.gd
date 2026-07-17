@@ -13,6 +13,8 @@ var _references: Dictionary = {}
 var _next_reference := 1
 
 func stack(offset: int, limit: int) -> Dictionary:
+	if not _frames.is_empty():
+		return _stack_page(offset, limit)
 	_clear_snapshot()
 	var backtrace: ScriptBacktrace
 	for candidate: ScriptBacktrace in Engine.capture_script_backtraces(true):
@@ -59,6 +61,9 @@ func stack(offset: int, limit: int) -> Dictionary:
 			backtrace.get_global_variable_name(variable_index),
 			backtrace.get_global_variable_value(variable_index),
 		))
+	return _stack_page(offset, limit)
+
+func _stack_page(offset: int, limit: int) -> Dictionary:
 	var total := _frames.size()
 	var start := clampi(offset, 0, total)
 	var finish := mini(start + clampi(limit, 1, MAX_FRAMES), total)

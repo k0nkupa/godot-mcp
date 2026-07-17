@@ -73,6 +73,10 @@ func _init() -> void:
 	assert(slots_a.max() < 2048)
 	assert(profiler.snapshot(["rendering"]).data.gpuTimestamps.has("supported"))
 	assert(RuntimeProfiler.gpu_microseconds_delta(1500) == 1500.0)
+	assert(RuntimeProfiler.extract_profile_gpu_deltas(
+		["unrelated", "godot_mcp_profile_start_7", "godot_mcp_profile_end_7"],
+		[10, 100, 140],
+	) == [40.0])
 	Performance.remove_custom_monitor("Phase7/Stable")
 	profiler.clear()
 	profiler.clear()

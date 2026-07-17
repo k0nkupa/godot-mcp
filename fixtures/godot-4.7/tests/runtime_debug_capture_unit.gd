@@ -46,5 +46,11 @@ func _init() -> void:
 	assert(object_children.ok and object_children.data.body.variables.size() == 1)
 	assert(object_key.string_calls == 0)
 	assert(String(object_children.data.body.variables[0].name).begins_with("<RefCounted#"))
+
+	capture._frames = [{"id": 0, "name": "cached", "source": {"path": "res://cached.gd"}, "line": 1, "column": 0}]
+	capture._references[77] = ["stable"]
+	var cached_stack: Dictionary = capture.stack(0, 64)
+	assert(cached_stack.ok and cached_stack.data.body.stackFrames[0].name == "cached")
+	assert(capture._references.has(77) and capture._references[77] == ["stable"])
 	print("PHASE7_DEBUG_CAPTURE_UNIT_OK")
 	quit(0)
