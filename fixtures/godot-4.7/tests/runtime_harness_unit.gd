@@ -14,6 +14,8 @@ func _init() -> void:
 	assert(not RuntimeHarness.descriptor_path_is_allowed("/tmp/else/runtime-a.json", "/tmp/godot-mcp"))
 	assert(RuntimeHarness.operation_is_allowed("tree"))
 	assert(RuntimeHarness.operation_is_allowed("input"))
+	assert(RuntimeHarness.operation_is_allowed("monitor_snapshot"))
+	assert(RuntimeHarness.operation_is_allowed("profile_result"))
 	assert(not RuntimeHarness.operation_is_allowed("eval"))
 	var hello := {"runId": "run", "generation": 1, "projectId": "project", "sessionId": "session", "launchNonce": "nonce", "pid": 42, "proof": "client-proof"}
 	assert(RuntimeHarness.hello_signing_text(hello) == RuntimeDebugger.hello_signing_text(hello))
