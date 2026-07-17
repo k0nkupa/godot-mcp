@@ -42,6 +42,10 @@ export function lsofShowsLoopbackListener(output: string, pid: number, port: num
   return ownsProcess && endpoints.some((endpoint) => lines.includes(endpoint));
 }
 
+export function listenerPortsAreDistinct(ports: readonly number[]): boolean {
+  return ports.length === new Set(ports).size;
+}
+
 export async function assertLoopbackListenerOwnedByProcess(pid: number, port: number): Promise<void> {
   let output = "";
   try {
@@ -61,6 +65,14 @@ export async function assertLoopbackListenerOwnedByProcess(pid: number, port: nu
     partialEffects: false,
     rollback: "not_needed",
   });
+}
+
+export async function assertLoopbackListenersOwnedByProcess(
+  pid: number,
+  ports: readonly number[],
+  verify: (pid: number, port: number) => Promise<void> = assertLoopbackListenerOwnedByProcess,
+): Promise<void> {
+  for (const port of new Set(ports)) await verify(pid, port);
 }
 
 async function processFingerprint(pid: number): Promise<string> {

@@ -51,6 +51,7 @@ export const GodotMcpErrorSchema = z.object({
     "CONFLICT",
     "TIMEOUT",
     "CANCELLED",
+    "TRANSPORT_ERROR",
     "GODOT_PARSE_ERROR",
     "GODOT_RUNTIME_ERROR",
     "ASSERTION_FAILED",

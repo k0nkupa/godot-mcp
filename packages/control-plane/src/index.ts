@@ -100,12 +100,20 @@ export {
   type DapStopEvent,
 } from "./runtime/dapClient.js";
 export {
+  DebugTokenStore,
+  DebugTokenStoreError,
+  type DebugTokenIdentity,
+} from "./runtime/debugTokenStore.js";
+export {
   DapFrameParser,
   DapProtocolError,
   MAX_DAP_BODY_BYTES,
   encodeDapMessage,
 } from "./runtime/dapFraming.js";
 export {
+  assertLoopbackListenerOwnedByProcess,
+  assertLoopbackListenersOwnedByProcess,
+  listenerPortsAreDistinct,
   OwnedGodotProcess,
   godotRuntimeArguments,
   scrubRuntimeEnvironment,

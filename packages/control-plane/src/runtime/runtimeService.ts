@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isAbsolute, relative, sep } from "node:path";
 
 import type {
   InputOperationInput,
@@ -6,12 +7,16 @@ import type {
   ProjectIdentity,
   RuntimeCaptureFrameMetadata,
   RuntimeCaptureInput,
+  RuntimeDebugOperationInput,
   RuntimeHandle,
   RuntimeOperationInput,
 } from "@godot-mcp/protocol";
 import { InputOperationResultSchema } from "@godot-mcp/protocol";
 
 import { GodotMcpException } from "../errors.js";
+import { resolveProjectPath } from "../project/pathPolicy.js";
+import { DapClient, DapClientError, type DapCommand, type DapStopEvent } from "./dapClient.js";
+import { DebugTokenStore, DebugTokenStoreError } from "./debugTokenStore.js";
 import {
   createRuntimeDescriptor,
   type RuntimeDescriptorInput,
@@ -19,6 +24,8 @@ import {
 } from "./runtimeDescriptor.js";
 import {
   assertLoopbackListenerOwnedByProcess,
+  assertLoopbackListenersOwnedByProcess,
+  listenerPortsAreDistinct,
   OwnedGodotProcess,
   type OwnedRuntimeProcess,
 } from "./runtimeProcess.js";
@@ -38,8 +45,10 @@ export interface RuntimeServiceDependencies {
   sessionId(): string | null;
   godotBin?: string;
   createDescriptor?(input: RuntimeDescriptorInput): Promise<RuntimeDescriptorMaterial>;
-  prepare(input: { descriptor: RuntimeDescriptorMaterial["descriptor"] }): Promise<{ debugPort: number; editorPid?: number }>;
+  prepare(input: { descriptor: RuntimeDescriptorMaterial["descriptor"] }): Promise<{ debugPort: number; dapPort?: number; editorPid?: number }>;
   verifyDebuggerListener?(pid: number, port: number): Promise<void>;
+  verifyEditorListener?(pid: number, port: number): Promise<void>;
+  connectDap?(input: { host: "127.0.0.1"; port: number }): Promise<RuntimeDapClient>;
   launchProcess?(input: RuntimeProcessLaunchInput): Promise<OwnedRuntimeProcess>;
   command(operation: string, input: Record<string, unknown>, timeoutMs?: number): Promise<unknown>;
   capture?(input: Record<string, unknown>, timeoutMs?: number): Promise<{
@@ -48,6 +57,13 @@ export interface RuntimeServiceDependencies {
     binarySha256?: string;
   }>;
   cleanup?(): Promise<void>;
+}
+
+export interface RuntimeDapClient {
+  request(command: DapCommand, argumentsValue: Record<string, unknown>, timeoutMs?: number): Promise<Record<string, unknown>>;
+  nextStop(afterSequence: number, timeoutMs: number): Promise<DapStopEvent>;
+  snapshot(): { connected: boolean; stopped: boolean; stopSequence: number };
+  close(): Promise<void>;
 }
 
 export interface RuntimeSnapshot {
@@ -59,7 +75,7 @@ export interface RuntimeSnapshot {
 
 type LaunchInput = Extract<RuntimeOperationInput, { operation: "launch" }>;
 
-function runtimeError(code: "NOT_ATTACHED" | "AUTHENTICATION_FAILED" | "CONFLICT" | "STALE_HANDLE" | "PRECONDITION_FAILED" | "GODOT_RUNTIME_ERROR", message: string, retryable = false): GodotMcpException {
+function runtimeError(code: "NOT_ATTACHED" | "AUTHENTICATION_FAILED" | "CONFLICT" | "STALE_HANDLE" | "PRECONDITION_FAILED" | "INVALID_REQUEST" | "TIMEOUT" | "TRANSPORT_ERROR" | "GODOT_RUNTIME_ERROR", message: string, retryable = false): GodotMcpException {
   return new GodotMcpException({
     code,
     message,
@@ -86,6 +102,10 @@ export class RuntimeService {
   private lifecycleEpoch = 0;
   private closed = false;
   private operationTail: Promise<void> = Promise.resolve();
+  private dap: RuntimeDapClient | null = null;
+  private dapGeneration = 0;
+  private readonly debugTokens = new DebugTokenStore();
+  private readonly breakpointSources = new Set<string>();
 
   constructor(private readonly dependencies: RuntimeServiceDependencies) {}
 
@@ -138,11 +158,25 @@ export class RuntimeService {
       if (!Number.isInteger(prepared.debugPort) || prepared.debugPort < 1 || prepared.debugPort > 65_535) {
         throw runtimeError("GODOT_RUNTIME_ERROR", "Editor reported an invalid debugger port");
       }
+      if (prepared.dapPort !== undefined && (!Number.isInteger(prepared.dapPort) || prepared.dapPort < 1_024 || prepared.dapPort > 49_151)) {
+        throw runtimeError("GODOT_RUNTIME_ERROR", "Editor reported an invalid DAP port");
+      }
+      if (prepared.dapPort !== undefined && (!listenerPortsAreDistinct([prepared.debugPort, prepared.dapPort]))) {
+        throw runtimeError("CONFLICT", "Godot debugger and DAP listeners must use distinct ports");
+      }
+      if (prepared.dapPort !== undefined && prepared.editorPid === undefined) {
+        throw runtimeError("AUTHENTICATION_FAILED", "Editor process identity is required before DAP attachment");
+      }
       if (prepared.editorPid !== undefined) {
         if (!Number.isInteger(prepared.editorPid) || prepared.editorPid < 1) {
           throw runtimeError("GODOT_RUNTIME_ERROR", "Editor reported an invalid process identity");
         }
-        await (this.dependencies.verifyDebuggerListener ?? assertLoopbackListenerOwnedByProcess)(prepared.editorPid, prepared.debugPort);
+        const verifyListener = this.dependencies.verifyEditorListener ?? this.dependencies.verifyDebuggerListener ?? assertLoopbackListenerOwnedByProcess;
+        await assertLoopbackListenersOwnedByProcess(
+          prepared.editorPid,
+          [prepared.debugPort, ...(prepared.dapPort === undefined ? [] : [prepared.dapPort])],
+          verifyListener,
+        );
         this.assertLaunchCurrent(epoch);
       }
       this.state = "launching";
@@ -175,6 +209,10 @@ export class RuntimeService {
       if (this.processStopped) {
         throw runtimeError("GODOT_RUNTIME_ERROR", "Owned runtime exited before launch completed");
       }
+      if (prepared.dapPort !== undefined) {
+        await this.attachDap(prepared.dapPort);
+        this.assertLaunchCurrent(epoch);
+      }
       this.state = "running";
       return { handle: { ...this.handle }, root: ready };
     } catch (error) {
@@ -189,6 +227,14 @@ export class RuntimeService {
   }
 
   private async executeExclusive(input: Exclude<RuntimeOperationInput, LaunchInput>): Promise<unknown> {
+    if (input.operation.startsWith("debug_")) {
+      this.assertHandle((input as RuntimeDebugOperationInput).handle);
+      try {
+        return await this.executeDebug(input as RuntimeDebugOperationInput);
+      } catch (error) {
+        throw normalizeDebugError(error);
+      }
+    }
     if (input.operation === "status") {
       if (input.handle) this.assertHandleIdentity(input.handle);
       if (!this.handle || !["running", "paused"].includes(this.state)) return this.snapshot();
@@ -222,6 +268,243 @@ export class RuntimeService {
     if (input.operation === "pause") this.state = "paused";
     if (input.operation === "resume") this.state = "running";
     return result;
+  }
+
+  private async attachDap(port: number): Promise<void> {
+    await this.cleanupDap();
+    const connectDap = this.dependencies.connectDap ?? ((input) => DapClient.connect(input));
+    const dap = await connectDap({ host: "127.0.0.1", port });
+    try {
+      await dap.request("initialize", {
+        clientID: "godot-mcp",
+        clientName: "Godot MCP",
+        adapterID: "godot",
+        pathFormat: "path",
+        linesStartAt1: true,
+        columnsStartAt1: true,
+        supportsVariableType: true,
+      }, 5_000);
+      await dap.request("attach", { project: this.dependencies.project.rootRealPath }, 5_000);
+    } catch (error) {
+      await dap.close().catch(() => undefined);
+      throw error;
+    }
+    this.dap = dap;
+    this.dapGeneration += 1;
+    this.debugTokens.clear();
+    this.breakpointSources.clear();
+  }
+
+  private async executeDebug(input: RuntimeDebugOperationInput): Promise<unknown> {
+    const dap = this.requireDap();
+    switch (input.operation) {
+      case "debug_status":
+        return { ...dap.snapshot(), breakpointCount: this.breakpointSources.size };
+      case "debug_wait": {
+        const stopped = await dap.nextStop(input.afterSequence, input.timeoutMs);
+        this.bindDebugStop(stopped.sequence);
+        return stopped;
+      }
+      case "debug_pause":
+        await dap.request("pause", { threadId: 1 });
+        return dap.snapshot();
+      case "debug_continue":
+        this.debugTokens.clear();
+        await dap.request("continue", { threadId: 1 });
+        return dap.snapshot();
+      case "debug_step_over":
+        return this.stepDebugger(dap, "next");
+      case "debug_step_into":
+        return this.stepDebugger(dap, "stepIn");
+      case "debug_breakpoints_set":
+        return this.setDebugBreakpoints(dap, input);
+      case "debug_stack":
+        return this.debugStack(dap, input.offset, input.limit);
+      case "debug_variables": {
+        const frameId = this.debugTokens.resolveFrame(input.frameToken);
+        const reference = await this.scopeReference(dap, frameId, input.scope);
+        return this.readVariables(dap, reference, 1, input.offset, input.limit);
+      }
+      case "debug_children": {
+        const record = this.debugTokens.resolveVariable(input.variableToken);
+        return this.readVariables(dap, record.variablesReference, record.depth + 1, input.offset, input.limit);
+      }
+      case "debug_watch": {
+        const frameId = this.debugTokens.resolveFrame(input.frameToken);
+        const watches = [];
+        for (const selector of input.selectors) watches.push(await this.resolveWatch(dap, frameId, selector));
+        return { watches };
+      }
+    }
+  }
+
+  private requireDap(): RuntimeDapClient {
+    if (!this.dap || !this.dap.snapshot().connected) {
+      throw runtimeError("PRECONDITION_FAILED", "Godot DAP is unavailable for the active runtime", true);
+    }
+    return this.dap;
+  }
+
+  private bindDebugStop(stopSequence?: number): void {
+    const dap = this.requireDap();
+    const snapshot = dap.snapshot();
+    const sequence = stopSequence ?? snapshot.stopSequence;
+    if (!snapshot.stopped || sequence < 1 || !this.handle) {
+      throw runtimeError("PRECONDITION_FAILED", "Godot runtime is not stopped in a debuggable frame");
+    }
+    this.debugTokens.bind({
+      runId: this.handle.runId,
+      generation: this.handle.generation,
+      dapGeneration: this.dapGeneration,
+      stopSequence: sequence,
+    });
+  }
+
+  private async stepDebugger(dap: RuntimeDapClient, command: "next" | "stepIn"): Promise<DapStopEvent> {
+    const snapshot = dap.snapshot();
+    if (!snapshot.stopped) throw runtimeError("PRECONDITION_FAILED", "Godot debugger must be stopped before stepping");
+    this.debugTokens.clear();
+    await dap.request(command, { threadId: 1 });
+    const stopped = await dap.nextStop(snapshot.stopSequence, 10_000);
+    this.bindDebugStop(stopped.sequence);
+    return stopped;
+  }
+
+  private async setDebugBreakpoints(
+    dap: RuntimeDapClient,
+    input: Extract<RuntimeDebugOperationInput, { operation: "debug_breakpoints_set" }>,
+  ): Promise<{ breakpoints: unknown[] }> {
+    const grouped = new Map<string, Array<{ sourcePath: string; line: number }>>();
+    for (const breakpoint of input.breakpoints) {
+      if (breakpoint.sourcePath.startsWith("res://addons/godot_mcp/")) {
+        throw runtimeError("INVALID_REQUEST", "Debugger breakpoints cannot target the Godot MCP addon");
+      }
+      const absolutePath = await resolveProjectPath(this.dependencies.project, breakpoint.sourcePath, "read");
+      const entries = grouped.get(absolutePath) ?? [];
+      entries.push(breakpoint);
+      grouped.set(absolutePath, entries);
+    }
+    const sources = new Set([...this.breakpointSources, ...grouped.keys()]);
+    const results: unknown[] = [];
+    for (const absolutePath of sources) {
+      const entries = grouped.get(absolutePath) ?? [];
+      this.breakpointSources.add(absolutePath);
+      const response = await dap.request("setBreakpoints", {
+        source: { name: absolutePath.split(sep).at(-1), path: absolutePath },
+        breakpoints: entries.map((entry) => ({ line: entry.line })),
+      });
+      const returned = bodyArray(response, "breakpoints");
+      for (const [index, entry] of entries.entries()) {
+        const raw = isRecord(returned[index]) ? returned[index] : {};
+        results.push({
+          sourcePath: entry.sourcePath,
+          requestedLine: entry.line,
+          verified: raw.verified === true,
+          resolvedLine: integerOr(raw.line, entry.line),
+          ...(typeof raw.message === "string" ? { message: raw.message.slice(0, 512) } : {}),
+        });
+      }
+      if (entries.length === 0) this.breakpointSources.delete(absolutePath);
+    }
+    return { breakpoints: results };
+  }
+
+  private async debugStack(dap: RuntimeDapClient, offset: number, limit: number): Promise<{ frames: unknown[]; totalFrames: number }> {
+    this.bindDebugStop();
+    const response = await dap.request("stackTrace", { threadId: 1, startFrame: offset, levels: limit });
+    const rawFrames = bodyArray(response, "stackFrames").slice(0, limit);
+    const frames = rawFrames.flatMap((raw) => {
+      if (!isRecord(raw) || !Number.isInteger(raw.id)) return [];
+      const source = isRecord(raw.source) && typeof raw.source.path === "string"
+        ? this.projectSourcePath(raw.source.path)
+        : undefined;
+      return [{
+        frameToken: this.debugTokens.issueFrame(Number(raw.id)),
+        name: boundedText(raw.name, "<anonymous>", 512),
+        ...(source === undefined ? {} : { sourcePath: source }),
+        line: integerOr(raw.line, 0),
+        column: integerOr(raw.column, 0),
+      }];
+    });
+    return { frames, totalFrames: rawFrames.length };
+  }
+
+  private async scopeReference(dap: RuntimeDapClient, frameId: number, scope: "locals" | "members" | "globals"): Promise<number> {
+    const response = await dap.request("scopes", { frameId });
+    const match = bodyArray(response, "scopes").find((entry) => isRecord(entry) && typeof entry.name === "string" && entry.name.toLowerCase() === scope);
+    if (!isRecord(match) || !Number.isInteger(match.variablesReference) || Number(match.variablesReference) < 1) {
+      throw runtimeError("PRECONDITION_FAILED", `Godot DAP did not return the ${scope} scope`);
+    }
+    return Number(match.variablesReference);
+  }
+
+  private async readVariables(
+    dap: RuntimeDapClient,
+    variablesReference: number,
+    depth: number,
+    offset: number,
+    limit: number,
+  ): Promise<{ variables: unknown[]; offset: number; returned: number; total: number; truncated: boolean }> {
+    if (depth > 8) throw runtimeError("PRECONDITION_FAILED", "Debugger variable depth limit exceeded");
+    const response = await dap.request("variables", { variablesReference, start: offset, count: limit });
+    const all = bodyArray(response, "variables");
+    const selected = all.slice(0, limit);
+    this.debugTokens.consumeVariableEntries(selected.length);
+    return {
+      variables: selected.map((entry) => this.formatVariable(entry, depth)),
+      offset,
+      returned: selected.length,
+      total: Math.min(offset + all.length, 2_048),
+      truncated: all.length > selected.length || offset + all.length > 2_048,
+    };
+  }
+
+  private formatVariable(rawValue: unknown, depth: number): Record<string, unknown> {
+    const raw = isRecord(rawValue) ? rawValue : {};
+    const childReference = Number.isInteger(raw.variablesReference) ? Number(raw.variablesReference) : 0;
+    const value = truncateUtf8(typeof raw.value === "string" ? raw.value : String(raw.value ?? ""), 4_096);
+    const variableToken = childReference > 0 && depth <= 8
+      ? this.debugTokens.issueVariable(childReference, depth)
+      : undefined;
+    return {
+      name: boundedText(raw.name, "<unnamed>", 128),
+      type: boundedText(raw.type, "unknown", 128),
+      value: value.text,
+      valueTruncated: value.truncated,
+      hasChildren: childReference > 0,
+      expandable: variableToken !== undefined,
+      ...(variableToken === undefined ? {} : { variableToken }),
+    };
+  }
+
+  private async resolveWatch(
+    dap: RuntimeDapClient,
+    frameId: number,
+    selector: Extract<RuntimeDebugOperationInput, { operation: "debug_watch" }>["selectors"][number],
+  ): Promise<Record<string, unknown>> {
+    let reference = await this.scopeReference(dap, frameId, selector.scope);
+    let current: unknown;
+    for (const [depthIndex, segment] of selector.path.entries()) {
+      const response = await dap.request("variables", { variablesReference: reference, start: 0, count: 256 });
+      const all = bodyArray(response, "variables");
+      const bounded = all.slice(0, 256);
+      current = bounded.find((entry) => isRecord(entry) && String(entry.name) === String(segment));
+      if (!current) return { selector, status: all.length > bounded.length ? "truncated" : "missing" };
+      if (depthIndex === selector.path.length - 1) {
+        return { selector, status: "found", variable: this.formatVariable(current, depthIndex + 1) };
+      }
+      if (!isRecord(current) || !Number.isInteger(current.variablesReference) || Number(current.variablesReference) < 1) {
+        return { selector, status: "missing" };
+      }
+      reference = Number(current.variablesReference);
+    }
+    return { selector, status: "missing" };
+  }
+
+  private projectSourcePath(absolutePath: string): string | undefined {
+    const projectRelative = relative(this.dependencies.project.rootRealPath, absolutePath);
+    if (projectRelative === "" || projectRelative === ".." || projectRelative.startsWith(`..${sep}`) || isAbsolute(projectRelative)) return undefined;
+    return `res://${projectRelative.split(sep).join("/")}`;
   }
 
   capture(input: RuntimeCaptureInput): Promise<{
@@ -359,12 +642,17 @@ export class RuntimeService {
     if (this.cleanupPromise) return this.cleanupPromise;
     const activeCleanup = (async () => {
       let cleanupError: unknown;
+      try {
+        await this.cleanupDap();
+      } catch (error) {
+        cleanupError = error;
+      }
       if (this.descriptor) {
         try {
           await this.descriptor.cleanup();
           this.descriptor = null;
         } catch (error) {
-          cleanupError = error;
+          cleanupError ??= error;
         }
       }
       await this.cleanupDebugger(false);
@@ -387,6 +675,33 @@ export class RuntimeService {
     }
   }
 
+  private async cleanupDap(): Promise<void> {
+    const dap = this.dap;
+    this.dap = null;
+    this.debugTokens.clear();
+    const sources = [...this.breakpointSources];
+    this.breakpointSources.clear();
+    if (!dap) return;
+    let cleanupError: unknown;
+    for (const absolutePath of sources) {
+      try {
+        await dap.request("setBreakpoints", {
+          source: { name: absolutePath.split(sep).at(-1), path: absolutePath },
+          breakpoints: [],
+        }, 2_000);
+      } catch (error) {
+        cleanupError ??= error;
+      }
+    }
+    try {
+      await dap.request("disconnect", { terminateDebuggee: false }, 2_000);
+    } catch (error) {
+      cleanupError ??= error;
+    }
+    await dap.close().catch((error) => { cleanupError ??= error; });
+    if (cleanupError && !(cleanupError instanceof DapClientError && cleanupError.code === "TRANSPORT_ERROR")) throw cleanupError;
+  }
+
   private async cleanupDebugger(required: boolean): Promise<void> {
     if (this.debuggerCleaned) return;
     if (!this.dependencies.cleanup) {
@@ -406,4 +721,52 @@ export class RuntimeService {
     this.processStopped = true;
     void this.runExclusive(() => this.cleanup()).catch(() => undefined);
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function bodyArray(response: Record<string, unknown>, key: string): unknown[] {
+  if (!isRecord(response.body)) return [];
+  const value = response.body[key];
+  return Array.isArray(value) ? value : [];
+}
+
+function integerOr(value: unknown, fallback: number): number {
+  return Number.isInteger(value) ? Number(value) : fallback;
+}
+
+function boundedText(value: unknown, fallback: string, maxLength: number): string {
+  const text = typeof value === "string" ? value : fallback;
+  return text.slice(0, maxLength);
+}
+
+function truncateUtf8(text: string, maxBytes: number): { text: string; truncated: boolean } {
+  if (Buffer.byteLength(text, "utf8") <= maxBytes) return { text, truncated: false };
+  let result = "";
+  let bytes = 0;
+  for (const character of text) {
+    const characterBytes = Buffer.byteLength(character, "utf8");
+    if (bytes + characterBytes > maxBytes) break;
+    result += character;
+    bytes += characterBytes;
+  }
+  return { text: result, truncated: true };
+}
+
+function normalizeDebugError(error: unknown): Error {
+  if (error instanceof GodotMcpException) return error;
+  if (error instanceof DebugTokenStoreError) return runtimeError("STALE_HANDLE", error.message);
+  if (error instanceof DapClientError) {
+    switch (error.code) {
+      case "INVALID_REQUEST":
+        return runtimeError("INVALID_REQUEST", error.message);
+      case "TIMEOUT":
+        return runtimeError("TIMEOUT", error.message, true);
+      case "TRANSPORT_ERROR":
+        return runtimeError("TRANSPORT_ERROR", error.message, true);
+    }
+  }
+  return error instanceof Error ? error : new Error(String(error));
 }

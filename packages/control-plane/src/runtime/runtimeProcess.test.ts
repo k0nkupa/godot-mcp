@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { childHasExited, godotRuntimeArguments, lsofShowsLoopbackListener, scrubRuntimeEnvironment, shouldRefuseProcessSignal } from "./runtimeProcess.js";
+import { assertLoopbackListenersOwnedByProcess, childHasExited, godotRuntimeArguments, lsofShowsLoopbackListener, listenerPortsAreDistinct, scrubRuntimeEnvironment, shouldRefuseProcessSignal } from "./runtimeProcess.js";
 
 describe("owned runtime launch", () => {
   it("builds only fixed Godot arguments", () => {
@@ -36,5 +36,18 @@ describe("owned runtime launch", () => {
     expect(lsofShowsLoopbackListener("p99\nn127.0.0.1:6007\n", 42, 6007)).toBe(false);
     expect(lsofShowsLoopbackListener("p42\nn*:6007\n", 42, 6007)).toBe(false);
     expect(lsofShowsLoopbackListener("p42\nn127.0.0.1:6008\n", 42, 6007)).toBe(false);
+  });
+
+  it("requires distinct debugger and DAP listener ports", () => {
+    expect(listenerPortsAreDistinct([6006, 6007])).toBe(true);
+    expect(listenerPortsAreDistinct([6007, 6007])).toBe(false);
+  });
+
+  it("verifies each unique editor listener", async () => {
+    const checked: number[] = [];
+    await assertLoopbackListenersOwnedByProcess(42, [6007, 6006, 6007], async (_pid, port) => {
+      checked.push(port);
+    });
+    expect(checked).toEqual([6007, 6006]);
   });
 });

@@ -47,4 +47,15 @@ describe("protocol schemas", () => {
       rollback: "not_needed",
     })).toMatchObject({ failedPhase: "request", safeRecovery: "Review the error and retry only after correcting the request" });
   });
+
+  it("represents fail-closed debugger transport errors", () => {
+    expect(GodotMcpErrorSchema.parse({
+      code: "TRANSPORT_ERROR",
+      message: "Godot DAP disconnected",
+      retryable: true,
+      correlationId: "req-dap",
+      partialEffects: false,
+      rollback: "not_needed",
+    })).toMatchObject({ code: "TRANSPORT_ERROR" });
+  });
 });
