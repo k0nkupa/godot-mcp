@@ -105,9 +105,15 @@ func snapshot(groups: Array) -> Dictionary:
 func _sample_groups(groups: Array) -> Dictionary:
 	var unavailable: Array[String] = []
 	var output_groups: Dictionary = {}
+	var omitted_metric_count := 0
+	var omitted_groups: Dictionary = {}
 	for group: String in groups:
 		if group == "custom":
-			output_groups[group] = _custom_monitors(unavailable)
+			var custom := _custom_monitors(unavailable)
+			output_groups[group] = custom.values
+			omitted_metric_count += int(custom.omittedMetricCount)
+			if int(custom.omittedMetricCount) > 0:
+				omitted_groups[group] = true
 		else:
 			var values: Dictionary = {}
 			for monitor: Array in GROUP_MONITORS.get(group, []):
@@ -117,7 +123,12 @@ func _sample_groups(groups: Array) -> Dictionary:
 				else:
 					unavailable.append("%s.%s is not finite" % [group, String(monitor[0])])
 			output_groups[group] = values
-	return {"groups": output_groups, "unavailable": unavailable.slice(0, 128)}
+	return {
+		"groups": output_groups,
+		"unavailable": unavailable.slice(0, 128),
+		"omittedMetricCount": omitted_metric_count,
+		"omittedGroups": _sorted_string_keys(omitted_groups),
+	}
 
 func start(input: Dictionary) -> Dictionary:
 	if not _job.is_empty() and String(_job.get("state", "")) == "running":
@@ -182,6 +193,15 @@ func _sample_frame(force: bool) -> void:
 	_capture_profile_gpu_marker("start", sample_id)
 	var sampled := _sample_groups(_job.groups)
 	var flattened := _flatten_values(sampled.groups, _tick_values)
+	if int(sampled.omittedMetricCount) > 0:
+		flattened.truncated = true
+		flattened.droppedMetricCount = int(flattened.droppedMetricCount) + int(sampled.omittedMetricCount)
+		var dropped_groups: Dictionary = {}
+		for group: String in flattened.droppedGroups:
+			dropped_groups[group] = true
+		for group: String in sampled.omittedGroups:
+			dropped_groups[group] = true
+		flattened.droppedGroups = _sorted_string_keys(dropped_groups)
 	var values: Dictionary = flattened.values
 	if bool(flattened.truncated):
 		_job.metricTruncationAffectedSamples = int(_job.metricTruncationAffectedSamples) + 1
@@ -433,6 +453,9 @@ func _custom_monitors(unavailable: Array[String]) -> Dictionary:
 	var values: Dictionary = {}
 	var names: Array = Performance.get_custom_monitor_names()
 	names.sort_custom(func(a: Variant, b: Variant) -> bool: return String(a) < String(b))
+	var omitted_metric_count := maxi(0, names.size() - 128)
+	if omitted_metric_count > 0:
+		unavailable.append("Custom monitor list omitted %d names beyond the 128-name limit" % omitted_metric_count)
 	for name_value: Variant in names.slice(0, 128):
 		var name := String(name_value)
 		if name == SessionCrypto.FLOAT_WIRE_KEY:
@@ -446,7 +469,7 @@ func _custom_monitors(unavailable: Array[String]) -> Dictionary:
 			unavailable.append("Custom monitor %s is not finite numeric" % name.left(128))
 			continue
 		values[name] = float(value)
-	return values
+	return {"values": values, "omittedMetricCount": omitted_metric_count}
 
 func _validate_groups(groups: Array, maximum: int) -> Dictionary:
 	if groups.is_empty() or groups.size() > maximum:

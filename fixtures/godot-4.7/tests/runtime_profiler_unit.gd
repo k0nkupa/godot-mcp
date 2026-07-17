@@ -113,6 +113,14 @@ func _init() -> void:
 	assert(reserved_custom.ok)
 	assert(not reserved_custom.data.groups.custom.has("$godotMcpFloat64Le"))
 	assert(reserved_custom.data.unavailable.any(func(message: String) -> bool: return message.contains("reserved")))
+	for index in 128:
+		Performance.add_custom_monitor("Overflow%03d" % index, _custom_monitor_value)
+	var omitted_custom: Dictionary = profiler._sample_groups(["custom"])
+	assert(omitted_custom.omittedMetricCount == 2)
+	assert(omitted_custom.omittedGroups == ["custom"])
+	assert(omitted_custom.unavailable.any(func(message: String) -> bool: return message.contains("omitted 2")))
+	for index in 128:
+		Performance.remove_custom_monitor("Overflow%03d" % index)
 	var crowded_custom: Dictionary = {}
 	for index in RuntimeProfiler.MAX_METRICS:
 		crowded_custom["Monitor%03d" % index] = float(index)

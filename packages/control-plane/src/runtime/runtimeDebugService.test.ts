@@ -78,6 +78,7 @@ class FakeDebuggerClient implements RuntimeDebuggerClient {
       if (reference === 12 && this.typedWatchVariables) return { body: { variables: [
         { name: "0", selectorKind: "string", selectorValue: "0", type: "String", value: "string-key", variablesReference: 0 },
         { name: "0", selectorKind: "number", selectorValue: 0, type: "String", value: "numeric-key", variablesReference: 0 },
+        { name: "<Vector2>", selectorKind: "unsupported", type: "String", value: "unsupported-key", variablesReference: 0 },
       ] } };
       if (reference === 10) return { body: { variables: [{ name: "player", selectorKind: "string", selectorValue: "player", type: "Object", value: "Player:<Node#1>", variablesReference: 11 }], totalVariables: 256, truncated: true } };
       if (this.deepVariables && reference >= 11) return { body: { variables: [{ name: "child", type: "Dictionary", value: "Dictionary(size=1)", variablesReference: reference + 1 }] } };
@@ -349,6 +350,20 @@ describe("Phase 7 RuntimeService debugging", () => {
     const { dap, launched, service } = await debugFixture();
     dap.typedWatchVariables = true;
     const stack = await service.execute({ operation: "debug_stack", handle: launched.handle, offset: 0, limit: 64 }) as { frames: Array<{ frameToken: string }> };
+    const locals = await service.execute({
+      operation: "debug_variables", handle: launched.handle, ["frameToken"]: stack.frames[0]!.frameToken,
+      scope: "locals", offset: 0, limit: 100,
+    }) as { variables: Array<{ variableToken: string }> };
+    const children = await service.execute({
+      operation: "debug_children", handle: launched.handle, ["variableToken"]: locals.variables[0]!.variableToken,
+      offset: 0, limit: 100,
+    }) as { variables: Array<Record<string, unknown>> };
+    expect(children.variables).toEqual([
+      expect.objectContaining({ name: "0", selectorKind: "string", selectorValue: "0" }),
+      expect.objectContaining({ name: "0", selectorKind: "number", selectorValue: 0 }),
+      expect.objectContaining({ name: "<Vector2>", selectorKind: "unsupported" }),
+    ]);
+    expect(children.variables[2]).not.toHaveProperty("selectorValue");
     const watched = await service.execute({
       operation: "debug_watch",
       handle: launched.handle,

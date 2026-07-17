@@ -612,6 +612,25 @@ export class RuntimeService {
     const variableToken = childReference > 0 && depth < 8
       ? this.debugTokens.issueVariable(childReference, depth)
       : undefined;
+    const selectorMetadata: Record<string, unknown> = { selectorKind: "unsupported" };
+    if (
+      raw.selectorKind === "string" &&
+      typeof raw.selectorValue === "string" &&
+      raw.selectorValue.length > 0 &&
+      !raw.selectorValue.includes("\0") &&
+      Buffer.byteLength(raw.selectorValue, "utf8") <= 128
+    ) {
+      selectorMetadata.selectorKind = "string";
+      selectorMetadata.selectorValue = raw.selectorValue;
+    } else if (
+      raw.selectorKind === "number" &&
+      Number.isInteger(raw.selectorValue) &&
+      Number(raw.selectorValue) >= 0 &&
+      Number(raw.selectorValue) <= 1_000_000
+    ) {
+      selectorMetadata.selectorKind = "number";
+      selectorMetadata.selectorValue = Number(raw.selectorValue);
+    }
     return {
       name: boundedText(raw.name, "<unnamed>", 128),
       type: boundedText(raw.type, "unknown", 128),
@@ -619,6 +638,7 @@ export class RuntimeService {
       valueTruncated: raw.valueTruncated === true || value.truncated,
       hasChildren: childReference > 0,
       expandable: variableToken !== undefined,
+      ...selectorMetadata,
       ...(variableToken === undefined ? {} : { variableToken }),
     };
   }
