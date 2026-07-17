@@ -37,6 +37,22 @@ func _init() -> void:
 		if child.selectorKind == "string" and child.selectorValue == "0":
 			saw_string = true
 	assert(saw_number and saw_string)
+	var oversized_key := "k".repeat(10_000)
+	var oversized_parent: Dictionary = capture._variable("oversized_key", {
+		oversized_key: "value",
+		-1: "negative",
+		1.5: "float",
+		1_000_001: "too-large",
+		"": "empty",
+	})
+	var oversized_children: Dictionary = capture.children(int(oversized_parent.variablesReference), 0, 10)
+	assert(oversized_children.ok and oversized_children.data.body.variables.size() == 5)
+	for child: Dictionary in oversized_children.data.body.variables:
+		assert(child.selectorKind == "unsupported")
+		assert(not child.has("selectorValue"))
+		assert(String(child.name).length() <= 128)
+		for name_index in String(child.name).length():
+			assert(String(child.name).unicode_at(name_index) != 0)
 
 	var long_secret_name := "x".repeat(140) + "_token"
 	var redacted: Dictionary = capture._variable(long_secret_name, "must-not-escape")
@@ -49,6 +65,10 @@ func _init() -> void:
 	assert(object_children.ok and object_children.data.body.variables.size() == 1)
 	assert(object_key.string_calls == 0)
 	assert(String(object_children.data.body.variables[0].name).begins_with("<RefCounted#"))
+	var freed_object := Node.new()
+	freed_object.free()
+	assert(capture._display_value(freed_object) == "<freed Object>")
+	assert(capture._unsupported_key_name(freed_object) == "<freed Object>")
 
 	capture._frames = [{"id": 0, "name": "cached", "source": {"path": "res://cached.gd"}, "line": 1, "column": 0}]
 	capture._references[77] = ["stable"]

@@ -76,6 +76,12 @@ describe("workspace package contract", () => {
     expect(gate).toContain("4.7.stable.official.5b4e0cb0f");
     for (let stage = 1; stage <= 16; stage += 1) expect(gate).toContain(`${stage}/16`);
     expect(gate).toContain("runtime_profiler_unit.gd");
+    expect(gate).toContain("runGodotUnit");
+    expect(gate).toContain("PHASE7_PROFILER_UNIT_OK");
+    expect(gate).toContain("PHASE7_DEBUG_CAPTURE_UNIT_OK");
+    expect(gate).toContain("GODOT_MCP_RUNTIME_HARNESS_UNIT_OK");
+    expect(gate).toContain("SCRIPT ERROR:");
+    expect(gate).toContain("Failed to load script");
     expect(gate).toContain("tests/integration/runtime-debugging.test.ts");
     expect(gate).toContain("tests/security/runtime-debugging-hostile.test.ts");
     expect(gate).toContain("tests/end-to-end/phase-7.test.ts");

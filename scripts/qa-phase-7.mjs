@@ -31,6 +31,29 @@ async function run(label, command, args, environment = gateEnvironment) {
   });
 }
 
+async function runGodotUnit(label, command, args, successMarker, environment = gateEnvironment) {
+  process.stdout.write(`\n[phase-7] ${label}\n`);
+  await new Promise((resolvePromise, reject) => {
+    const child = spawn(command, args, { cwd: root, env: environment, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => { stdout += chunk; process.stdout.write(chunk); });
+    child.stderr.on("data", (chunk) => { stderr += chunk; process.stderr.write(chunk); });
+    child.once("error", reject);
+    child.once("close", (code, signal) => {
+      const output = `${stdout}\n${stderr}`;
+      const scriptFailure = /SCRIPT ERROR:|Failed to load script/.test(output);
+      const markerPresent = stdout.split(/\r?\n/).includes(successMarker);
+      if (code === 0 && !scriptFailure && markerPresent) {
+        resolvePromise();
+        return;
+      }
+      reject(new Error(`${label} failed (${code ?? signal ?? "unknown"}); scriptFailure=${scriptFailure}; successMarker=${markerPresent}`));
+    });
+  });
+}
+
 async function readOutput(command, args) {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(command, args, { cwd: root, env: gateEnvironment, stdio: ["ignore", "pipe", "pipe"] });
@@ -86,8 +109,13 @@ try {
   });
   await withFixture("godot-mcp-phase-7-units-", async ({ project, environment }) => {
     await run("8/16 GDScript unit setup", process.execPath, ["packages/cli/dist/bin.js", "init", "--project", project], environment);
-    for (const unit of ["runtime_profiler_unit.gd", "runtime_debug_capture_unit.gd", "runtime_harness_unit.gd"]) {
-      await run("8/16 runtime profiler and harness units", godot, ["--headless", "--path", project, "--script", `res://tests/${unit}`], environment);
+    const units = [
+      ["runtime_profiler_unit.gd", "PHASE7_PROFILER_UNIT_OK"],
+      ["runtime_debug_capture_unit.gd", "PHASE7_DEBUG_CAPTURE_UNIT_OK"],
+      ["runtime_harness_unit.gd", "GODOT_MCP_RUNTIME_HARNESS_UNIT_OK"],
+    ];
+    for (const [unit, successMarker] of units) {
+      await runGodotUnit("8/16 runtime profiler and harness units", godot, ["--headless", "--path", project, "--script", `res://tests/${unit}`], successMarker, environment);
     }
   });
   await run("9/16 real debugger and performance integrations", pnpm, ["exec", "vitest", "run",

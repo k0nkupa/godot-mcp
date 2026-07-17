@@ -128,10 +128,13 @@ func _page(entries: Array[Dictionary], offset: int, limit: int) -> Dictionary:
 	}}}
 
 func _variable(name: String, value: Variant, selector_kind := "string", selector_value: Variant = null) -> Dictionary:
-	var safe_name := name.left(128)
-	var selector_metadata := {"selectorKind": selector_kind}
-	if selector_kind == "string" or selector_kind == "number":
-		selector_metadata.selectorValue = safe_name if selector_value == null else selector_value
+	var safe_name := _bounded_name(name)
+	var resolved_selector: Variant = name if selector_value == null else selector_value
+	var selector_metadata := {"selectorKind": "unsupported"}
+	if selector_kind == "string" and _valid_string_selector(resolved_selector):
+		selector_metadata = {"selectorKind": "string", "selectorValue": resolved_selector}
+	elif selector_kind == "number" and _valid_number_selector(resolved_selector):
+		selector_metadata = {"selectorKind": "number", "selectorValue": resolved_selector}
 	if VariantEncoder.is_secret_name(name):
 		return {
 			"name": safe_name,
@@ -155,14 +158,36 @@ func _variable(name: String, value: Variant, selector_kind := "string", selector
 	}.merged(selector_metadata)
 
 func _unsupported_key_name(key: Variant) -> String:
-	if key is Object:
+	if typeof(key) == TYPE_OBJECT:
+		if not is_instance_valid(key):
+			return "<freed Object>"
 		return "<%s#%d>" % [key.get_class(), key.get_instance_id()]
 	return "<%s>" % type_string(typeof(key))
+
+static func _valid_string_selector(value: Variant) -> bool:
+	if typeof(value) != TYPE_STRING or String(value).is_empty() or String(value).length() > 128:
+		return false
+	for index in String(value).length():
+		if String(value).unicode_at(index) == 0:
+			return false
+	return true
+
+static func _valid_number_selector(value: Variant) -> bool:
+	return typeof(value) == TYPE_INT and int(value) >= 0 and int(value) <= 1_000_000
+
+static func _bounded_name(value: String) -> String:
+	var prefix := value.left(128)
+	var output := ""
+	for index in prefix.length():
+		output += "?" if prefix.unicode_at(index) == 0 else prefix.substr(index, 1)
+	return output
 
 func _display_value(value: Variant) -> String:
 	if typeof(value) == TYPE_STRING:
 		return value
-	if value is Object:
+	if typeof(value) == TYPE_OBJECT:
+		if not is_instance_valid(value):
+			return "<freed Object>"
 		return "<%s#%d>" % [value.get_class(), value.get_instance_id()]
 	if typeof(value) == TYPE_ARRAY:
 		return "Array(size=%d)" % value.size()

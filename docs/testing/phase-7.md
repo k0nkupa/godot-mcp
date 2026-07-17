@@ -9,6 +9,8 @@ Phase 7 extends the existing runtime-authorized surface with native read-only GD
 - `debug_status`, `debug_wait`, and `debug_pause` expose bounded stop state; `debug_continue`, `debug_step_over`, and `debug_step_into` control only the authenticated owned child.
 - `debug_stack`, `debug_variables`, and `debug_children` return at most 64 frames, 256 entries per page, 2,048 entries per stop-bound token set, and depth eight.
 - `debug_watch` accepts at most 32 exact locals/members/globals selector paths of depth eight. It traverses returned variables and never evaluates expressions or invokes methods.
+- Dictionary selector metadata is emitted only for schema-selectable strings and bounded non-negative integers; oversized, empty, NUL-bearing, fractional, negative, and out-of-range keys remain visible only as unsupported bounded labels.
+- Freed object references render as a fixed summary without invoking methods on the invalid instance.
 - Frame and variable references are 256-bit opaque tokens bound to run ID, generation, authenticated debugger generation, and stop sequence. They become stale on continue, step, a new stop, reconnect, stop, crash, disconnect, or close.
 - Debugger display strings are UTF-8 bounded from a fixed-size character prefix, so enforcing the 4,096-byte wire cap never encodes an unbounded original value.
 
@@ -32,7 +34,7 @@ Audit records contain debugger operation metadata and performance operation/coun
 GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-7
 ```
 
-The 16-stage macOS gate pins Godot `4.7.stable.official.5b4e0cb0f`; checks generated protocol drift; runs build, lint, typecheck, focused Phase 7 tests, disposable import, Godot profiler/harness units, an inert-native-DAP probe, authenticated debugger/profiler integrations, hostile inputs, published stdio, and the serialized full suite; then proves cleanup and clean committed/working diffs. Phase 0–1 through Phase 6 gates remain required regressions.
+The 16-stage macOS gate pins Godot `4.7.stable.official.5b4e0cb0f`; checks generated protocol drift; runs build, lint, typecheck, focused Phase 7 tests, disposable import, Godot profiler/harness units with script-error scanning and mandatory success markers, an inert-native-DAP probe, authenticated debugger/profiler integrations, hostile inputs, published stdio, and the serialized full suite; then proves cleanup and clean committed/working diffs. Phase 0–1 through Phase 6 gates remain required regressions.
 
 ## Exclusions
 
