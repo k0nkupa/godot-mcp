@@ -807,12 +807,12 @@ export class RuntimeService {
           cleanupError ??= error;
         }
       }
-      await this.cleanupDebugger(false);
       try {
         await this.stopProcess();
       } catch (error) {
         cleanupError ??= error;
       }
+      await this.cleanupDebugger(false);
       if (cleanupError) {
         this.state = "failed";
         throw cleanupError;

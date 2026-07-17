@@ -156,6 +156,7 @@ describe("Phase 7 RuntimeService debugging", () => {
     expect(dap.calls.map((entry) => entry.command)).not.toContain("attach");
     await service.close();
     expect(calls).toContain("runtime.cleanup");
+    expect(calls.indexOf("process.stop")).toBeLessThan(calls.indexOf("runtime.cleanup"));
   });
 
   it("returns bounded stacks, variables, children, and selector watches without evaluation", async () => {
