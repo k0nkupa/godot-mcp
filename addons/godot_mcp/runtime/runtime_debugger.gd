@@ -13,6 +13,12 @@ var _ready_info: Dictionary = {}
 var _pending: Dictionary = {}
 var _send_sequence := 0
 var _active_sessions: Dictionary = {}
+var _stop_sequence := 0
+var _stop_events: Array[Dictionary] = []
+var _expected_stop_reason := "breakpoint"
+var _breakpoints: Dictionary = {}
+
+const SCOPE_REFERENCE_BASE := 1000000
 
 func _has_capture(capture: String) -> bool:
 	return capture == "godot_mcp_runtime"
@@ -40,15 +46,36 @@ func _setup_session(debugger_session_id: int) -> void:
 	session.started.connect(func() -> void:
 		_active_sessions[debugger_session_id] = true
 		if _bound_session_id >= 0 and debugger_session_id != _bound_session_id:
-			clear()
+			clear("ambiguous_session")
 	)
 	session.stopped.connect(func() -> void:
 		_active_sessions.erase(debugger_session_id)
 		if debugger_session_id == _bound_session_id:
-			clear()
+			_clear_after_session_stopped(debugger_session_id)
+	)
+	session.breaked.connect(func(can_debug: bool) -> void:
+		if debugger_session_id != _bound_session_id or not can_debug:
+			return
+		_stop_sequence += 1
+		_stop_events.append({"sequence": _stop_sequence, "reason": _expected_stop_reason})
+		if _stop_events.size() > 512:
+			_stop_events.pop_front()
+		_expected_stop_reason = "breakpoint"
+	)
+	session.continued.connect(func() -> void:
+		if debugger_session_id == _bound_session_id:
+			_expected_stop_reason = "breakpoint"
 	)
 
-func prepare(descriptor: Dictionary, debug_port: int, dap_port: int, editor_pid: int) -> Dictionary:
+func _clear_after_session_stopped(debugger_session_id: int) -> void:
+	# The runtime sends its cooperative-stop result immediately before closing
+	# the debugger peer. Let the already-queued capture drain before pending
+	# request state is cleared.
+	await Engine.get_main_loop().process_frame
+	if debugger_session_id == _bound_session_id and not _active_sessions.has(debugger_session_id):
+		clear("session_stopped")
+
+func prepare(descriptor: Dictionary, debug_port: int, editor_pid: int, dap_disabled: bool) -> Dictionary:
 	if _bound_session_id >= 0:
 		return _error("CONFLICT", "A runtime is already prepared or attached")
 	if not _active_sessions.is_empty():
@@ -67,23 +94,15 @@ func prepare(descriptor: Dictionary, debug_port: int, dap_port: int, editor_pid:
 		return _error("INVALID_REQUEST", "Runtime project identity is invalid")
 	if not debug_port_is_valid(debug_port):
 		return _error("GODOT_RUNTIME_ERROR", "Editor debugger port is invalid")
-	if not dap_port_is_valid(dap_port):
-		return _error("GODOT_RUNTIME_ERROR", "Editor DAP port is invalid")
-	if not listener_ports_are_distinct(debug_port, dap_port):
-		return _error("CONFLICT", "Editor debugger and DAP ports must be distinct")
 	if editor_pid < 1:
 		return _error("GODOT_RUNTIME_ERROR", "Editor process identity is invalid")
+	if not dap_disabled:
+		return _error("AUTHENTICATION_FAILED", "Unauthenticated Godot DAP server is still active")
 	_prepared = descriptor.duplicate(true)
-	return {"ok": true, "data": {"debugPort": debug_port, "dapPort": dap_port, "editorPid": editor_pid}}
+	return {"ok": true, "data": {"debugPort": debug_port, "editorPid": editor_pid, "debugTransport": "authenticated-editor-session"}}
 
 static func debug_port_is_valid(port: int) -> bool:
 	return port >= 1 and port <= 65535
-
-static func dap_port_is_valid(port: int) -> bool:
-	return port >= 1024 and port <= 49151
-
-static func listener_ports_are_distinct(debug_port: int, dap_port: int) -> bool:
-	return debug_port != dap_port
 
 static func binding_is_unambiguous(active_session_ids: Array, bound_session_id: int) -> bool:
 	return bound_session_id >= 0 and active_session_ids.size() == 1 and int(active_session_ids[0]) == bound_session_id
@@ -98,15 +117,24 @@ func execute(command: Dictionary) -> Dictionary:
 			return _error("TIMEOUT", "Runtime did not authenticate before the deadline", true)
 		return {"ok": true, "data": _ready_info.duplicate(true)}
 	if operation == "debug_binding_status":
+		var bound_session := get_session(_bound_session_id) if _bound_session_id >= 0 else null
 		return {"ok": true, "data": {
 			"debuggerSessionId": _bound_session_id,
 			"activeSessionCount": _active_sessions.size(),
 			"unambiguous": binding_is_unambiguous(_active_sessions.keys(), _bound_session_id),
+			"connected": bound_session != null and bound_session.is_active(),
+			"stopped": bound_session != null and bound_session.is_breaked(),
+			"stopSequence": _stop_sequence,
 		}}
 	if _bound_session_id < 0:
 		return _error("NOT_ATTACHED", "No authenticated runtime is attached", true)
 	if not _matches_handle(command.get("arguments", {}).get("handle", {})):
 		return _error("STALE_HANDLE", "Runtime handle is stale")
+	if operation == "debug_adapter":
+		return await _execute_debug_adapter(command, deadline)
+	return await _forward_runtime(command, operation, command.get("arguments", {}), deadline)
+
+func _forward_runtime(command: Dictionary, operation: String, arguments: Dictionary, deadline: int) -> Dictionary:
 	var request_id := String(command.get("requestId", ""))
 	_pending[request_id] = null
 	_send_sequence += 1
@@ -116,7 +144,7 @@ func execute(command: Dictionary) -> Dictionary:
 		"sequence": _send_sequence,
 		"deadlineUnixMs": deadline,
 		"operation": operation,
-		"arguments": command.get("arguments", {}),
+		"arguments": arguments,
 	}])
 	while _pending.has(request_id) and _pending[request_id] == null and _now_ms() < deadline:
 		await Engine.get_main_loop().process_frame
@@ -127,7 +155,117 @@ func execute(command: Dictionary) -> Dictionary:
 	_pending.erase(request_id)
 	return result
 
-func clear() -> void:
+func _execute_debug_adapter(command: Dictionary, deadline: int) -> Dictionary:
+	var adapter_command := String(command.get("arguments", {}).get("command", ""))
+	var arguments: Dictionary = command.get("arguments", {}).get("adapterArguments", {})
+	var session := get_session(_bound_session_id)
+	if session == null or not session.is_active():
+		return _error("NOT_ATTACHED", "Authenticated debugger session is unavailable", true)
+	match adapter_command:
+		"status":
+			return {"ok": true, "data": _debug_status(session)}
+		"setBreakpoints":
+			return _set_breakpoints(session, arguments)
+		"threads":
+			return {"ok": true, "data": {"body": {"threads": [{"id": 1, "name": "Main Thread"}]}}}
+		"stackTrace":
+			if not session.is_breaked(): return _error("PRECONDITION_FAILED", "Godot debugger is not stopped")
+			return await _forward_runtime(command, "debug_stack_data", {
+				"offset": int(arguments.get("startFrame", 0)),
+				"limit": int(arguments.get("levels", 64)),
+			}, deadline)
+		"scopes":
+			if not session.is_breaked(): return _error("PRECONDITION_FAILED", "Godot debugger is not stopped")
+			var frame_id := int(arguments.get("frameId", -1))
+			if frame_id < 0: return _error("INVALID_REQUEST", "Debugger frame identity is invalid")
+			return {"ok": true, "data": {"body": {"scopes": [
+				{"name": "Locals", "variablesReference": SCOPE_REFERENCE_BASE + frame_id * 3},
+				{"name": "Members", "variablesReference": SCOPE_REFERENCE_BASE + frame_id * 3 + 1},
+				{"name": "Globals", "variablesReference": SCOPE_REFERENCE_BASE + frame_id * 3 + 2},
+			]}}}
+		"variables":
+			if not session.is_breaked(): return _error("PRECONDITION_FAILED", "Godot debugger is not stopped")
+			var reference := int(arguments.get("variablesReference", 0))
+			var page := {"offset": int(arguments.get("start", 0)), "limit": int(arguments.get("count", 100))}
+			if reference >= SCOPE_REFERENCE_BASE:
+				var encoded := reference - SCOPE_REFERENCE_BASE
+				var scopes := ["locals", "members", "globals"]
+				page.frameId = int(encoded / 3)
+				page.scope = scopes[encoded % 3]
+				return await _forward_runtime(command, "debug_variables_data", page, deadline)
+			page.variablesReference = reference
+			return await _forward_runtime(command, "debug_children_data", page, deadline)
+		"pause":
+			if session.is_breaked(): return _error("PRECONDITION_FAILED", "Godot debugger is already stopped")
+			_expected_stop_reason = "pause"
+			var pause_after := _stop_sequence
+			session.send_message("break", [])
+			var paused := await _wait_for_stop(pause_after, deadline)
+			if not paused.ok: return paused
+			return {"ok": true, "data": {"body": paused.data}}
+		"continue":
+			if not session.is_breaked(): return _error("PRECONDITION_FAILED", "Godot debugger must be stopped before continuing")
+			var clear_result := await _forward_runtime(command, "debug_clear_data", {}, deadline)
+			if not clear_result.ok: return clear_result
+			session.send_message("continue", [])
+			while session.is_breaked() and _now_ms() < deadline:
+				await Engine.get_main_loop().process_frame
+			if session.is_breaked(): return _error("TIMEOUT", "Godot debugger did not continue before the deadline", true)
+			return {"ok": true, "data": {"body": {"allThreadsContinued": true}}}
+		"next", "stepIn":
+			if not session.is_breaked(): return _error("PRECONDITION_FAILED", "Godot debugger must be stopped before stepping")
+			var clear_result := await _forward_runtime(command, "debug_clear_data", {}, deadline)
+			if not clear_result.ok: return clear_result
+			_expected_stop_reason = "step"
+			session.send_message("next" if adapter_command == "next" else "step", [])
+			return {"ok": true, "data": {"body": {}}}
+		"wait":
+			return await _wait_for_stop(int(arguments.get("afterSequence", 0)), deadline)
+		"disconnect":
+			return {"ok": true, "data": {"body": {}}}
+		_:
+			return _error("INVALID_REQUEST", "Authenticated debugger command is not allowed")
+
+func _set_breakpoints(session: EditorDebuggerSession, arguments: Dictionary) -> Dictionary:
+	var source: Dictionary = arguments.get("source", {})
+	var localized := ProjectSettings.localize_path(String(source.get("path", "")))
+	if not localized.begins_with("res://") or localized.to_lower().begins_with("res://addons/godot_mcp/") or not localized.ends_with(".gd"):
+		return _error("INVALID_REQUEST", "Debugger breakpoint source is outside the project surface")
+	var lines: Array[int] = []
+	var response: Array[Dictionary] = []
+	for entry: Variant in arguments.get("breakpoints", []):
+		if typeof(entry) != TYPE_DICTIONARY or int(entry.get("line", 0)) < 1:
+			return _error("INVALID_REQUEST", "Debugger breakpoint line is invalid")
+		var line := int(entry.line)
+		lines.append(line)
+		response.append({"verified": true, "line": line})
+	var previous: Array = _breakpoints.get(localized, [])
+	for line: int in previous:
+		session.set_breakpoint(localized, line, false)
+	for line: int in lines:
+		session.set_breakpoint(localized, line, true)
+	if lines.is_empty(): _breakpoints.erase(localized)
+	else: _breakpoints[localized] = lines
+	return {"ok": true, "data": {"body": {"breakpoints": response}}}
+
+func _wait_for_stop(after_sequence: int, deadline: int) -> Dictionary:
+	while _now_ms() < deadline:
+		for event: Dictionary in _stop_events:
+			if int(event.sequence) > after_sequence:
+				return {"ok": true, "data": event.duplicate(true)}
+		await Engine.get_main_loop().process_frame
+	return _error("TIMEOUT", "Timed out waiting for Godot debugger to stop", true)
+
+func _debug_status(session: EditorDebuggerSession) -> Dictionary:
+	return {"connected": session.is_active(), "stopped": session.is_breaked(), "stopSequence": _stop_sequence}
+
+func clear(_reason := "requested") -> void:
+	if _bound_session_id >= 0:
+		var session := get_session(_bound_session_id)
+		if session != null:
+			for source: String in _breakpoints.keys():
+				for line: int in _breakpoints[source]:
+					session.set_breakpoint(source, line, false)
 	if _prepared.has("secret"):
 		_prepared.secret = ""
 	_prepared.clear()
@@ -135,6 +273,10 @@ func clear() -> void:
 	_ready_info.clear()
 	_bound_session_id = -1
 	_send_sequence = 0
+	_stop_sequence = 0
+	_stop_events.clear()
+	_expected_stop_reason = "breakpoint"
+	_breakpoints.clear()
 
 func _accept_hello(payload: Dictionary, debugger_session_id: int) -> void:
 	if _prepared.is_empty() or _bound_session_id >= 0 or _now_ms() > int(_prepared.expiresAtUnixMs):

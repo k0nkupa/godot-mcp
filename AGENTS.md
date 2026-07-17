@@ -10,7 +10,7 @@
 
 ## Guardrails
 
-- Keep MCP on stdio and bind the Godot bridge only to `127.0.0.1`; the addon opens no listener.
+- Keep MCP on stdio and bind the Godot bridge only to `127.0.0.1`; the addon opens no functional protocol listener. Phase 7 may hold Godot's disabled native-DAP port with an inert loopback guard.
 - Treat loopback as containment, not authentication. Preserve one-use descriptors, signed envelopes, sequence/deadline checks, project identity, and audit redaction.
 - Do not add arbitrary shell, host filesystem, network, method invocation, or GDScript evaluation to normal profiles.
 - Default sessions expose exactly six observe-only tools. Runtime adds two tools with explicit `runtime_control` plus `runtime`; input adds exactly one tool with explicit `runtime_control` plus `input`.

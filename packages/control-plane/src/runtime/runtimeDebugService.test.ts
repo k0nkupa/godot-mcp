@@ -4,8 +4,9 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { DapClientError, type DapCommand, type DapStopEvent } from "./dapClient.js";
-import { RuntimeService, type RuntimeDapClient } from "./runtimeService.js";
+import { GodotMcpException } from "../errors.js";
+import { DebuggerClientError, type DebuggerCommand, type DebuggerStopEvent } from "./debuggerClient.js";
+import { RuntimeService, type RuntimeDebuggerClient } from "./runtimeService.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 
@@ -13,16 +14,27 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-class FakeDap implements RuntimeDapClient {
-  readonly calls: Array<{ command: DapCommand; arguments: Record<string, unknown> }> = [];
+class FakeDebuggerClient implements RuntimeDebuggerClient {
+  readonly calls: Array<{ command: DebuggerCommand; arguments: Record<string, unknown> }> = [];
   closed = false;
   stopped = true;
   stopSequence = 1;
   transientVariableFailures = 0;
   variablePageSize = 0;
   failBreakpointPath: string | null = null;
+  terminalNotAttached = false;
 
-  async request(command: DapCommand, argumentsValue: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async request(command: DebuggerCommand, argumentsValue: Record<string, unknown>): Promise<Record<string, unknown>> {
+    if (this.terminalNotAttached) {
+      throw new GodotMcpException({
+        code: "NOT_ATTACHED",
+        message: "Authenticated debugger session is unavailable",
+        retryable: true,
+        correlationId: "terminal-cleanup",
+        partialEffects: false,
+        rollback: "not_needed",
+      });
+    }
     this.calls.push({ command, arguments: argumentsValue });
     if (command === "stackTrace") {
       return { body: { stackFrames: [
@@ -40,7 +52,7 @@ class FakeDap implements RuntimeDapClient {
     if (command === "variables") {
       if (this.transientVariableFailures > 0) {
         this.transientVariableFailures -= 1;
-        throw new DapClientError("TRANSPORT_ERROR", "unknown");
+        throw new DebuggerClientError("TRANSPORT_ERROR", "unknown");
       }
       const reference = Number(argumentsValue.variablesReference);
       if (this.variablePageSize > 0) {
@@ -52,7 +64,7 @@ class FakeDap implements RuntimeDapClient {
     }
     if (command === "setBreakpoints") {
       if (argumentsValue.source && (argumentsValue.source as { path?: string }).path === this.failBreakpointPath) {
-        throw new DapClientError("TRANSPORT_ERROR", "setBreakpoints failed");
+        throw new DebuggerClientError("TRANSPORT_ERROR", "setBreakpoints failed");
       }
       const breakpoints = Array.isArray(argumentsValue.breakpoints) ? argumentsValue.breakpoints : [];
       return { body: { breakpoints: breakpoints.map((entry, index) => ({ id: index + 1, verified: true, line: (entry as { line: number }).line })) } };
@@ -62,7 +74,7 @@ class FakeDap implements RuntimeDapClient {
     return { body: {} };
   }
 
-  async nextStop(afterSequence: number): Promise<DapStopEvent> {
+  async nextStop(afterSequence: number): Promise<DebuggerStopEvent> {
     this.stopSequence = Math.max(this.stopSequence + 1, afterSequence + 1);
     this.stopped = true;
     return { sequence: this.stopSequence, reason: "breakpoint", body: { reason: "breakpoint", threadId: 1 } };
@@ -97,33 +109,39 @@ async function debugFixture() {
     rootRealPath: canonicalRoot,
     projectConfigSha256: "a".repeat(64),
   };
-  const dap = new FakeDap();
+  const dap = new FakeDebuggerClient();
   const calls: string[] = [];
   const binding = { debuggerSessionId: 7, activeSessionCount: 1, unambiguous: true };
   const verifiedPorts: number[] = [];
   const service = new RuntimeService({
     project,
     sessionId: () => "session_12345678",
-    requireDapMetadata: true,
+    requireAuthenticatedDebuggerMetadata: true,
     createDescriptor: async (input) => ({
       path: join(root, "runtime.json"),
       descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001, ownerLeasePath: join(root, "runtime.lease") },
       secret: Buffer.alloc(32),
       cleanup: async () => { calls.push("descriptor.cleanup"); },
     }),
-    prepare: async () => { calls.push("prepare"); return { debugPort: 6007, dapPort: 6006, editorPid: 100 }; },
+    prepare: async () => { calls.push("prepare"); return { debugPort: 6007, editorPid: 100, debugTransport: "authenticated-editor-session" }; },
     verifyEditorListener: async (_pid, port) => { verifiedPorts.push(port); calls.push(`verify:${port}`); },
     launchProcess: async () => {
       calls.push("launch");
       return { pid: 42, fingerprint: "42:start", stop: async () => { calls.push("process.stop"); }, wait: async () => new Promise<number>(() => undefined) };
     },
-    command: async (operation) => {
+    command: async (operation, input) => {
       calls.push(operation);
       if (operation === "await_ready") return { pid: 42, debuggerSessionId: 7 };
       if (operation === "debug_binding_status") return { ...binding };
+      if (operation === "debug_adapter") {
+        const command = String(input.command);
+        const adapterArguments = (input.adapterArguments ?? {}) as Record<string, unknown>;
+        if (command === "status") return dap.snapshot();
+        if (command === "wait") return dap.nextStop(Number(adapterArguments.afterSequence ?? 0));
+        return dap.request(command as DebuggerCommand, adapterArguments);
+      }
       return { ok: true };
     },
-    connectDap: async (input) => { calls.push(`dap.connect:${input.port}`); return dap; },
     cleanup: async () => { calls.push("runtime.cleanup"); },
   });
   const launched = await service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 });
@@ -131,15 +149,13 @@ async function debugFixture() {
 }
 
 describe("Phase 7 RuntimeService debugging", () => {
-  it("verifies both editor listeners and attaches DAP only after runtime authentication", async () => {
+  it("uses the authenticated editor debugger channel only after runtime authentication", async () => {
     const { calls, dap, service, verifiedPorts } = await debugFixture();
-    expect(verifiedPorts).toEqual([6007, 6006, 6006]);
-    expect(calls.indexOf("await_ready")).toBeLessThan(calls.indexOf("dap.connect:6006"));
-    expect(calls.lastIndexOf("verify:6006")).toBeGreaterThan(calls.indexOf("await_ready"));
-    expect(calls.lastIndexOf("verify:6006")).toBeLessThan(calls.indexOf("dap.connect:6006"));
-    expect(dap.calls.slice(0, 2).map((entry) => entry.command)).toEqual(["initialize", "attach"]);
+    expect(verifiedPorts).toEqual([6007]);
+    expect(calls).toContain("await_ready");
+    expect(dap.calls.map((entry) => entry.command)).not.toContain("attach");
     await service.close();
-    expect(dap.closed).toBe(true);
+    expect(calls).toContain("runtime.cleanup");
   });
 
   it("returns bounded stacks, variables, children, and selector watches without evaluation", async () => {
@@ -177,11 +193,10 @@ describe("Phase 7 RuntimeService debugging", () => {
     await service.close();
   });
 
-  it("retries Godot's transient unknown response while stack variables are loading", async () => {
+  it("returns stack variables synchronously over the authenticated channel", async () => {
     const { dap, launched, service } = await debugFixture();
     const stack = await service.execute({ operation: "debug_stack", handle: launched.handle, offset: 0, limit: 64 }) as { frames: Array<{ frameToken: string }> };
     const opaqueFrame = stack.frames[0]!.frameToken;
-    dap.transientVariableFailures = 2;
     await expect(service.execute({
       operation: "debug_variables",
       handle: launched.handle,
@@ -190,7 +205,7 @@ describe("Phase 7 RuntimeService debugging", () => {
       offset: 0,
       limit: 100,
     })).resolves.toMatchObject({ returned: 1 });
-    expect(dap.calls.filter((entry) => entry.command === "variables")).toHaveLength(3);
+    expect(dap.calls.filter((entry) => entry.command === "variables")).toHaveLength(1);
     await service.close();
   });
 
@@ -234,10 +249,16 @@ describe("Phase 7 RuntimeService debugging", () => {
     expect(second.frames.map((frame) => frame.frameToken)).toEqual(first.frames.map((frame) => frame.frameToken));
   });
 
-  it("reports disconnected debugger status without requiring an active DAP transport", async () => {
+  it("reports disconnected debugger status without requiring an active debugger transport", async () => {
     const { dap, launched, service } = await debugFixture();
     dap.closed = true;
     await expect(service.execute({ operation: "debug_status", handle: launched.handle })).resolves.toMatchObject({ connected: false, stopped: true });
+  });
+
+  it("treats terminal debugger detachment as successful runtime cleanup", async () => {
+    const { dap, launched, service } = await debugFixture();
+    dap.terminalNotAttached = true;
+    await expect(service.execute({ operation: "stop", handle: launched.handle })).resolves.toMatchObject({ state: "stopped" });
   });
 
   it("fails closed when the authenticated runtime is not the only active debugger session", async () => {
@@ -317,12 +338,12 @@ describe("Phase 7 RuntimeService debugging", () => {
     expect(dap.calls.filter((entry) => entry.command === "setBreakpoints")).toHaveLength(0);
   });
 
-  it("requires DAP metadata when the production launch contract enables debugging", async () => {
+  it("requires authenticated debugger metadata when the production launch contract enables debugging", async () => {
     let launched = false;
     const service = new RuntimeService({
       project: { projectId: "019f644c-1379-79c0-825e-66a4b7653bd1", rootRealPath: "/private/project", projectConfigSha256: "a".repeat(64) },
       sessionId: () => "session_12345678",
-      requireDapMetadata: true,
+      requireAuthenticatedDebuggerMetadata: true,
       createDescriptor: async (input) => ({
         path: "/private/runtime.json",
         descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001, ownerLeasePath: "/private/runtime.lease" },
@@ -336,21 +357,22 @@ describe("Phase 7 RuntimeService debugging", () => {
     expect(launched).toBe(false);
   });
 
-  it("rejects duplicate editor listener ports before launching", async () => {
+  it("rejects an editor process that did not disable its unauthenticated DAP transport", async () => {
     let launched = false;
     const service = new RuntimeService({
       project: { projectId: "019f644c-1379-79c0-825e-66a4b7653bd1", rootRealPath: "/private/project", projectConfigSha256: "a".repeat(64) },
       sessionId: () => "session_12345678",
+      requireAuthenticatedDebuggerMetadata: true,
       createDescriptor: async (input) => ({
         path: "/private/runtime.json",
         descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001, ownerLeasePath: "/private/runtime.lease" },
         secret: Buffer.alloc(32), cleanup: async () => undefined,
       }),
-      prepare: async () => ({ debugPort: 6007, dapPort: 6007, editorPid: 100 }),
+      prepare: async () => ({ debugPort: 6007, editorPid: 100 }),
       launchProcess: async () => { launched = true; throw new Error("must not launch"); },
       command: async () => ({ pid: 42 }),
     });
-    await expect(service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 })).rejects.toMatchObject({ code: "CONFLICT" });
+    await expect(service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 })).rejects.toMatchObject({ code: "AUTHENTICATION_FAILED" });
     expect(launched).toBe(false);
   });
 });

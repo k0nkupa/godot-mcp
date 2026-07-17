@@ -94,22 +94,16 @@ export {
   type RuntimeDescriptorMaterial,
 } from "./runtime/runtimeDescriptor.js";
 export {
-  DapClient,
-  DapClientError,
-  type DapCommand,
-  type DapStopEvent,
-} from "./runtime/dapClient.js";
+  AUTHENTICATED_DEBUGGER_COMMANDS,
+  DebuggerClientError,
+  type DebuggerCommand,
+  type DebuggerStopEvent,
+} from "./runtime/debuggerClient.js";
 export {
   DebugTokenStore,
   DebugTokenStoreError,
   type DebugTokenIdentity,
 } from "./runtime/debugTokenStore.js";
-export {
-  DapFrameParser,
-  DapProtocolError,
-  MAX_DAP_BODY_BYTES,
-  encodeDapMessage,
-} from "./runtime/dapFraming.js";
 export {
   assertLoopbackListenerOwnedByProcess,
   assertLoopbackListenersOwnedByProcess,
@@ -122,6 +116,7 @@ export {
 } from "./runtime/runtimeProcess.js";
 export {
   RuntimeService,
+  type RuntimeDebuggerClient,
   type RuntimeServiceDependencies,
   type RuntimeSnapshot,
   type RuntimeState,

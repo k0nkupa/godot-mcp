@@ -1,14 +1,16 @@
 import { readFile } from "node:fs/promises";
+import { connect } from "node:net";
 import { join } from "node:path";
 
 import { expect, test } from "vitest";
 
 import { createPhase7RuntimeFixture } from "./runtime-phase7-fixture.js";
 
-test("hits a real Godot DAP breakpoint and reads bounded stack and watch data", async () => {
+test("uses only the authenticated Godot debugger channel for breakpoints and bounded evidence", async () => {
   const fixture = await createPhase7RuntimeFixture();
   let phase = "launch";
   try {
+    await expectNativeDapToBeInert(fixture.dapPort);
     const sourcePath = join(fixture.projectRoot, "debug/debug_fixture.gd");
     const source = await readFile(sourcePath, "utf8");
     const breakpointLine = source.split("\n").findIndex((line) => line.includes("PHASE7_BREAKPOINT_INNER")) + 1;
@@ -33,7 +35,7 @@ test("hits a real Godot DAP breakpoint and reads bounded stack and watch data", 
     };
     expect(stack.frames.map((frame) => frame.name)).toEqual(expect.arrayContaining(["_inner", "_middle", "_outer"]));
     const inner = stack.frames.find((frame) => frame.name === "_inner");
-    expect(inner).toMatchObject({ frameToken: expect.stringMatching(/^dft_/), sourcePath: "res://debug/debug_fixture.gd" });
+    expect(inner, `stack=${JSON.stringify(stack)}`).toMatchObject({ frameToken: expect.stringMatching(/^dft_/), sourcePath: "res://debug/debug_fixture.gd" });
     const opaqueFrame = inner!.frameToken;
 
     phase = "locals";
@@ -55,9 +57,11 @@ test("hits a real Godot DAP breakpoint and reads bounded stack and watch data", 
     }) as { watches: Array<{ status: string; variable?: { value: string } }> };
     expect(watched.watches).toEqual([expect.objectContaining({ status: "found", variable: expect.objectContaining({ value: expect.stringContaining("100") }) })]);
 
-    phase = "clear-and-continue";
+    phase = "clear-breakpoints";
     await fixture.runtime.execute({ operation: "debug_breakpoints_set", handle: launched.handle, breakpoints: [] });
+    phase = "continue";
     await fixture.runtime.execute({ operation: "debug_continue", handle: launched.handle });
+    phase = "reject-stale-frame";
     await expect(fixture.runtime.execute({
       operation: "debug_variables",
       handle: launched.handle,
@@ -66,6 +70,7 @@ test("hits a real Godot DAP breakpoint and reads bounded stack and watch data", 
       offset: 0,
       limit: 100,
     })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    phase = "stop";
     await fixture.runtime.execute({ operation: "stop", handle: launched.handle });
   } catch (error) {
     throw new Error(`Phase: ${phase}\n${String(error)}\n${fixture.diagnostics()}`);
@@ -73,3 +78,21 @@ test("hits a real Godot DAP breakpoint and reads bounded stack and watch data", 
     await fixture.close();
   }
 }, 60_000);
+
+async function expectNativeDapToBeInert(port: number): Promise<void> {
+  const socket = connect({ host: "127.0.0.1", port });
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Timed out connecting to the inert DAP guard")), 2_000);
+    socket.once("connect", () => { clearTimeout(timer); resolve(); });
+    socket.once("error", (error) => { clearTimeout(timer); reject(error); });
+  });
+  const request = JSON.stringify({ seq: 1, type: "request", command: "initialize", arguments: {} });
+  socket.write(`Content-Length: ${Buffer.byteLength(request, "utf8")}\r\n\r\n${request}`);
+  const producedProtocolData = await new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => resolve(false), 250);
+    socket.once("data", () => { clearTimeout(timer); resolve(true); });
+    socket.once("close", () => { clearTimeout(timer); resolve(false); });
+  });
+  socket.destroy();
+  expect(producedProtocolData).toBe(false);
+}

@@ -1,6 +1,8 @@
 extends SceneTree
 
 const RuntimeProfiler = preload("res://addons/godot_mcp/runtime/runtime_profiler.gd")
+const CanonicalJson = preload("res://addons/godot_mcp/bridge/canonical_json.gd")
+const SessionCrypto = preload("res://addons/godot_mcp/bridge/session_crypto.gd")
 
 func _init() -> void:
 	var profiler := RuntimeProfiler.new()
@@ -38,7 +40,7 @@ func _init() -> void:
 	assert(String(completed.data.evidence.sha256).length() == 64)
 	assert(profiler.result(String(first.data.jobToken)).data.evidence.sha256 == completed.data.evidence.sha256)
 	var precise_float: float = JSON.parse_string("0.12345678901234567")
-	assert(profiler._tag_floats(precise_float) == {"type": "Float64Le", "value": "5ff64637dd9abf3f"})
+	assert(profiler._evidence_digest({"value": precise_float}) == CanonicalJson.encode(SessionCrypto._canonical_signing_params({"value": precise_float})).sha256_text())
 	assert(profiler._wire_size({"value": 0.25}) > JSON.stringify({"value": 0.25}).to_utf8_buffer().size())
 
 	var cancellation := profiler.start({"durationMs": 30000, "intervalFrames": 1, "groups": ["frame"], "retainRaw": false})

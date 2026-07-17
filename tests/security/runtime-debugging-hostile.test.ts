@@ -1,4 +1,4 @@
-import { authorize, DebugTokenStore, DapFrameParser, encodeDapMessage, RUNTIME_POLICY } from "@godot-mcp/control-plane";
+import { AUTHENTICATED_DEBUGGER_COMMANDS, authorize, DebugTokenStore, RUNTIME_POLICY } from "@godot-mcp/control-plane";
 import { RuntimeDebugOperationInputSchema, RuntimePerformanceOperationInputSchema } from "@godot-mcp/protocol";
 import { describe, expect, it } from "vitest";
 
@@ -43,9 +43,9 @@ describe("hostile Phase 7 runtime boundaries", () => {
     expect(() => authorize({ tiers: ["observe", "runtime_control"], packs: ["core", "runtime"] }, RUNTIME_POLICY)).not.toThrow();
   });
 
-  it("invalidates opaque tokens across every runtime, DAP, and stop identity", () => {
+  it("invalidates opaque tokens across every runtime, debugger, and stop identity", () => {
     const store = new DebugTokenStore();
-    const identity = { runId: handle.runId, generation: 1, dapGeneration: 1, stopSequence: 1 };
+    const identity = { runId: handle.runId, generation: 1, debuggerGeneration: 1, stopSequence: 1 };
     store.bind(identity);
     const issuedFrame = store.issueFrame(7);
     const issuedVariable = store.issueVariable(9, 1);
@@ -54,7 +54,7 @@ describe("hostile Phase 7 runtime boundaries", () => {
     for (const changed of [
       { ...identity, runId: "019f644c-1379-79c0-825e-66a4b7653bd2" },
       { ...identity, generation: 2 },
-      { ...identity, dapGeneration: 2 },
+      { ...identity, debuggerGeneration: 2 },
       { ...identity, stopSequence: 2 },
     ]) {
       store.bind(identity);
@@ -68,16 +68,12 @@ describe("hostile Phase 7 runtime boundaries", () => {
     expect(opaqueProfile).toMatch(/^pjt_/);
   });
 
-  it.each([
-    "Content-Length: 2\r\nContent-Length: 2\r\n\r\n{}",
-    "Content-Length: 2\n\n{}",
-    `Content-Length: ${1024 * 1024 + 1}\r\n\r\n`,
-    "Content-Length: 1\r\n\r\n{",
-  ])("fails closed on hostile DAP framing", (frame) => {
-    expect(() => new DapFrameParser().push(Buffer.from(frame))).toThrow();
-  });
-
-  it("bounds outbound DAP frames to one MiB", () => {
-    expect(() => encodeDapMessage({ payload: "x".repeat(1024 * 1024) })).toThrow(/one MiB/i);
+  it("keeps the authenticated debugger command surface closed-world", () => {
+    expect(AUTHENTICATED_DEBUGGER_COMMANDS).toEqual([
+      "disconnect", "setBreakpoints", "threads", "stackTrace", "scopes",
+      "variables", "pause", "continue", "next", "stepIn",
+    ]);
+    expect(AUTHENTICATED_DEBUGGER_COMMANDS).not.toContain("evaluate");
+    expect(AUTHENTICATED_DEBUGGER_COMMANDS).not.toContain("setVariable");
   });
 });

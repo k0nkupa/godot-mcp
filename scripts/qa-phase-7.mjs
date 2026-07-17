@@ -75,10 +75,10 @@ try {
   await run("3/16 topological package builds", pnpm, ["build"]);
   await run("4/16 ESLint", pnpm, ["lint"]);
   await run("5/16 TypeScript typecheck", pnpm, ["typecheck"]);
-  await run("6/16 Phase 7 protocol, DAP, runtime, and MCP tests", pnpm, ["exec", "vitest", "run",
+  await run("6/16 Phase 7 protocol, authenticated debugger, runtime, and MCP tests", pnpm, ["exec", "vitest", "run",
     "packages/protocol/src/runtimeDebug.test.ts", "packages/protocol/src/runtimePerformance.test.ts",
-    "packages/control-plane/src/runtime/dapFraming.test.ts", "packages/control-plane/src/runtime/dapClient.test.ts",
-    "packages/control-plane/src/runtime/debugTokenStore.test.ts", "packages/control-plane/src/runtime/runtimeDebugService.test.ts",
+    "packages/control-plane/src/runtime/debugTokenStore.test.ts",
+    "packages/control-plane/src/runtime/runtimeDebugService.test.ts",
     "packages/control-plane/src/runtime/runtimePerformanceService.test.ts", "packages/control-plane/src/runtime/runtimeService.test.ts",
     "packages/mcp-server/src/registerRuntimeTools.test.ts", "packages/mcp-server/src/executeTool.test.ts"]);
   await withFixture("godot-mcp-phase-7-import-", async ({ project, environment }) => {

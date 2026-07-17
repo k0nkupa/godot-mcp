@@ -17,8 +17,11 @@ var editor_query: RefCounted
 var editor_capture: RefCounted
 var runtime_debugger: EditorDebuggerPlugin
 var editor_mutation: RefCounted
+var dap_guard: TCPServer
+var dap_disabled := false
 
 func _enter_tree() -> void:
+	call_deferred("_disable_unauthenticated_dap_server")
 	diagnostic_logger = DiagnosticLogger.new(ProjectSettings.globalize_path("res://"))
 	OS.add_logger(diagnostic_logger)
 	editor_query = EditorQuery.new(get_editor_interface(), diagnostic_logger)
@@ -51,8 +54,8 @@ func _execute_command(command: Dictionary) -> Dictionary:
 		outcome = runtime_debugger.prepare(
 			command.arguments.get("descriptor", {}),
 			_runtime_debug_port(),
-			_runtime_dap_port(),
 			OS.get_process_id(),
+			_dap_server_is_disabled(),
 		)
 	elif String(command.method) in ["runtime.command", "runtime.capture"]:
 		outcome = await runtime_debugger.execute(command)
@@ -101,6 +104,27 @@ func _runtime_debug_port() -> int:
 				return port
 	return int(get_editor_interface().get_editor_settings().get_setting("network/debug/remote_port"))
 
+func _disable_unauthenticated_dap_server() -> void:
+	var servers: Array[Node] = []
+	_collect_dap_servers(get_tree().root, servers)
+	for server: Node in servers:
+		# Godot 4.7 starts an unauthenticated native DAP listener unconditionally.
+		# Its EXIT_TREE notification calls the native idempotent stop() method
+		# without freeing the editor-owned plugin node.
+		server.notification(Node.NOTIFICATION_EXIT_TREE)
+	# Retain the configured port so settings changes cannot reopen native DAP.
+	dap_guard = TCPServer.new()
+	dap_disabled = not servers.is_empty() and dap_guard.listen(_runtime_dap_port(), "127.0.0.1") == OK
+
+func _dap_server_is_disabled() -> bool:
+	return dap_disabled and dap_guard != null and dap_guard.is_listening()
+
+func _collect_dap_servers(node: Node, output: Array[Node]) -> void:
+	for child: Node in node.get_children():
+		if child != self and child.get_class() == "DebugAdapterServer":
+			output.append(child)
+		_collect_dap_servers(child, output)
+
 func _runtime_dap_port() -> int:
 	for argument in OS.get_cmdline_user_args():
 		var value := String(argument)
@@ -109,6 +133,10 @@ func _runtime_dap_port() -> int:
 	return int(get_editor_interface().get_editor_settings().get_setting("network/debug_adapter/remote_port"))
 
 func _exit_tree() -> void:
+	if dap_guard != null:
+		dap_guard.stop()
+	dap_guard = null
+	dap_disabled = false
 	if runtime_debugger != null:
 		runtime_debugger.clear()
 		remove_debugger_plugin(runtime_debugger)

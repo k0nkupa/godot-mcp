@@ -22,6 +22,7 @@ import {
 
 export interface Phase7RuntimeFixture {
   projectRoot: string;
+  dapPort: number;
   runtime: RuntimeService;
   editor: EditorProcess;
   diagnostics(): string;
@@ -35,6 +36,7 @@ export async function createPhase7RuntimeFixture(): Promise<Phase7RuntimeFixture
   let editor: EditorProcess | undefined;
   let runtime: RuntimeService | undefined;
   let runtimeOutput = "";
+  let runtimePid: number | undefined;
   let runtimeDiagnostics: (() => string) | undefined;
   let bridge: Awaited<ReturnType<typeof startBridgeServer>> | undefined;
   try {
@@ -65,6 +67,7 @@ export async function createPhase7RuntimeFixture(): Promise<Phase7RuntimeFixture
       createDescriptor: createRuntimeDescriptor,
       launchProcess: async (input) => {
         const owned = await OwnedGodotProcess.launch(input);
+        runtimePid = owned.pid;
         const diagnostics = owned.diagnostics.bind(owned);
         runtimeDiagnostics = diagnostics;
         const stop = owned.stop.bind(owned);
@@ -84,7 +87,7 @@ export async function createPhase7RuntimeFixture(): Promise<Phase7RuntimeFixture
           },
         };
       },
-      prepare: async ({ descriptor }) => (await session.request<{ debugPort: number; dapPort: number; editorPid: number }>(
+      prepare: async ({ descriptor }) => (await session.request<{ debugPort: number; editorPid: number; debugTransport: "authenticated-editor-session" }>(
         "runtime.prepare",
         { descriptor },
         { timeoutMs: 5_000 },
@@ -101,9 +104,10 @@ export async function createPhase7RuntimeFixture(): Promise<Phase7RuntimeFixture
     let closePromise: Promise<void> | undefined;
     return {
       projectRoot: project.root,
+      dapPort,
       runtime,
       editor,
-      diagnostics: () => `Bridge: ${bridgeState}\nEditor (${processExists(editor?.pid) ? "alive" : "exited"}):\n${editor?.output ?? ""}\nRuntime:\n${runtimeDiagnostics?.() ?? runtimeOutput}`,
+      diagnostics: () => `Bridge: ${bridgeState}\nEditor (${processExists(editor?.pid) ? "alive" : "exited"}):\n${editor?.output ?? ""}\nRuntime (${processExists(runtimePid) ? "alive" : "exited"}):\n${runtimeDiagnostics?.() ?? runtimeOutput}`,
       close(): Promise<void> {
         closePromise ??= (async () => {
           await runtime?.close().catch(() => undefined);

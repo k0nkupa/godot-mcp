@@ -30,11 +30,14 @@ function authenticationFailed(message: string): GodotMcpException {
 
 const FLOAT_WIRE_KEY = "$godotMcpFloat64Le";
 
-function isFloatWireValue(value: unknown): value is Record<typeof FLOAT_WIRE_KEY, string> {
+function isFloatWireShape(value: unknown): value is Record<typeof FLOAT_WIRE_KEY, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value) &&
-    Object.keys(value).length === 1 &&
-    typeof (value as Record<string, unknown>)[FLOAT_WIRE_KEY] === "string" &&
-    /^[a-f0-9]{16}$/.test(String((value as Record<string, unknown>)[FLOAT_WIRE_KEY]));
+    Object.keys(value).length === 1 && FLOAT_WIRE_KEY in value;
+}
+
+function isFloatWireValue(value: unknown): value is Record<typeof FLOAT_WIRE_KEY, string> {
+  return isFloatWireShape(value) && typeof value[FLOAT_WIRE_KEY] === "string" &&
+    /^[a-f0-9]{16}$/.test(value[FLOAT_WIRE_KEY]);
 }
 
 function encodeFloatParams(value: unknown, allowWireValues = false): unknown {
@@ -46,8 +49,9 @@ function encodeFloatParams(value: unknown, allowWireValues = false): unknown {
   }
   if (Array.isArray(value)) return value.map((entry) => encodeFloatParams(entry, allowWireValues));
   if (value !== null && typeof value === "object") {
-    if (isFloatWireValue(value)) {
+    if (isFloatWireShape(value)) {
       if (!allowWireValues) throw new TypeError("Bridge parameters contain a reserved float wire value");
+      if (!isFloatWireValue(value)) throw new TypeError("Bridge parameters contain a malformed float wire value");
       return value;
     }
     return Object.fromEntries(

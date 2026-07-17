@@ -130,7 +130,7 @@ static func _valid_float_wire_params(value: Variant) -> bool:
 		return true
 	if value.size() == 1 and value.has(FLOAT_WIRE_KEY):
 		var encoded: Variant = value[FLOAT_WIRE_KEY]
-		return typeof(encoded) == TYPE_STRING and encoded.length() == 16 and String(encoded).is_valid_hex_number(false)
+		return typeof(encoded) == TYPE_STRING and encoded.length() == 16 and String(encoded) == String(encoded).to_lower() and String(encoded).is_valid_hex_number(false)
 	for entry in value.values():
 		if not _valid_float_wire_params(entry): return false
 	return true

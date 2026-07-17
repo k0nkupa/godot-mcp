@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 export interface DebugTokenIdentity {
   runId: string;
   generation: number;
-  dapGeneration: number;
+  debuggerGeneration: number;
   stopSequence: number;
 }
 
@@ -45,7 +45,7 @@ export class DebugTokenStore {
 
   issueFrame(frameId: number): string {
     this.assertBound();
-    if (!Number.isInteger(frameId) || frameId < 0) throw new DebugTokenStoreError("DAP frame identity is invalid");
+    if (!Number.isInteger(frameId) || frameId < 0) throw new DebugTokenStoreError("Debugger frame identity is invalid");
     const existing = this.frameReferences.get(frameId);
     if (existing) return existing;
     if (this.frames.size >= this.maxFrames) throw new DebugTokenStoreError("Debugger frame token limit exceeded");
@@ -57,7 +57,7 @@ export class DebugTokenStore {
 
   issueVariable(variablesReference: number, depth: number): string {
     this.assertBound();
-    if (!Number.isInteger(variablesReference) || variablesReference < 1) throw new DebugTokenStoreError("DAP variable reference is invalid");
+    if (!Number.isInteger(variablesReference) || variablesReference < 1) throw new DebugTokenStoreError("Debugger variable reference is invalid");
     if (!Number.isInteger(depth) || depth < 1 || depth > this.maxDepth) throw new DebugTokenStoreError("Debugger variable depth limit exceeded");
     if (this.variables.size >= this.maxVariables) throw new DebugTokenStoreError("Debugger variable token limit exceeded");
     const token = this.createToken("dvt", this.frames, this.variables);
@@ -113,6 +113,6 @@ export class DebugTokenStore {
 function sameIdentity(left: DebugTokenIdentity, right: DebugTokenIdentity): boolean {
   return left.runId === right.runId &&
     left.generation === right.generation &&
-    left.dapGeneration === right.dapGeneration &&
+    left.debuggerGeneration === right.debuggerGeneration &&
     left.stopSequence === right.stopSequence;
 }

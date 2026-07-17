@@ -8,9 +8,9 @@ Phase 7 extends the existing runtime-authorized surface with native read-only GD
 - `debug_status`, `debug_wait`, and `debug_pause` expose bounded stop state; `debug_continue`, `debug_step_over`, and `debug_step_into` control only the authenticated owned child.
 - `debug_stack`, `debug_variables`, and `debug_children` return at most 64 frames, 256 entries per page, 2,048 entries per stop-bound token set, and depth eight.
 - `debug_watch` accepts at most 32 exact locals/members/globals selector paths of depth eight. It traverses returned variables and never evaluates expressions or invokes methods.
-- Frame and variable references are 256-bit opaque tokens bound to run ID, generation, DAP generation, and stop sequence. They become stale on continue, step, a new stop, reconnect, stop, crash, disconnect, or close.
+- Frame and variable references are 256-bit opaque tokens bound to run ID, generation, authenticated debugger generation, and stop sequence. They become stale on continue, step, a new stop, reconnect, stop, crash, disconnect, or close.
 
-The TypeScript DAP client attaches only after runtime authentication, after the editor PID is proven to own distinct loopback debugger and DAP listeners, and while the authenticated runtime is the sole active editor debugger session. That binding is rechecked after attach and before every debugger operation. Its outbound allowlist excludes launch, terminate, evaluate, variable mutation, method calls, and raw protocol passthrough.
+Godot's unauthenticated native DAP server is disabled and its configured loopback port is held by an inert guard before runtime preparation succeeds. The debugger client is created only after the editor PID is proven to own the debugger listener and the owned runtime authenticates as the sole active editor debugger session. That binding is rechecked before every debugger operation. The fixed internal command set excludes launch, terminate, evaluate, variable mutation, method calls, sockets, and raw protocol passthrough.
 
 ## Certified performance contract
 
@@ -28,8 +28,8 @@ Audit records contain debugger operation metadata and performance operation/coun
 GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-7
 ```
 
-The 16-stage macOS gate pins Godot `4.7.stable.official.5b4e0cb0f`; checks generated protocol drift; runs build, lint, typecheck, focused Phase 7 tests, disposable import, Godot profiler/harness units, real DAP/profiler integrations, hostile inputs, published stdio, and the serialized full suite; then proves cleanup and clean committed/working diffs. Phase 0–1 through Phase 6 gates remain required regressions.
+The 16-stage macOS gate pins Godot `4.7.stable.official.5b4e0cb0f`; checks generated protocol drift; runs build, lint, typecheck, focused Phase 7 tests, disposable import, Godot profiler/harness units, an inert-native-DAP probe, authenticated debugger/profiler integrations, hostile inputs, published stdio, and the serialized full suite; then proves cleanup and clean committed/working diffs. Phase 0–1 through Phase 6 gates remain required regressions.
 
 ## Exclusions
 
-Phase 7 does not provide expression evaluation, variable mutation, arbitrary DAP messages, arbitrary GDScript calls, host filesystem/network/process access, imported-asset mutation, builds/exports, or host-level CPU/GPU profiling. GPU timestamps are reported as unsupported when the renderer/platform does not expose them.
+Phase 7 does not provide expression evaluation, variable mutation, raw DAP access, arbitrary debugger messages, arbitrary GDScript calls, host filesystem/network/process access, imported-asset mutation, builds/exports, or host-level CPU/GPU profiling. GPU timestamps are reported as unsupported when the renderer/platform does not expose them.

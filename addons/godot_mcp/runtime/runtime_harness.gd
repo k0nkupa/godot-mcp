@@ -4,6 +4,7 @@ extends Node
 const DescriptorReader = preload("res://addons/godot_mcp/bridge/descriptor_reader.gd")
 const SessionCrypto = preload("res://addons/godot_mcp/bridge/session_crypto.gd")
 const RuntimeControl = preload("res://addons/godot_mcp/runtime/runtime_control.gd")
+const RuntimeDebugCapture = preload("res://addons/godot_mcp/runtime/runtime_debug_capture.gd")
 const RuntimeCapture = preload("res://addons/godot_mcp/runtime/runtime_capture.gd")
 const RuntimeFrameClock = preload("res://addons/godot_mcp/runtime/runtime_frame_clock.gd")
 const RuntimeInput = preload("res://addons/godot_mcp/runtime/runtime_input.gd")
@@ -20,6 +21,7 @@ var _logger: Logger
 var _query: RefCounted
 var _control: RefCounted
 var _runtime_capture: RefCounted
+var _runtime_debug_capture: RefCounted
 var _runtime_input: RefCounted
 var _runtime_profiler: RefCounted
 var _next_owner_check_ms := 0
@@ -69,6 +71,7 @@ func _process(_delta: float) -> void:
 	_next_owner_check_ms = _now_ms() + 500
 	var modified_unix_s := FileAccess.get_modified_time(String(_descriptor.get("ownerLeasePath", "")))
 	if not owner_lease_is_fresh(modified_unix_s, _now_ms()):
+		push_error("Godot MCP owner lease expired; stopping the owned runtime")
 		get_tree().quit(4)
 
 func _exit_tree() -> void:
@@ -82,6 +85,7 @@ func _exit_tree() -> void:
 	_query = null
 	_control = null
 	_runtime_capture = null
+	_runtime_debug_capture = null
 	_runtime_input = null
 	_runtime_profiler = null
 	var owner_lease_path := String(_descriptor.get("ownerLeasePath", ""))
@@ -155,6 +159,7 @@ func _bind_game_scene() -> void:
 		_query = null
 		_control = null
 		_runtime_capture = null
+		_runtime_debug_capture = null
 		_runtime_input = null
 		_clear_runtime_profiler()
 		_runtime_profiler = null
@@ -163,6 +168,7 @@ func _bind_game_scene() -> void:
 	var frame_clock := RuntimeFrameClock.new(_game_scene)
 	_control = RuntimeControl.new(_game_scene, _query, _logger, frame_clock)
 	_runtime_capture = RuntimeCapture.new(_game_scene, _control)
+	_runtime_debug_capture = RuntimeDebugCapture.new()
 	_runtime_input = RuntimeInput.new(_game_scene, frame_clock)
 	_clear_runtime_profiler()
 	_runtime_profiler = RuntimeProfiler.new()
@@ -179,6 +185,7 @@ func _invalidate_game_scene(scene: Node) -> void:
 	_query = null
 	_control = null
 	_runtime_capture = null
+	_runtime_debug_capture = null
 	_runtime_input = null
 	_runtime_profiler = null
 
@@ -198,6 +205,7 @@ func _handle_command(command: Dictionary) -> void:
 		_query == null
 		or _control == null
 		or _runtime_capture == null
+		or _runtime_debug_capture == null
 		or _runtime_input == null
 		or _runtime_profiler == null
 		or not is_instance_valid(_game_scene)
@@ -242,6 +250,12 @@ func _execute_operation(operation: String, arguments: Dictionary, deadline_unix_
 		"profile_status": return _runtime_profiler.status(String(arguments.get("jobToken", "")))
 		"profile_cancel": return _runtime_profiler.cancel(String(arguments.get("jobToken", "")))
 		"profile_result": return _runtime_profiler.result(String(arguments.get("jobToken", "")))
+		"debug_stack_data": return _runtime_debug_capture.stack(int(arguments.get("offset", 0)), int(arguments.get("limit", 64)))
+		"debug_variables_data": return _runtime_debug_capture.variables(int(arguments.get("frameId", -1)), String(arguments.get("scope", "")), int(arguments.get("offset", 0)), int(arguments.get("limit", 100)))
+		"debug_children_data": return _runtime_debug_capture.children(int(arguments.get("variablesReference", 0)), int(arguments.get("offset", 0)), int(arguments.get("limit", 100)))
+		"debug_clear_data":
+			_runtime_debug_capture.clear()
+			return {"ok": true, "data": {"cleared": true}}
 		"stop":
 			return {"ok": true, "data": {"stopping": true}}
 		_: return _error("INVALID_REQUEST", "Runtime operation is not implemented")
@@ -290,7 +304,7 @@ static func descriptor_has_required_fields(descriptor: Dictionary) -> bool:
 	return typeof(descriptor.project) == TYPE_DICTIONARY and descriptor.project.has("projectId")
 
 static func operation_is_allowed(operation: String) -> bool:
-	return operation in ["status", "tree", "node", "logs", "wait", "pause", "resume", "step", "stop", "capture", "input", "monitor_snapshot", "profile_start", "profile_status", "profile_cancel", "profile_result"]
+	return operation in ["status", "tree", "node", "logs", "wait", "pause", "resume", "step", "stop", "capture", "input", "monitor_snapshot", "profile_start", "profile_status", "profile_cancel", "profile_result", "debug_stack_data", "debug_variables_data", "debug_children_data", "debug_clear_data"]
 
 static func owner_lease_path_is_allowed(path: String, runtime_directory: String) -> bool:
 	if path.is_empty() or runtime_directory.is_empty() or not path.is_absolute_path():

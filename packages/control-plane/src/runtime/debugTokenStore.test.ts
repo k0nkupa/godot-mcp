@@ -5,7 +5,7 @@ import { DebugTokenStore, DebugTokenStoreError } from "./debugTokenStore.js";
 const first = {
   runId: "019f644c-1379-79c0-825e-66a4b7653bd1",
   generation: 1,
-  dapGeneration: 1,
+  debuggerGeneration: 1,
   stopSequence: 1,
 };
 
@@ -27,7 +27,7 @@ describe("stop-bound debugger tokens", () => {
   it("invalidates every token when stop, DAP, run, or generation identity changes", () => {
     for (const changed of [
       { ...first, stopSequence: 2 },
-      { ...first, dapGeneration: 2 },
+      { ...first, debuggerGeneration: 2 },
       { ...first, generation: 2 },
       { ...first, runId: "019f644c-1379-79c0-825e-66a4b7653bd2" },
     ]) {

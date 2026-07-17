@@ -459,23 +459,8 @@ func _opaque_token() -> String:
 func _evidence_digest(evidence: Dictionary) -> String:
 	var digest_input := evidence.duplicate(true)
 	digest_input.erase("sha256")
-	var encoded := CanonicalJson.encode(_tag_floats(digest_input))
+	var encoded := CanonicalJson.encode(SessionCrypto._canonical_signing_params(digest_input))
 	return encoded.sha256_text()
-
-func _tag_floats(value: Variant) -> Variant:
-	if typeof(value) == TYPE_FLOAT:
-		return {"type": "Float64Le", "value": SessionCrypto.float64_le_hex(value)}
-	if typeof(value) == TYPE_ARRAY:
-		var output: Array = []
-		for item: Variant in value:
-			output.append(_tag_floats(item))
-		return output
-	if typeof(value) == TYPE_DICTIONARY:
-		var output := {}
-		for key: Variant in value.keys():
-			output[String(key)] = _tag_floats(value[key])
-		return output
-	return value
 
 static func _error(code: String, message: String, retryable := false) -> Dictionary:
 	return {"ok": false, "code": code, "message": message.left(512), "retryable": retryable}

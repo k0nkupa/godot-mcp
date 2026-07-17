@@ -55,6 +55,7 @@ describe("session crypto", () => {
 
   it("rejects caller dictionaries that collide with the reserved float wire shape", () => {
     expect(() => signEnvelope(key, envelope({ params: { value: { $godotMcpFloat64Le: "000000000000d03f" } } }))).toThrow(/reserved float wire/i);
+    expect(() => signEnvelope(key, envelope({ params: { value: { $godotMcpFloat64Le: "NOT-A-WIRE-VALUE" } } }))).toThrow(/reserved float wire/i);
   });
 
   it("rejects tampering, expiry, and deadlines over 60 seconds away", () => {

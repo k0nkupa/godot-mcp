@@ -56,13 +56,13 @@ Future project operations must stay inside approved `res://` roots and deny `.gi
 
 | Abuse case | Control |
 |---|---|
-| Unauthenticated loopback DAP client | DAP is used only after the authenticated owned runtime is ready; the recorded editor PID must own both distinct loopback debugger listeners before attachment |
-| Wrong-run attachment or listener replacement | Runtime handle, generation, editor PID, debug port, and DAP port are bound during prepare; ownership is rechecked before the closed-world client connects |
-| Arbitrary debugger execution | Only initialize, attach, disconnect, breakpoints, threads, stack/scopes/variables, pause, continue, next, and step-in are emitted; no launch, terminate, evaluate, set-variable, method call, or raw DAP passthrough exists |
+| Unauthenticated loopback DAP client | The addon stops Godot 4.7's native DAP server, holds its configured loopback port with an inert guard, and refuses runtime preparation unless the guard is active |
+| Wrong-run attachment or listener replacement | Runtime handle, generation, editor PID, debugger port, authenticated descriptor/hello, owned child PID, and unique editor debugger session are bound before debugger state exists |
+| Arbitrary debugger execution | A fixed internal adapter maps only disconnect, breakpoints, threads, stack/scopes/variables, pause, continue, next, and step-in; no raw socket, passthrough, launch, terminate, evaluate, set-variable, or method call exists |
 | Source or addon escape | Breakpoints require canonical project-local `.gd` paths; traversal, symlinks, non-scripts, and `res://addons/godot_mcp` are rejected after real-path containment checks |
-| Stale-token disclosure | Frame and variable IDs are never exposed; 256-bit opaque tokens bind run, generation, DAP generation, and stop sequence and are cleared on continue, step, reconnect, stop, crash, disconnect, and close |
+| Stale-token disclosure | Frame and variable IDs are never exposed; 256-bit opaque tokens bind run, generation, authenticated debugger generation, and stop sequence and are cleared on continue, step, reconnect, stop, crash, disconnect, and close |
 | Variable-value exposure or memory pressure | Values are returned only on explicit authorized reads, with 64-frame, 256-entry/page, 2,048-entry/session, and depth-eight bounds; watches traverse exact returned names and never evaluate expressions |
-| DAP framing or event abuse | CRLF-only one-MiB Content-Length frames, serialized allowlisted requests, correlation checks, bounded event queue, deadlines, and fail-closed disconnect on malformed, unknown, late, duplicate, or overflowing input |
+| Debugger event or capture abuse | Signed sequenced runtime commands, a 512-stop event cap, deadlines, 64-frame/256-page/2,048-entry/depth-eight bounds, valid UTF-8 truncation, and immediate release of engine backtraces before continue |
 | Profiling resource exhaustion | One job per runtime; 100 ms–30 s duration, interval 1–120 frames, 128 metrics, 2,048 retained samples, 4 MiB raw evidence, explicit cancellation, and bounded partial terminal evidence |
 | Performance evidence or audit leakage | Public engine monitors only; structured aggregates and optional bounded raw samples are returned to the caller, while audit retains operation/count/state/digest metadata and excludes samples, values, and profiler payloads |
 

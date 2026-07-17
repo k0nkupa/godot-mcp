@@ -1,257 +1,139 @@
 # Phase 7 Debugging and Performance Design
 
-**Status:** Approved
+**Status:** Approved, security amendment incorporated
 
 **Date:** 2026-07-17
 
 ## 1. Purpose
 
-Phase 7 adds native GDScript debugging and bounded performance capture to the existing MCP-owned runtime. It must produce structured evidence for breakpoints, deliberate errors, stacks, variables, safe watches, remote objects, CPU, GPU, memory, frames, monitors, and profiler captures while preserving the Phase 0–6 security boundary and cleanup guarantees.
+Phase 7 adds bounded GDScript debugging and performance evidence to the existing MCP-owned runtime. It supports breakpoints, stops, stacks, variables, selector watches, public performance monitors, and cancellable profiler captures without adding an MCP tool, permission tier, or capability pack.
 
-Phase 7 extends `godot_runtime`; it adds no MCP tool, permission tier, or capability pack. The default session still exposes exactly six observe-only tools. Debugging and performance operations are visible only when the session has both `runtime_control` and the `runtime` pack.
+The default session still exposes exactly six observe-only tools. Phase 7 operations remain available only through `godot_runtime` when both `runtime_control` and the `runtime` pack are granted.
 
-## 2. Architecture decision
+## 2. Security-amended architecture
 
-Phase 7 uses two public Godot interfaces behind the existing control plane:
+The initial design attached a TypeScript client to Godot's native loopback Debug Adapter Protocol server. Review rejected that architecture because Godot 4.7 accepts unrelated local DAP clients without authenticating them.
 
-1. A minimal Debug Adapter Protocol client attaches to the already-running, mutually authenticated MCP-owned runtime through the editor's loopback DAP server.
-2. The authenticated runtime harness samples public `Performance`, `RenderingServer`, and `RenderingDevice` data and implements cancellable profiling jobs.
+The approved implementation therefore has one debugger route:
 
-The control plane remains the sole authority. It validates every operation, owns the runtime process and DAP connection, applies deadlines and bounds, redacts audit records, and converges all terminal paths on idempotent cleanup.
+1. The addon disables Godot's native DAP server and retains its configured port with an inert loopback guard. A probe may connect to the guard, but it receives no protocol response and no debugger authority.
+2. Runtime preparation succeeds only when the addon confirms that the native DAP server is disabled and reports `debugTransport: "authenticated-editor-session"` with the editor PID and debugger port.
+3. The control plane proves the editor owns the loopback debugger listener, launches the fixed runtime harness, and waits for the existing one-use descriptor and signed hello exchange to authenticate the owned child PID and unique `EditorDebuggerSession`.
+4. Breakpoints and execution control use the bound `EditorDebuggerSession`. Stack and variable evidence is captured inside the authenticated runtime with `Engine.capture_script_backtraces(true)` and returned through the existing signed, sequenced, deadline-bound runtime command channel.
+5. Performance evidence uses the same authenticated runtime channel with public `Performance`, `EngineProfiler`, `RenderingServer`, and `RenderingDevice` APIs.
 
-The implementation must not depend on Godot's private debugger message formats or editor UI node internals. Those interfaces would couple Phase 7 to one engine build and undermine the Phase 11 compatibility matrix.
+The control plane remains the sole authority. It validates public inputs, owns runtime and debugger lifecycle, issues opaque stop-bound tokens, enforces bounds and deadlines, redacts audit records, and converges terminal paths on idempotent cleanup.
 
-## 3. Existing invariants retained
+Godot 4.7 does not expose a supported switch that disables the native DAP editor plugin. The addon invokes the native editor plugin's idempotent `NOTIFICATION_EXIT_TREE` stop path without freeing its node, then holds the configured loopback port so an editor-settings change cannot reopen it. This behavior is pinned to the certified Godot build and must be exercised by the Phase 11 compatibility matrix.
 
-- MCP transport remains stdio.
-- The editor bridge and Godot debug adapter bind only to `127.0.0.1`.
+## 3. Retained invariants
+
+- MCP remains on stdio; the bridge and runtime debugger bind only to `127.0.0.1`.
 - Loopback is containment, not authentication.
 - The runtime child is fixed, MCP-owned, environment-scrubbed, PID-fingerprinted, and mutually authenticated with a one-use descriptor.
-- Project identity, session ID, run UUID, generation, launch nonce, strict sequences, and deadlines remain bound end to end.
-- Only one MCP-owned runtime and one Phase 7 profiling job may be active per server.
-- Runtime stop, crash, editor disconnect, DAP disconnect, MCP shutdown, deadline expiry, and owner death use idempotent cleanup.
-- No operation may mutate the project checkout.
-- Audit records contain operation metadata, counts, durations, hashes, and terminal status, but no breakpoint source text, variable values, watch values, monitor samples, or raw profiler data.
+- Project identity, session ID, run UUID, generation, launch nonce, strict sequence, and deadline remain bound end to end.
+- Preparation refuses an already-active or ambiguous editor debugger session.
+- Only one runtime and one profiling job may be active per server.
+- No operation mutates the project checkout.
+- Stop, crash, editor disconnect, runtime transport loss, MCP shutdown, deadline expiry, and owner death converge on idempotent cleanup.
+- Audits contain metadata, counts, durations, hashes, and terminal status, not breakpoint source text, variable values, monitor samples, or profiler samples.
 
-## 4. DAP containment and ownership
+## 4. Closed debugger command surface
 
-The addon reports the editor's configured DAP port together with the existing debugger port and editor PID during `runtime.prepare`. The control plane accepts the port only when it is an integer in `1024..49151` and a read-only host check proves that the same recorded editor PID owns a listener on `127.0.0.1:<dapPort>`.
+The internal authenticated debugger client has the exact command set `disconnect`, `setBreakpoints`, `threads`, `stackTrace`, `scopes`, `variables`, `pause`, `continue`, `next`, and `stepIn`.
 
-The DAP client is created only after the existing runtime handshake has proven that the attached runtime PID equals the MCP-owned child PID. It performs `initialize`, then `attach` to the editor's current debugger session. It never sends DAP `launch`, `restart`, `terminate`, `setVariable`, `evaluate`, or Godot custom-message requests.
+These names are internal adapters, not a socket protocol or public passthrough. The addon maps them to a fixed implementation. There is no arbitrary debugger message, expression evaluation, method invocation, variable mutation, launch, restart, terminate, or custom request surface.
 
-The DAP connection is scoped to the active runtime handle. A run ID or generation change invalidates it. A DAP `terminated`, `exited`, or transport failure marks debugger state unavailable without transferring authority to another editor run. A new MCP-owned runtime must create a new DAP session.
+Execution control uses the bound editor debugger session. Stack capture immediately projects the `ScriptBacktrace` into bounded frame and variable snapshots and releases the backtrace before execution resumes. Retaining the engine backtrace across continue is forbidden because it can retire the editor debugger transport.
 
 ## 5. Runtime operation contract
 
-The following discriminated operations are added to `godot_runtime`.
-
 ### 5.1 Breakpoints
 
-`debug_breakpoints_set` replaces the complete Phase 7 breakpoint set for the active run.
+`debug_breakpoints_set` replaces the complete MCP-owned breakpoint set for the active run.
 
-Input:
+- Zero to 64 breakpoints across at most 16 source files.
+- Canonical project-local `res://` GDScript paths only.
+- No traversal, symlink escape, hidden path, or `res://addons/godot_mcp` target.
+- Lines are one-based integers in `1..1_000_000`.
+- All entries are validated before any breakpoint side effect.
+- Cleanup removes only MCP-owned breakpoints.
 
-- Active runtime handle.
-- Zero to 64 breakpoints.
-- Each breakpoint contains a canonical `res://` path ending in `.gd` and a one-based line in `1..1_000_000`.
-- At most 16 distinct source files.
+### 5.2 State and execution
 
-Rules:
+`debug_status` reports authenticated connection state, stopped state, stop sequence, and breakpoint count.
 
-- Paths must resolve inside the canonical project root, must not traverse, and must not target symlinks, hidden paths, or `res://addons/godot_mcp`.
-- The control plane groups breakpoints by source and uses DAP source-scoped replacement semantics.
-- The result reports the requested source/line, DAP verification state, resolved line when supplied, and a bounded diagnostic message.
-- Breakpoints are cleared during every cleanup path. User-created editor breakpoints are not adopted as MCP breakpoints.
+`debug_wait` waits up to 30 seconds for a stop newer than `afterSequence`. Results normalize to `breakpoint`, `exception`, `step`, `pause`, or `unknown`.
 
-### 5.2 Debug state and stop events
+`debug_pause`, `debug_continue`, `debug_step_over`, and `debug_step_into` control the script debugger. Continue and step require a stopped session; pause requires a running session. A step completes only after a newer stop event. Step-out is excluded.
 
-`debug_status` returns DAP connection state, whether the runtime is stopped in the script debugger, the last bounded stop event, and breakpoint count.
-
-`debug_wait` waits up to 30 seconds for a new stop event after an optional event sequence. Results distinguish `breakpoint`, `exception`, `step`, and `pause`. The result includes only bounded reason metadata; stacks and variables require separate operations.
-
-`debug_pause`, `debug_continue`, `debug_step_over`, and `debug_step_into` control the GDScript debugger. They are distinct from the existing SceneTree pause/resume/frame-step operations.
-
-- Continue and step require a stopped, debuggable DAP session.
-- Debug pause requires an attached running session.
-- A step completes only when the next matching stopped event is observed or the deadline expires.
-- Phase 7 does not promise step-out because Godot 4.7's public DAP implementation does not provide it.
+A stop that arrives before the execution-control response is preserved by sequence comparison; it must not be discarded as stale.
 
 ### 5.3 Stacks and variables
 
-`debug_stack` requires a stopped session and returns at most 64 frames. Every frame contains a Phase 7 opaque frame token, bounded function name, canonical project-local source path when available, and one-based line and column.
+`debug_stack` requires a stopped session and returns at most 64 frames. Addon frames are omitted from the MCP result. Each visible frame contains a 256-bit opaque token, bounded function name, canonical project-local source path when available, and line/column.
 
-Raw DAP frame IDs and variable references never cross the MCP boundary. The control plane maps them to opaque tokens bound to run ID, generation, stop-event sequence, and DAP connection generation. Tokens expire on continue, step, a new stop event, disconnect, or cleanup.
+At capture time, the runtime projects locals, members, and globals into a bounded snapshot, then releases the engine `ScriptBacktrace`. Secret-named variables are redacted. Object values are summaries only; child expansion is limited to arrays and dictionaries. Display values are capped at 4,096 valid UTF-8 bytes.
 
-`debug_variables` accepts an opaque frame token and one scope from `locals`, `members`, or `globals`. It returns at most 256 entries and supports bounded pagination. Each entry contains an opaque variable token, name, type, display value truncated to 4,096 UTF-8 bytes, child availability, and truncation metadata.
+`debug_variables` returns one `locals`, `members`, or `globals` page. `debug_children` expands one opaque variable token. Pages contain at most 256 entries; recursive client expansion is capped at depth eight and 2,048 entries per stop.
 
-`debug_children` accepts an opaque variable token and returns at most 256 immediate children. Recursive expansion is client-driven and capped at depth eight and 2,048 returned variables per stop event. Object fields are exposed through the same bounded child contract and satisfy the master design's remote-object evidence requirement.
+Frame and variable tokens bind run ID, runtime generation, authenticated debugger generation, and stop sequence. They expire on continue, step, a newer stop, reconnect, stop, crash, disconnect, or cleanup.
 
 ### 5.4 Safe watches
 
-`debug_watch` accepts one to 32 selectors. A selector contains:
+`debug_watch` accepts one to 32 selectors. Each selector chooses a scope and a path of one to eight exact variable names or nonnegative array indices.
 
-- An opaque frame token.
-- One scope: `locals`, `members`, or `globals`.
-- A path of one to eight exact variable names or nonnegative array indices.
+Resolution traverses only the bounded captured variable tree. It never evaluates an expression, calls a method or getter explicitly, or mutates a value. Results are `found`, `missing`, `truncated`, or `stale`.
 
-The control plane resolves selectors by traversing previously bounded DAP scopes and variables. It does not send DAP `evaluate`, execute getters explicitly, accept expressions, invoke methods, or mutate values. Results report `found`, `missing`, `truncated`, or `stale` with the final bounded variable representation.
+## 6. Performance contract
 
-## 6. Performance and profiler contract
+`monitor_snapshot` returns bounded public monitor groups, engine/renderer identity, monotonic frame/time identity, custom finite numeric monitors, and capability metadata. It accepts named groups only, not arbitrary monitor IDs or callables.
 
-### 6.1 Monitor snapshot
+`profile_start` creates one job with:
 
-`monitor_snapshot` returns one structured sample from the authenticated runtime harness.
+- duration `100..30000` milliseconds;
+- interval `1..120` rendered frames;
+- one to eight monitor groups;
+- optional bounded raw retention.
 
-The sample contains:
+The job retains at most 2,048 samples and 4 MiB of canonical evidence. `profile_status`, idempotent `profile_cancel`, and terminal-only `profile_result` use opaque run-bound job tokens.
 
-- Monotonic frame and time identity.
-- Engine version, renderer name, rendering method, and graphics API.
-- Public built-in `Performance` monitors grouped as frame/CPU, memory, objects, rendering/GPU, physics, audio, navigation, and pipeline compilations.
-- Public custom monitors with names capped at 128 bytes and numeric finite values only.
-- Capability metadata for GPU timestamps and unavailable monitors.
+Evidence contains timing/frame bounds, sample counts, min/max/mean/p50/p95/p99 aggregates, optional stable raw samples, engine/renderer identity, GPU timestamp capability, terminal metadata, and SHA-256 over the shared canonical JSON wire representation. Non-finite floats use the bridge's canonical tagged-float representation; malformed or reserved float-tag shapes are rejected.
 
-The request may select named groups but cannot supply arbitrary monitor IDs or callables. Unknown or nonnumeric custom monitors are reported as unavailable, not coerced.
+## 7. Backpressure and errors
 
-### 6.2 Cancellable profile jobs
+- Public runtime commands retain signed envelopes, strict sequences, and deadlines.
+- Debug waits retain at most 512 stop events and return only events newer than the caller sequence.
+- Captured frames, scopes, variables, selectors, text, and profile data have explicit bounds.
+- `STALE_HANDLE` covers old runtime, frame, variable, or job identity.
+- `CONFLICT` covers invalid debugger/profile state or an existing job.
+- `PRECONDITION_FAILED` covers running/stopped-state mismatches and unavailable evidence.
+- `INVALID_REQUEST` covers schema, path, selector, and pagination failures.
+- `TIMEOUT` covers waits, steps, and runtime commands exceeding deadlines.
+- `AUTHENTICATION_FAILED` covers missing authenticated debugger metadata, an active native DAP server, or ambiguous session binding.
+- `TRANSPORT_ERROR` covers loss of the authenticated bridge/debugger channel.
 
-`profile_start` creates one asynchronous job and returns an opaque job token. Input includes:
+Errors never include source contents, variable values, monitor samples, or raw profiler data.
 
-- Active runtime handle.
-- Duration from 100 milliseconds through 30 seconds.
-- Sampling interval from one through 120 rendered frames.
-- One to eight monitor groups.
-- Whether bounded raw samples are retained in addition to aggregates.
+## 8. Cleanup
 
-Only one job may exist at a time. A job retains at most 2,048 samples and 4 MiB of canonical structured data. If the requested cadence would exceed the sample cap, sampling continues at the requested cadence but raw retention is downsampled deterministically and the receipt reports observed and retained counts.
+Cleanup attempts every reachable action:
 
-`profile_status` reports `running`, `completed`, `cancelled`, or `failed`, progress, observed samples, retained samples, and terminal reason.
+1. Cancel/finalize an active profile job.
+2. Clear opaque debug tokens and pending waits.
+3. Remove MCP-owned breakpoints through the authenticated editor session.
+4. Close the internal debugger client.
+5. Run the existing runtime cleanup for harness state, process ownership, descriptor, lease, debugger binding, and evidence buffers.
+6. On addon exit, release the inert native-DAP port guard.
 
-`profile_cancel` is idempotent. It requests cancellation through the authenticated runtime command path, stops new sampling, finalizes bounded partial evidence, and returns the terminal receipt.
+Repeated cleanup is safe; failures are accumulated only after all actions are attempted.
 
-`profile_result` returns the terminal receipt and evidence. It refuses while the job is running.
+## 9. Certification
 
-### 6.3 Profile evidence
+`GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-7` runs 16 ordered stages covering protocol drift, build/lint/typecheck, focused protocol/runtime/debugger tests, disposable import, GDScript units, an inert-native-DAP probe, real authenticated breakpoint/stack/variable/watch/control integration, profiler integration, hostile inputs, published stdio E2E, serialized regressions, cleanup, and clean committed/working diffs.
 
-Profile evidence contains:
+After that gate passes, the Phase 0–1 and Phase 2–6 gates run as regressions. Autoreview must then exit clean before Phase 8 begins.
 
-- Start/end monotonic times and frames.
-- Requested duration and cadence.
-- Observed, retained, invalid, and dropped sample counts.
-- Minimum, maximum, arithmetic mean, p50, p95, and p99 for each continuously available numeric monitor.
-- Optional bounded raw samples with stable monitor ordering.
-- Engine, renderer, rendering method, graphics API, and viewport identity.
-- GPU timestamp support and timestamp deltas when the active `RenderingDevice` supports captured timestamps.
-- Cancellation or failure metadata and whether evidence is complete or partial.
-- A SHA-256 digest over canonical evidence.
+## 10. Explicit exclusions
 
-The harness registers a Phase 7 `EngineProfiler` implementation while a profile job is active. Its public `_tick` callback records frame, process, physics, and physics-frame timings into the same bounded sampler. This is profiler evidence; it does not claim access to Godot's private editor profiler history or native per-function profiler UI.
-
-## 7. State machines
-
-### 7.1 Debugger state
-
-`disconnected -> connecting -> attached -> stopped -> attached`
-
-Any state may transition to `failed` or `disconnected`. Only the active runtime handle may cause `connecting`. Cleanup always ends at `disconnected` and clears breakpoints, pending requests, stop events, and opaque token maps.
-
-### 7.2 Profile job state
-
-`idle -> running -> completed | cancelled | failed`
-
-Terminal jobs remain readable until a new job starts or the runtime is cleaned up. Starting a new job discards the prior in-memory evidence after its audit digest has been recorded. Cancellation and cleanup are idempotent.
-
-## 8. Deadlines, cancellation, and backpressure
-
-- Every DAP request has a maximum 10-second deadline; `debug_wait` has a caller-selected maximum of 30 seconds.
-- A single serialized DAP request queue prevents response misassociation.
-- Content-Length frames are capped at 1 MiB; malformed headers, duplicate lengths, oversized bodies, invalid JSON, unknown response IDs, or response type mismatches fail the DAP session closed.
-- DAP events are capped at 512 queued entries. Overflow fails the debugger connection rather than silently losing stop identity.
-- Runtime profile commands retain the existing signed sequence and deadline checks.
-- MCP cancellation of a pending wait cancels only that wait. Runtime stop, server close, DAP loss, or handle invalidation rejects all pending debugger work.
-- Profile cancellation remains available through `profile_cancel`; owner cleanup also cancels it automatically.
-
-## 9. Error mapping
-
-- `STALE_HANDLE`: runtime handle, frame token, variable token, or job token belongs to an older generation.
-- `CONFLICT`: debugger/profile state does not permit the requested operation or a job is already active.
-- `PRECONDITION_FAILED`: the runtime is not stopped, DAP is unavailable, a source is outside policy, or a result is requested before completion.
-- `INVALID_REQUEST`: schema, bound, path, selector, or pagination failure.
-- `TIMEOUT`: DAP request, debug wait, step completion, or profile command exceeds its deadline.
-- `GODOT_RUNTIME_ERROR`: authenticated runtime or public Godot API reports an operation failure.
-- `TRANSPORT_ERROR`: the verified editor-owned DAP connection fails or violates framing.
-
-Errors never include raw DAP frames, source contents, variable values, or profiler samples.
-
-## 10. Cleanup
-
-Cleanup performs the following actions in order where reachable:
-
-1. Cancel and finalize an active profile job.
-2. Reject pending debug waits and DAP requests.
-3. Clear MCP-owned breakpoints.
-4. Disconnect the DAP client without terminating or launching an editor runtime.
-5. Clear stop events and opaque token maps.
-6. Run the existing runtime cleanup for harness state, process ownership, descriptor, lease, debugger binding, and evidence buffers.
-
-Failures are accumulated and reported after all cleanup actions have been attempted. Repeated cleanup is safe.
-
-## 11. Test fixtures
-
-The disposable Godot 4.7 fixture gains a dedicated debug scene and scripts containing:
-
-- Two deterministic breakpoint sites.
-- Nested function calls producing a known stack.
-- Locals, members, globals, arrays, dictionaries, vectors, and one remote object with known values.
-- A deliberate debuggable error path.
-- Deterministic workload phases that change process time, object count, draw calls, memory, and custom monitors.
-- A long-running workload for cancellation and crash recovery.
-
-All editor, DAP, debugger, profiler, hostile-input, and E2E tests use disposable fixture copies and require zero source-fixture diff.
-
-## 12. Phase 7 certification gate
-
-`GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-7` must run ordered checks for:
-
-1. Generated protocol drift.
-2. Build, lint, and typecheck.
-3. Protocol and DAP framing unit tests.
-4. Runtime service state/token/job unit tests.
-5. Disposable fixture import.
-6. Godot debugger and profiler unit tests.
-7. Editor-owned DAP listener verification.
-8. Authenticated breakpoint, stack, variables, watches, remote-object, and execution-control integration.
-9. Monitor snapshot and completed/cancelled/failed profiler evidence integration.
-10. Deliberate error and recovery integration.
-11. Hostile DAP frames, stale tokens, invalid paths, bounds, deadlines, and authorization rejection.
-12. Crash, DAP loss, editor disconnect, runtime stop, and MCP shutdown cleanup.
-13. Published stdio E2E with the unchanged runtime tool count.
-14. Serialized full Vitest regression.
-15. Fixture, descriptor, lease, process, job, and project cleanup verification.
-16. `git diff --check` and committed/working-tree gate checks.
-
-After `qa:phase-7` passes, the Phase 0–1 and Phase 2–6 gates run as regressions. Autoreview then reviews the complete Phase 7 branch diff. Any accepted finding is fixed and the affected validation and review are rerun. Phase 8 starts only after the final autoreview exits clean.
-
-## 13. Documentation updates
-
-Phase 7 updates:
-
-- `docs/protocol/bridge-v1.md` with DAP containment, opaque debugger tokens, and profiling jobs.
-- `docs/security/threat-model.md` with DAP and runtime-data disclosure threats and mitigations.
-- `docs/testing/phase-7.md` with exact prerequisites, stages, bounds, and exclusions.
-- `README.md` with the Phase 7 capability surface and certification command.
-- `AGENTS.md` with the current Phase 7 plan and gate.
-
-## 14. Explicit exclusions
-
-Phase 7 does not add:
-
-- Arbitrary expression evaluation or watches.
-- DAP launch, restart, terminate, variable mutation, custom requests, or raw protocol passthrough.
-- Native debugger support for C#, GDExtension, or engine C++.
-- Private Godot editor profiler history or private debugger message parsing.
-- Project mutation, import/reimport, plugin state, project settings mutation, build, export, or artifact management.
-- Declarative playtest scenarios or screenshot-baseline comparison.
-- Unsafe fixture execution or extension SDK capabilities.
-- Windows, Linux, or Godot 4.4–4.6 certification.
-
-Those remain assigned to later phases in the master design.
+Phase 7 does not add expression evaluation, variable mutation, arbitrary debugger messages, raw DAP access, C#/GDExtension/native debugging, private editor-profiler history, project mutation, import/reimport, build/export, declarative scenarios, unsafe extension execution, or compatibility certification outside the Phase 11 matrix.

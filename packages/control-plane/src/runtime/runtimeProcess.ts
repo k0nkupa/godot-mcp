@@ -145,6 +145,9 @@ export class OwnedGodotProcess implements OwnedRuntimeProcess {
     };
     child.stdout?.on("data", append);
     child.stderr?.on("data", append);
+    child.once("exit", (code, signal) => {
+      append(`\n[godot runtime exited: ${signal ?? `code ${code ?? "unknown"}`}]\n`);
+    });
     return owned;
   }
 
