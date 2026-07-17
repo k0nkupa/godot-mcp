@@ -21,9 +21,10 @@ var dap_guard: TCPServer
 var dap_disabled := false
 
 func _enter_tree() -> void:
-	_disable_unauthenticated_dap_server()
-	if not dap_disabled:
-		call_deferred("_disable_unauthenticated_dap_server")
+	# Secure launches already prevent DAP from binding by sharing its port with
+	# the earlier authenticated debugger listener. Defer only the native plugin's
+	# idempotent shutdown until Godot has finished registering editor plugins.
+	call_deferred("_disable_unauthenticated_dap_server")
 	diagnostic_logger = DiagnosticLogger.new(ProjectSettings.globalize_path("res://"))
 	OS.add_logger(diagnostic_logger)
 	editor_query = EditorQuery.new(get_editor_interface(), diagnostic_logger)

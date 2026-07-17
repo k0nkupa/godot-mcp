@@ -135,7 +135,8 @@ export async function launchEditor(
   project: string,
   options: LaunchEditorOptions = {},
 ): Promise<EditorProcess> {
-  if (options.dapPort !== undefined && options.dapPort !== options.debugServerPort) {
+  const dapPort = options.dapPort ?? options.debugServerPort;
+  if (dapPort !== undefined && dapPort !== options.debugServerPort) {
     throw new Error("Secure editor launch requires DAP and authenticated debugger to share one port");
   }
   const godot = await findGodotBinary();
@@ -152,15 +153,15 @@ export async function launchEditor(
     ...(options.debugServerPort === undefined
       ? []
       : ["--debug-server", `tcp://127.0.0.1:${options.debugServerPort}`]),
-    ...(options.dapPort === undefined ? [] : ["--dap-port", String(options.dapPort)]),
+    ...(dapPort === undefined ? [] : ["--dap-port", String(dapPort)]),
     "--path",
     project,
     ...(options.scene ? [options.scene] : []),
-    ...((options.debugServerPort === undefined && options.dapPort === undefined) ? [] : [
+    ...((options.debugServerPort === undefined && dapPort === undefined) ? [] : [
       "--",
       ...(options.debugServerPort === undefined ? [] : [`--godot-mcp-debug-port=${options.debugServerPort}`]),
-      ...(options.dapPort === undefined ? [] : [`--godot-mcp-dap-port=${options.dapPort}`]),
-      ...(options.dapPort === undefined ? [] : ["--godot-mcp-secure-editor-launch=1"]),
+      ...(dapPort === undefined ? [] : [`--godot-mcp-dap-port=${dapPort}`]),
+      ...(dapPort === undefined ? [] : ["--godot-mcp-secure-editor-launch=1"]),
     ]),
   ], {
     env: process.env,
@@ -180,7 +181,7 @@ export async function launchEditor(
   return {
     pid: child.pid ?? -1,
     debugServerPort: options.debugServerPort ?? null,
-    dapPort: options.dapPort ?? null,
+    dapPort: dapPort ?? null,
     get output(): string {
       return output;
     },

@@ -34,7 +34,9 @@ test("launches, inspects, controls, and cleans one authenticated runtime", async
       const debugServerPort = await reserveLoopbackPort();
       editor = spawn(await findGodotBinary(), [
         "--headless", "--editor", "--debug-server", `tcp://127.0.0.1:${debugServerPort}`,
+        "--dap-port", String(debugServerPort),
         "--path", project.root, "--", `--godot-mcp-debug-port=${debugServerPort}`,
+        `--godot-mcp-dap-port=${debugServerPort}`, "--godot-mcp-secure-editor-launch=1",
       ], { env: process.env, stdio: ["ignore", "pipe", "pipe"] });
       editor.stdout?.on("data", (chunk: Buffer) => { editorOutput += chunk.toString(); });
       editor.stderr?.on("data", (chunk: Buffer) => { editorOutput += chunk.toString(); });
