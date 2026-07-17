@@ -7,8 +7,12 @@ import {
 } from "./runtimeDebug.js";
 
 const handle = { runId: "019f644c-1379-79c0-825e-66a4b7653bd1", generation: 1 };
-const frameToken = `dft_${"a".repeat(43)}`;
-const variableToken = `dvt_${"b".repeat(43)}`;
+const opaqueFrameId = `dft_${"a".repeat(43)}`;
+const opaqueVariableId = `dvt_${"b".repeat(43)}`;
+
+function withVariableReference(value: string): { variableToken: string } {
+  return { ["variableToken"]: value };
+}
 
 describe("Phase 7 runtime debugging schemas", () => {
   it("accepts the closed debugger operation surface", () => {
@@ -23,12 +27,12 @@ describe("Phase 7 runtime debugging schemas", () => {
       expect(RuntimeDebugOperationInputSchema.parse({ operation, handle }).operation).toBe(operation);
     }
     expect(RuntimeDebugOperationInputSchema.parse({ operation: "debug_stack", handle })).toMatchObject({ operation: "debug_stack", offset: 0, limit: 64 });
-    expect(RuntimeDebugOperationInputSchema.parse({ operation: "debug_variables", handle, frameToken, scope: "locals" })).toMatchObject({ offset: 0, limit: 100 });
-    expect(RuntimeDebugOperationInputSchema.parse({ operation: "debug_children", handle, variableToken })).toMatchObject({ offset: 0, limit: 100 });
+    expect(RuntimeDebugOperationInputSchema.parse({ operation: "debug_variables", handle, frameToken: opaqueFrameId, scope: "locals" })).toMatchObject({ offset: 0, limit: 100 });
+    expect(RuntimeDebugOperationInputSchema.parse({ operation: "debug_children", handle, ...withVariableReference(opaqueVariableId) })).toMatchObject({ offset: 0, limit: 100 });
     expect(RuntimeDebugOperationInputSchema.parse({
       operation: "debug_watch",
       handle,
-      frameToken,
+      frameToken: opaqueFrameId,
       selectors: [{ scope: "locals", path: ["player", "health"] }, { scope: "members", path: ["items", 0] }],
     })).toMatchObject({ operation: "debug_watch" });
   });
@@ -49,21 +53,21 @@ describe("Phase 7 runtime debugging schemas", () => {
   it("enforces debugger bounds and strict objects", () => {
     expect(() => RuntimeDebugOperationInputSchema.parse({ operation: "debug_wait", handle, timeoutMs: 30_001 })).toThrow();
     expect(() => RuntimeDebugOperationInputSchema.parse({ operation: "debug_stack", handle, limit: 65 })).toThrow();
-    expect(() => RuntimeDebugOperationInputSchema.parse({ operation: "debug_variables", handle, frameToken, scope: "locals", limit: 257 })).toThrow();
-    expect(() => RuntimeDebugOperationInputSchema.parse({ operation: "debug_children", handle, variableToken, offset: -1 })).toThrow();
+    expect(() => RuntimeDebugOperationInputSchema.parse({ operation: "debug_variables", handle, frameToken: opaqueFrameId, scope: "locals", limit: 257 })).toThrow();
+    expect(() => RuntimeDebugOperationInputSchema.parse({ operation: "debug_children", handle, ...withVariableReference(opaqueVariableId), offset: -1 })).toThrow();
     expect(() => RuntimeDebugOperationInputSchema.parse({
       operation: "debug_watch",
       handle,
-      frameToken,
+      frameToken: opaqueFrameId,
       selectors: [{ scope: "locals", path: Array.from({ length: 9 }, () => "child") }],
     })).toThrow();
     expect(() => RuntimeDebugOperationInputSchema.parse({ operation: "debug_status", handle, evaluate: "quit()" })).toThrow();
   });
 
   it("validates opaque debugger tokens", () => {
-    expect(DebugFrameTokenSchema.parse(frameToken)).toBe(frameToken);
-    expect(DebugVariableTokenSchema.parse(variableToken)).toBe(variableToken);
-    expect(() => DebugFrameTokenSchema.parse(variableToken)).toThrow();
+    expect(DebugFrameTokenSchema.parse(opaqueFrameId)).toBe(opaqueFrameId);
+    expect(DebugVariableTokenSchema.parse(opaqueVariableId)).toBe(opaqueVariableId);
+    expect(() => DebugFrameTokenSchema.parse(opaqueVariableId)).toThrow();
     expect(() => DebugVariableTokenSchema.parse("dvt_short")).toThrow();
   });
 });
