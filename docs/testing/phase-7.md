@@ -10,6 +10,7 @@ Phase 7 extends the existing runtime-authorized surface with native read-only GD
 - `debug_stack`, `debug_variables`, and `debug_children` return at most 64 frames, 256 entries per page, 2,048 entries per stop-bound token set, and depth eight.
 - `debug_watch` accepts at most 32 exact locals/members/globals selector paths of depth eight. It traverses returned variables and never evaluates expressions or invokes methods.
 - Frame and variable references are 256-bit opaque tokens bound to run ID, generation, authenticated debugger generation, and stop sequence. They become stale on continue, step, a new stop, reconnect, stop, crash, disconnect, or close.
+- Debugger display strings are UTF-8 bounded from a fixed-size character prefix, so enforcing the 4,096-byte wire cap never encodes an unbounded original value.
 
 Godot's unauthenticated native DAP server is disabled and its configured loopback port is held by an inert guard before runtime preparation succeeds. The debugger client is created only after the editor PID is proven to own the debugger listener and the owned runtime authenticates as the sole active editor debugger session. That binding is rechecked before every debugger operation. The fixed internal command set excludes launch, terminate, evaluate, variable mutation, method calls, sockets, and raw protocol passthrough.
 
@@ -17,6 +18,7 @@ Godot's unauthenticated native DAP server is disabled and its configured loopbac
 
 - `monitor_snapshot` returns finite public engine monitor groups, bounded unavailability details, engine metadata, and explicit GPU timestamp support state.
 - `profile_start`, `profile_status`, `profile_cancel`, and `profile_result` manage one job per runtime.
+- Active and terminal profile jobs remain bound to the owned runtime across ordinary game-scene transitions; runtime stop, exit, or explicit clear cancels and removes them.
 - A profile lasts 100 ms–30 seconds, samples every 1–120 frames, accepts at most eight unique groups, and retains at most 2,048 samples within a four MiB cap measured over the complete wire-encoded terminal evidence.
 - Requested built-in groups and EngineProfiler tick metrics take priority within the 128-metric sample cap. Custom monitors use the remaining capacity, and terminal evidence explicitly reports affected samples, dropped groups, and the maximum metrics dropped per sample.
 - Terminal evidence distinguishes complete, cancelled, and failed results; includes monotonic time/frame bounds, aggregates, optional bounded samples, engine/GPU metadata, and a canonical SHA-256.

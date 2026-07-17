@@ -7,6 +7,7 @@ const RuntimeControl = preload("res://addons/godot_mcp/runtime/runtime_control.g
 const SessionCrypto = preload("res://addons/godot_mcp/bridge/session_crypto.gd")
 const RuntimeQuery = preload("res://addons/godot_mcp/runtime/runtime_query.gd")
 const RuntimeDebugCapture = preload("res://addons/godot_mcp/runtime/runtime_debug_capture.gd")
+const RuntimeProfiler = preload("res://addons/godot_mcp/runtime/runtime_profiler.gd")
 
 func _init() -> void:
 	assert(RuntimeHarness.descriptor_argument(PackedStringArray(["--other=x", "--godot-mcp-runtime-descriptor=/tmp/godot-mcp/runtime-a.json"])) == "/tmp/godot-mcp/runtime-a.json")
@@ -76,6 +77,20 @@ func _init() -> void:
 	var bounded_node: Dictionary = RuntimeQuery.new(runtime_root, null).execute("node", {"nodePath": ".", "includeProperties": false, "includeSignals": false})
 	assert(bounded_node.ok and bounded_node.data.groups.size() == 32 and bounded_node.data.groupsTruncated)
 	assert(String(bounded_node.data.groups[0]).length() <= 128)
+	var transition_harness := RuntimeHarness.new()
+	var transition_scene := Node.new()
+	var transition_profiler := RuntimeProfiler.new()
+	transition_harness._game_scene = transition_scene
+	transition_harness._runtime_profiler = transition_profiler
+	var transition_profile := transition_profiler.start({"durationMs": 30000, "intervalFrames": 1, "groups": ["frame"], "retainRaw": false})
+	assert(transition_profile.ok)
+	transition_harness._invalidate_game_scene(transition_scene)
+	assert(transition_harness._runtime_profiler == transition_profiler)
+	assert(transition_profiler.status(String(transition_profile.data.jobToken)).ok)
+	transition_profiler.clear()
+	transition_harness._runtime_profiler = null
+	transition_harness.free()
+	transition_scene.free()
 	paused = true
 	var expired_step: Dictionary = await RuntimeControl.new(runtime_root, null, null).execute("step", {"frames": 1}, 1)
 	assert(expired_step.get("code") == "TIMEOUT")

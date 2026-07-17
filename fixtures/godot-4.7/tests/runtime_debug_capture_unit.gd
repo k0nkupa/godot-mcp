@@ -21,6 +21,9 @@ func _init() -> void:
 	assert(bounded.value.to_utf8_buffer().size() <= RuntimeDebugCapture.MAX_TEXT_BYTES)
 	assert(bounded.valueTruncated)
 	assert(not capture._variable("small", "complete").valueTruncated)
+	var huge_bounded: Dictionary = capture._bounded_text("x".repeat(1_000_000))
+	assert(huge_bounded.text.length() == RuntimeDebugCapture.MAX_TEXT_BYTES)
+	assert(huge_bounded.truncated)
 
 	var dictionary := {0: "numeric", "0": "string"}
 	var parent: Dictionary = capture._variable("container", dictionary)

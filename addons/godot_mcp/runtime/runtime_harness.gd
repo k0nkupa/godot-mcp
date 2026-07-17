@@ -161,8 +161,6 @@ func _bind_game_scene() -> void:
 		_runtime_capture = null
 		_runtime_debug_capture = null
 		_runtime_input = null
-		_clear_runtime_profiler()
-		_runtime_profiler = null
 		return
 	_query = RuntimeQuery.new(_game_scene, _logger)
 	var frame_clock := RuntimeFrameClock.new(_game_scene)
@@ -170,8 +168,8 @@ func _bind_game_scene() -> void:
 	_runtime_capture = RuntimeCapture.new(_game_scene, _control)
 	_runtime_debug_capture = RuntimeDebugCapture.new()
 	_runtime_input = RuntimeInput.new(_game_scene, frame_clock)
-	_clear_runtime_profiler()
-	_runtime_profiler = RuntimeProfiler.new()
+	if _runtime_profiler == null:
+		_runtime_profiler = RuntimeProfiler.new()
 	_game_scene.tree_exiting.connect(_invalidate_game_scene.bind(_game_scene), CONNECT_ONE_SHOT)
 
 func _invalidate_game_scene(scene: Node) -> void:
@@ -180,14 +178,12 @@ func _invalidate_game_scene(scene: Node) -> void:
 	_scene_revision += 1
 	_cancel_stale_commands()
 	_release_runtime_input("scene_invalidated")
-	_clear_runtime_profiler()
 	_game_scene = null
 	_query = null
 	_control = null
 	_runtime_capture = null
 	_runtime_debug_capture = null
 	_runtime_input = null
-	_runtime_profiler = null
 
 func _handle_command(command: Dictionary) -> void:
 	var request_id := String(command.get("requestId", ""))

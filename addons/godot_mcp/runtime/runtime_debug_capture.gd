@@ -160,6 +160,8 @@ func _unsupported_key_name(key: Variant) -> String:
 	return "<%s>" % type_string(typeof(key))
 
 func _display_value(value: Variant) -> String:
+	if typeof(value) == TYPE_STRING:
+		return value
 	if value is Object:
 		return "<%s#%d>" % [value.get_class(), value.get_instance_id()]
 	if typeof(value) == TYPE_ARRAY:
@@ -182,17 +184,20 @@ func _display_value(value: Variant) -> String:
 	return str(value)
 
 func _bounded_text(value: String) -> Dictionary:
-	if value.to_utf8_buffer().size() <= MAX_TEXT_BYTES:
+	# A Unicode scalar occupies at least one UTF-8 byte, so this prefix is enough
+	# to decide truncation without encoding an attacker-sized original string.
+	var prefix := value.left(MAX_TEXT_BYTES + 1)
+	if prefix.length() == value.length() and prefix.to_utf8_buffer().size() <= MAX_TEXT_BYTES:
 		return {"text": value, "truncated": false}
 	var low := 0
-	var high := value.length()
+	var high := mini(prefix.length(), MAX_TEXT_BYTES)
 	while low < high:
 		var middle := int((low + high + 1) / 2)
-		if value.left(middle).to_utf8_buffer().size() <= MAX_TEXT_BYTES:
+		if prefix.left(middle).to_utf8_buffer().size() <= MAX_TEXT_BYTES:
 			low = middle
 		else:
 			high = middle - 1
-	return {"text": value.left(low), "truncated": true}
+	return {"text": prefix.left(low), "truncated": true}
 
 func _clear_snapshot() -> void:
 	_frame_scopes.clear()
