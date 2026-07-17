@@ -41,7 +41,7 @@ func _setup_session(debugger_session_id: int) -> void:
 			clear()
 	)
 
-func prepare(descriptor: Dictionary, debug_port: int, editor_pid: int) -> Dictionary:
+func prepare(descriptor: Dictionary, debug_port: int, dap_port: int, editor_pid: int) -> Dictionary:
 	if _bound_session_id >= 0:
 		return _error("CONFLICT", "A runtime is already prepared or attached")
 	if not _prepared.is_empty():
@@ -56,11 +56,25 @@ func prepare(descriptor: Dictionary, debug_port: int, editor_pid: int) -> Dictio
 			return _error("INVALID_REQUEST", "Runtime preparation is missing required fields")
 	if typeof(descriptor.project) != TYPE_DICTIONARY or not descriptor.project.has("projectId"):
 		return _error("INVALID_REQUEST", "Runtime project identity is invalid")
-	_prepared = descriptor.duplicate(true)
-	if debug_port < 1 or debug_port > 65535:
-		clear()
+	if not debug_port_is_valid(debug_port):
 		return _error("GODOT_RUNTIME_ERROR", "Editor debugger port is invalid")
-	return {"ok": true, "data": {"debugPort": debug_port, "editorPid": editor_pid}}
+	if not dap_port_is_valid(dap_port):
+		return _error("GODOT_RUNTIME_ERROR", "Editor DAP port is invalid")
+	if not listener_ports_are_distinct(debug_port, dap_port):
+		return _error("CONFLICT", "Editor debugger and DAP ports must be distinct")
+	if editor_pid < 1:
+		return _error("GODOT_RUNTIME_ERROR", "Editor process identity is invalid")
+	_prepared = descriptor.duplicate(true)
+	return {"ok": true, "data": {"debugPort": debug_port, "dapPort": dap_port, "editorPid": editor_pid}}
+
+static func debug_port_is_valid(port: int) -> bool:
+	return port >= 1 and port <= 65535
+
+static func dap_port_is_valid(port: int) -> bool:
+	return port >= 1024 and port <= 49151
+
+static func listener_ports_are_distinct(debug_port: int, dap_port: int) -> bool:
+	return debug_port != dap_port
 
 func execute(command: Dictionary) -> Dictionary:
 	var operation := String(command.get("arguments", {}).get("operation", ""))

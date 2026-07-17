@@ -51,6 +51,7 @@ func _execute_command(command: Dictionary) -> Dictionary:
 		outcome = runtime_debugger.prepare(
 			command.arguments.get("descriptor", {}),
 			_runtime_debug_port(),
+			_runtime_dap_port(),
 			OS.get_process_id(),
 		)
 	elif String(command.method) in ["runtime.command", "runtime.capture"]:
@@ -99,6 +100,13 @@ func _runtime_debug_port() -> int:
 			if port >= 1 and port <= 65535:
 				return port
 	return int(get_editor_interface().get_editor_settings().get_setting("network/debug/remote_port"))
+
+func _runtime_dap_port() -> int:
+	for argument in OS.get_cmdline_user_args():
+		var value := String(argument)
+		if value.begins_with("--godot-mcp-dap-port="):
+			return int(value.trim_prefix("--godot-mcp-dap-port="))
+	return int(get_editor_interface().get_editor_settings().get_setting("network/debug_adapter/remote_port"))
 
 func _exit_tree() -> void:
 	if runtime_debugger != null:

@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   MonitorSnapshotSchema,
   ProfileEvidenceSchema,
+  ProfileJobReceiptSchema,
   ProfileJobTokenSchema,
+  ProfileResultSchema,
   RuntimePerformanceOperationInputSchema,
 } from "./runtimePerformance.js";
 
@@ -73,5 +75,38 @@ describe("Phase 7 runtime performance schemas", () => {
   it("validates opaque job tokens", () => {
     expect(ProfileJobTokenSchema.parse(jobToken)).toBe(jobToken);
     expect(() => ProfileJobTokenSchema.parse("pjt_short")).toThrow();
+  });
+
+  it("parses strict profile receipts and requires matching terminal state", () => {
+    expect(ProfileJobReceiptSchema.parse({
+      jobToken,
+      state: "completed",
+      progress: 1,
+      observedSamples: 1,
+      retainedSamples: 0,
+    })).toMatchObject({ state: "completed" });
+    const evidence = {
+      schemaVersion: 1 as const,
+      jobToken,
+      state: "completed" as const,
+      complete: true,
+      startedMonotonicUsec: 1,
+      finishedMonotonicUsec: 2,
+      startFrame: 1,
+      endFrame: 2,
+      requestedDurationMs: 100,
+      intervalFrames: 1,
+      observedSamples: 0,
+      retainedSamples: 0,
+      invalidSamples: 0,
+      droppedSamples: 0,
+      aggregates: {},
+      rawSamples: [],
+      engine: { version: "4.7", renderer: "headless", renderingMethod: "gl_compatibility", graphicsApi: "unavailable" },
+      gpuTimestamps: { supported: false as const },
+      sha256: "a".repeat(64),
+    };
+    expect(ProfileResultSchema.parse({ state: "completed", evidence })).toMatchObject({ state: "completed" });
+    expect(() => ProfileResultSchema.parse({ state: "cancelled", evidence })).toThrow();
   });
 });

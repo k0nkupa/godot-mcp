@@ -10,8 +10,9 @@ import type {
   RuntimeDebugOperationInput,
   RuntimeHandle,
   RuntimeOperationInput,
+  RuntimePerformanceOperationInput,
 } from "@godot-mcp/protocol";
-import { InputOperationResultSchema } from "@godot-mcp/protocol";
+import { InputOperationResultSchema, MonitorSnapshotSchema, ProfileJobReceiptSchema, ProfileResultSchema } from "@godot-mcp/protocol";
 
 import { GodotMcpException } from "../errors.js";
 import { resolveProjectPath } from "../project/pathPolicy.js";
@@ -106,6 +107,7 @@ export class RuntimeService {
   private dapGeneration = 0;
   private readonly debugTokens = new DebugTokenStore();
   private readonly breakpointSources = new Set<string>();
+  private profileJobToken: string | null = null;
 
   constructor(private readonly dependencies: RuntimeServiceDependencies) {}
 
@@ -235,6 +237,10 @@ export class RuntimeService {
         throw normalizeDebugError(error);
       }
     }
+    if (input.operation === "monitor_snapshot" || input.operation.startsWith("profile_")) {
+      this.assertHandle((input as RuntimePerformanceOperationInput).handle);
+      return this.executePerformance(input as RuntimePerformanceOperationInput);
+    }
     if (input.operation === "status") {
       if (input.handle) this.assertHandleIdentity(input.handle);
       if (!this.handle || !["running", "paused"].includes(this.state)) return this.snapshot();
@@ -268,6 +274,32 @@ export class RuntimeService {
     if (input.operation === "pause") this.state = "paused";
     if (input.operation === "resume") this.state = "running";
     return result;
+  }
+
+  private async executePerformance(input: RuntimePerformanceOperationInput): Promise<unknown> {
+    if (input.operation === "monitor_snapshot") {
+      return MonitorSnapshotSchema.parse(await this.dependencies.command(input.operation, { ...input }));
+    }
+    if (input.operation === "profile_start") {
+      const receipt = ProfileJobReceiptSchema.parse(await this.dependencies.command(input.operation, { ...input }));
+      this.profileJobToken = receipt.jobToken;
+      return receipt;
+    }
+    if (this.profileJobToken === null || input.jobToken !== this.profileJobToken) {
+      throw runtimeError("STALE_HANDLE", "Profile job token is stale or unknown");
+    }
+    if (input.operation === "profile_result") {
+      const result = ProfileResultSchema.parse(await this.dependencies.command(input.operation, { ...input }));
+      if (result.evidence.jobToken !== input.jobToken) {
+        throw runtimeError("STALE_HANDLE", "Profile evidence belongs to a different job");
+      }
+      return result;
+    }
+    const receipt = ProfileJobReceiptSchema.parse(await this.dependencies.command(input.operation, { ...input }));
+    if (receipt.jobToken !== input.jobToken) {
+      throw runtimeError("STALE_HANDLE", "Profile receipt belongs to a different job");
+    }
+    return receipt;
   }
 
   private async attachDap(port: number): Promise<void> {
@@ -641,6 +673,7 @@ export class RuntimeService {
   private async cleanup(): Promise<void> {
     if (this.cleanupPromise) return this.cleanupPromise;
     const activeCleanup = (async () => {
+      this.profileJobToken = null;
       let cleanupError: unknown;
       try {
         await this.cleanupDap();

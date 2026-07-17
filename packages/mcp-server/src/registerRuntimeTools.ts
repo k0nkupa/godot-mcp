@@ -59,7 +59,7 @@ const captureAnnotations = {
 export function registerRuntimeTools(server: McpServer, dependencies: RuntimeToolDependencies): void {
   server.registerTool("godot_runtime", {
     title: "Control ephemeral Godot runtime",
-    description: "Launch, inspect, wait, pause, step, resume, or stop one authenticated MCP-owned runtime.",
+    description: "Launch, inspect, debug, profile, control, or stop one authenticated MCP-owned runtime.",
     inputSchema: RuntimeOperationInputSchema,
     outputSchema: ToolResultSchema,
     annotations: runtimeAnnotations,
@@ -67,8 +67,10 @@ export function registerRuntimeTools(server: McpServer, dependencies: RuntimeToo
     if (input.operation === "launch") {
       return { data: await dependencies.runtime.launch({ scenePath: input.scenePath, startupTimeoutMs: input.startupTimeoutMs }) };
     }
-    return { data: await dependencies.runtime.execute(input) };
-  })));
+    const data = await dependencies.runtime.execute(input);
+    const audit = performanceAuditFacts(input, data);
+    return { data, ...(audit === undefined ? {} : { audit }) };
+  }, { auditArguments: runtimeAuditArguments(input) })));
 
   server.registerTool("godot_runtime_capture", {
     title: "Capture ephemeral Godot runtime",
@@ -109,4 +111,47 @@ export function registerRuntimeTools(server: McpServer, dependencies: RuntimeToo
     }
     return { data: { handle: input.handle, frames }, evidence, images };
   })));
+}
+
+function runtimeAuditArguments(input: RuntimeOperationInput): unknown {
+  if (input.operation === "monitor_snapshot") return { operation: input.operation, groupCount: input.groups.length };
+  if (input.operation === "profile_start") {
+    return {
+      operation: input.operation,
+      durationMs: input.durationMs,
+      intervalFrames: input.intervalFrames,
+      groupCount: input.groups.length,
+      retainRaw: input.retainRaw,
+    };
+  }
+  if (input.operation === "profile_status" || input.operation === "profile_cancel" || input.operation === "profile_result") {
+    return { operation: input.operation };
+  }
+  return input;
+}
+
+function performanceAuditFacts(input: RuntimeOperationInput, data: unknown) {
+  if (input.operation !== "monitor_snapshot" && !input.operation.startsWith("profile_")) return undefined;
+  const record = isRecord(data) ? data : {};
+  const evidence = isRecord(record.evidence) ? record.evidence : {};
+  const metadata = {
+    kind: "runtime_performance",
+    operation: input.operation,
+    ...(typeof record.state === "string" ? { state: record.state } : {}),
+    ...(typeof record.observedSamples === "number" ? { observedSamples: record.observedSamples } : {}),
+    ...(typeof record.retainedSamples === "number" ? { retainedSamples: record.retainedSamples } : {}),
+    ...(typeof evidence.sha256 === "string" ? { sha256: evidence.sha256 } : {}),
+    ...(input.operation === "monitor_snapshot" && isRecord(record.groups) ? { groupCount: Object.keys(record.groups).length } : {}),
+  };
+  return {
+    targetIdentities: [metadata],
+    preconditions: [],
+    idempotencyKeySha256: null,
+    partialEffects: false,
+    rollback: "not_needed" as const,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -22,6 +22,11 @@ const MonitorGroupsSchema = z
   .min(1)
   .max(9)
   .refine((groups) => new Set(groups).size === groups.length, { message: "Monitor groups must be unique" });
+const ProfileGroupsSchema = z
+  .array(MonitorGroupSchema)
+  .min(1)
+  .max(8)
+  .refine((groups) => new Set(groups).size === groups.length, { message: "Monitor groups must be unique" });
 
 const ProfileJobOperationSchema = <T extends "profile_status" | "profile_cancel" | "profile_result">(operation: T) =>
   z.object({ operation: z.literal(operation), handle: RuntimeHandleSchema, jobToken: ProfileJobTokenSchema }).strict();
@@ -40,7 +45,7 @@ export const RuntimePerformanceOperationInputSchema = z.discriminatedUnion("oper
       handle: RuntimeHandleSchema,
       durationMs: z.number().int().min(100).max(30_000),
       intervalFrames: z.number().int().min(1).max(120),
-      groups: MonitorGroupsSchema,
+      groups: ProfileGroupsSchema,
       retainRaw: z.boolean().default(false),
     })
     .strict(),
@@ -129,6 +134,25 @@ export const ProfileEvidenceSchema = z
     message: "Retained sample metadata must match included raw samples",
   });
 
+export const ProfileJobReceiptSchema = z
+  .object({
+    jobToken: ProfileJobTokenSchema,
+    state: z.enum(["running", "completed", "cancelled", "failed"]),
+    progress: z.number().finite().min(0).max(1),
+    observedSamples: z.number().int().min(0),
+    retainedSamples: z.number().int().min(0).max(2_048),
+    terminalReason: z.string().min(1).max(256).optional(),
+  })
+  .strict();
+
+export const ProfileResultSchema = z
+  .object({
+    state: z.enum(["completed", "cancelled", "failed"]),
+    evidence: ProfileEvidenceSchema,
+  })
+  .strict()
+  .refine((result) => result.state === result.evidence.state, { message: "Profile result state must match its evidence" });
+
 export const RUNTIME_PERFORMANCE_OPERATIONS = [
   "monitor_snapshot",
   "profile_start",
@@ -140,5 +164,7 @@ export const RUNTIME_PERFORMANCE_OPERATIONS = [
 export type MonitorGroup = z.infer<typeof MonitorGroupSchema>;
 export type MonitorSnapshot = z.infer<typeof MonitorSnapshotSchema>;
 export type ProfileEvidence = z.infer<typeof ProfileEvidenceSchema>;
+export type ProfileJobReceipt = z.infer<typeof ProfileJobReceiptSchema>;
+export type ProfileResult = z.infer<typeof ProfileResultSchema>;
 export type ProfileJobToken = z.infer<typeof ProfileJobTokenSchema>;
 export type RuntimePerformanceOperationInput = z.infer<typeof RuntimePerformanceOperationInputSchema>;

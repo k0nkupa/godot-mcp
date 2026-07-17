@@ -73,13 +73,17 @@ export {
   MonitorGroupSchema,
   MonitorSnapshotSchema,
   ProfileEvidenceSchema,
+  ProfileJobReceiptSchema,
   ProfileJobTokenSchema,
+  ProfileResultSchema,
   RUNTIME_PERFORMANCE_OPERATIONS,
   RuntimePerformanceOperationInputSchema,
   type MonitorGroup,
   type MonitorSnapshot,
   type ProfileEvidence,
+  type ProfileJobReceipt,
   type ProfileJobToken,
+  type ProfileResult,
   type RuntimePerformanceOperationInput,
 } from "./runtimePerformance.js";
 export {

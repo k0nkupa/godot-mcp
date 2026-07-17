@@ -31,7 +31,15 @@ async function fixture() {
   session.onAttached({ sessionId: "session_12345678", godotVersion: "4.7.stable.official.test", addonVersion: "0.1.0", addonManifestSha256: "b".repeat(64), attachedAt: "2026-07-16T00:00:00.000Z" });
   const runtime = {
     launch: async () => ({ handle, root: { pid: 42, scenePath: "res://runtime/runtime_fixture.tscn" } }),
-    execute: async (input: { operation: string }) => ({ operation: input.operation, state: "running" }),
+    execute: async (input: { operation: string }) => input.operation === "monitor_snapshot" ? ({
+      schemaVersion: 1,
+      frame: 1,
+      monotonicUsec: 2,
+      engine: { version: "4.7", renderer: "headless", renderingMethod: "gl_compatibility", graphicsApi: "unavailable" },
+      groups: { frame: { secret_sample_value: 987654321 } },
+      unavailable: [],
+      gpuTimestamps: { supported: false },
+    }) : ({ operation: input.operation, state: "running" }),
     capture: async (input: { frameCount: number }) => ({
       frames: Array.from({ length: input.frameCount }, (_, frameIndex) => ({
         data: png,
@@ -48,7 +56,7 @@ async function fixture() {
 }
 
 it("registers runtime tools only for the explicit runtime grants", async () => {
-  const { client } = await fixture();
+  const { auditPath, client } = await fixture();
   const tools = (await client.listTools()).tools;
   expect(tools.map((tool) => tool.name).sort()).toEqual([
     "godot_capabilities", "godot_capture", "godot_doctor", "godot_help", "godot_query", "godot_runtime", "godot_runtime_capture", "godot_session",
@@ -59,7 +67,12 @@ it("registers runtime tools only for the explicit runtime grants", async () => {
   const debug = await client.callTool({ name: "godot_runtime", arguments: { operation: "debug_status", handle } });
   expect(debug.structuredContent).toMatchObject({ ok: true, data: { operation: "debug_status" } });
   const monitor = await client.callTool({ name: "godot_runtime", arguments: { operation: "monitor_snapshot", handle, groups: ["frame"] } });
-  expect(monitor.structuredContent).toMatchObject({ ok: true, data: { operation: "monitor_snapshot" } });
+  expect(monitor.structuredContent).toMatchObject({ ok: true, data: { groups: { frame: { secret_sample_value: 987654321 } } } });
+  const audit = await readFile(auditPath, "utf8");
+  expect(audit).toContain('"operation":"monitor_snapshot"');
+  expect(audit).toContain('"groupCount":1');
+  expect(audit).not.toContain("secret_sample_value");
+  expect(audit).not.toContain("987654321");
 });
 
 it("returns ordered runtime images without putting bytes in structured or audit output", async () => {

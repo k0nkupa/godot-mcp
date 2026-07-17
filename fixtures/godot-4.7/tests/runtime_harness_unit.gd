@@ -17,6 +17,11 @@ func _init() -> void:
 	assert(RuntimeHarness.operation_is_allowed("monitor_snapshot"))
 	assert(RuntimeHarness.operation_is_allowed("profile_result"))
 	assert(not RuntimeHarness.operation_is_allowed("eval"))
+	assert(RuntimeDebugger.debug_port_is_valid(6007))
+	assert(RuntimeDebugger.dap_port_is_valid(6006))
+	assert(not RuntimeDebugger.dap_port_is_valid(80))
+	assert(RuntimeDebugger.listener_ports_are_distinct(6007, 6006))
+	assert(not RuntimeDebugger.listener_ports_are_distinct(6007, 6007))
 	var hello := {"runId": "run", "generation": 1, "projectId": "project", "sessionId": "session", "launchNonce": "nonce", "pid": 42, "proof": "client-proof"}
 	assert(RuntimeHarness.hello_signing_text(hello) == RuntimeDebugger.hello_signing_text(hello))
 	assert(RuntimeHarness.server_proof_signing_text(hello) == RuntimeDebugger.server_proof_signing_text(hello))

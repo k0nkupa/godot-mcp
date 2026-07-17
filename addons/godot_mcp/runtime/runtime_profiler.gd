@@ -315,14 +315,16 @@ func _status_receipt() -> Dictionary:
 		var endpoint := Time.get_ticks_usec() if String(_job.state) == "running" else int(_job.finishedMonotonicUsec)
 		elapsed = maxi(0, endpoint - int(_job.startedMonotonicUsec))
 	var duration_usec := maxi(1, int(_job.get("requestedDurationMs", 1)) * 1000)
-	return {
+	var receipt := {
 		"jobToken": String(_job.get("jobToken", "")),
 		"state": String(_job.get("state", "failed")),
 		"progress": clampf(float(elapsed) / float(duration_usec), 0.0, 1.0),
 		"observedSamples": int(_job.get("observedSamples", 0)),
 		"retainedSamples": _raw_samples.size() if bool(_job.get("retainRaw", false)) else 0,
-		"terminalReason": String(_job.get("terminalReason", "")),
 	}
+	if not String(_job.get("terminalReason", "")).is_empty():
+		receipt.terminalReason = String(_job.terminalReason)
+	return receipt
 
 func _flatten_values(groups: Dictionary) -> Dictionary:
 	var values: Dictionary = {}
