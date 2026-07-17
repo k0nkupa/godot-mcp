@@ -446,12 +446,12 @@ func _gpu_timestamps(start_index := -1) -> Dictionary:
 	for index in range(start + 1, start + count):
 		var current := device.get_captured_timestamp_gpu_time(index)
 		if current >= previous:
-			deltas.append(gpu_nanoseconds_to_microseconds(current - previous))
+			deltas.append(gpu_microseconds_delta(current - previous))
 		previous = current
 	return {"supported": true, "deltasUsec": deltas}
 
-static func gpu_nanoseconds_to_microseconds(nanoseconds: int) -> float:
-	return float(maxi(0, nanoseconds)) / 1000.0
+static func gpu_microseconds_delta(microseconds: int) -> float:
+	return float(maxi(0, microseconds))
 
 func _wire_size(value: Variant) -> int:
 	return CanonicalJson.encode(SessionCrypto._canonical_signing_params(value)).to_utf8_buffer().size()

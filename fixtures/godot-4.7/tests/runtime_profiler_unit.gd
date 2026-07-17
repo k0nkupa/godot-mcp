@@ -72,7 +72,7 @@ func _init() -> void:
 	assert(slots_a == slots_b)
 	assert(slots_a.max() < 2048)
 	assert(profiler.snapshot(["rendering"]).data.gpuTimestamps.has("supported"))
-	assert(RuntimeProfiler.gpu_nanoseconds_to_microseconds(1500) == 1.5)
+	assert(RuntimeProfiler.gpu_microseconds_delta(1500) == 1500.0)
 	Performance.remove_custom_monitor("Phase7/Stable")
 	profiler.clear()
 	profiler.clear()

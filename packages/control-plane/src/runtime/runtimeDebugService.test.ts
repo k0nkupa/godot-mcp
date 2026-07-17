@@ -23,6 +23,7 @@ class FakeDebuggerClient implements RuntimeDebuggerClient {
   variablePageSize = 0;
   variablePageTruncated = false;
   deepVariables = false;
+  typedWatchVariables = false;
   failBreakpointPath: string | null = null;
   terminalNotAttached = false;
 
@@ -63,9 +64,16 @@ class FakeDebuggerClient implements RuntimeDebuggerClient {
           truncated: this.variablePageTruncated,
         } };
       }
-      if (reference === 10) return { body: { variables: [{ name: "player", type: "Object", value: "Player:<Node#1>", variablesReference: 11 }], totalVariables: 256, truncated: true } };
+      if (reference === 10 && this.typedWatchVariables) return { body: { variables: [
+        { name: "container", selectorKind: "string", selectorValue: "container", type: "Dictionary", value: "Dictionary(size=2)", variablesReference: 12 },
+      ] } };
+      if (reference === 12 && this.typedWatchVariables) return { body: { variables: [
+        { name: "0", selectorKind: "string", selectorValue: "0", type: "String", value: "string-key", variablesReference: 0 },
+        { name: "0", selectorKind: "number", selectorValue: 0, type: "String", value: "numeric-key", variablesReference: 0 },
+      ] } };
+      if (reference === 10) return { body: { variables: [{ name: "player", selectorKind: "string", selectorValue: "player", type: "Object", value: "Player:<Node#1>", variablesReference: 11 }], totalVariables: 256, truncated: true } };
       if (this.deepVariables && reference >= 11) return { body: { variables: [{ name: "child", type: "Dictionary", value: "Dictionary(size=1)", variablesReference: reference + 1 }] } };
-      if (reference === 11) return { body: { variables: [{ name: "health", type: "int", value: "100", variablesReference: 0 }] } };
+      if (reference === 11) return { body: { variables: [{ name: "health", selectorKind: "string", selectorValue: "health", type: "int", value: "100", valueTruncated: true, variablesReference: 0 }] } };
       return { body: { variables: [] } };
     }
     if (command === "setBreakpoints") {
@@ -190,8 +198,8 @@ describe("Phase 7 RuntimeService debugging", () => {
       ...variableReference,
       offset: 0,
       limit: 100,
-    }) as { variables: Array<{ name: string; value: string }> };
-    expect(children.variables).toEqual([expect.objectContaining({ name: "health", value: "100" })]);
+    }) as { variables: Array<{ name: string; value: string; valueTruncated: boolean }> };
+    expect(children.variables).toEqual([expect.objectContaining({ name: "health", value: "100", valueTruncated: true })]);
     const watched = await service.execute({
       operation: "debug_watch",
       handle: launched.handle,
@@ -309,6 +317,22 @@ describe("Phase 7 RuntimeService debugging", () => {
       operation: "debug_watch", handle: launched.handle, ["frameToken"]: opaqueFrame,
       selectors: [{ scope: "locals", path: ["beyond_page"] }],
     })).resolves.toMatchObject({ watches: [{ status: "truncated" }] });
+  });
+
+  it("preserves selector segment types while resolving dictionary keys", async () => {
+    const { dap, launched, service } = await debugFixture();
+    dap.typedWatchVariables = true;
+    const stack = await service.execute({ operation: "debug_stack", handle: launched.handle, offset: 0, limit: 64 }) as { frames: Array<{ frameToken: string }> };
+    const watched = await service.execute({
+      operation: "debug_watch",
+      handle: launched.handle,
+      frameToken: stack.frames[0]!.frameToken,
+      selectors: [
+        { scope: "locals", path: ["container", 0] },
+        { scope: "locals", path: ["container", "0"] },
+      ],
+    }) as { watches: Array<{ variable: { value: string } }> };
+    expect(watched.watches.map((watch) => watch.variable.value)).toEqual(["numeric-key", "string-key"]);
   });
 
   it("retains hasChildren without issuing an unusable token at the maximum depth", async () => {

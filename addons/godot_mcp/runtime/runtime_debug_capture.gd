@@ -91,11 +91,16 @@ func children(reference: int, offset: int, limit: int) -> Dictionary:
 			if index >= finish:
 				break
 			if index >= start:
-				entries.append(_variable(String(key), value[key]))
+				if typeof(key) == TYPE_STRING:
+					entries.append(_variable(str(key), value[key], "string", key))
+				elif typeof(key) == TYPE_INT or typeof(key) == TYPE_FLOAT:
+					entries.append(_variable(str(key), value[key], "number", key))
+				else:
+					entries.append(_variable(str(key), value[key], "unsupported"))
 			index += 1
 	elif typeof(value) == TYPE_ARRAY:
 		for index in range(start, finish):
-			entries.append(_variable(str(index), value[index]))
+			entries.append(_variable(str(index), value[index], "number", index))
 	else:
 		return _error("PRECONDITION_FAILED", "Debugger variable has no safe children")
 	return {"ok": true, "data": {"body": {
@@ -117,21 +122,32 @@ func _page(entries: Array[Dictionary], offset: int, limit: int) -> Dictionary:
 		"truncated": entries.size() > bounded_total or finish < bounded_total,
 	}}}
 
-func _variable(name: String, value: Variant) -> Dictionary:
+func _variable(name: String, value: Variant, selector_kind := "string", selector_value: Variant = null) -> Dictionary:
 	var safe_name := name.left(128)
+	var selector_metadata := {"selectorKind": selector_kind}
+	if selector_kind == "string" or selector_kind == "number":
+		selector_metadata.selectorValue = safe_name if selector_value == null else selector_value
 	if VariantEncoder.is_secret_name(safe_name):
-		return {"name": safe_name, "type": type_string(typeof(value)), "value": "[redacted]", "variablesReference": 0}
+		return {
+			"name": safe_name,
+			"type": type_string(typeof(value)),
+			"value": "[redacted]",
+			"valueTruncated": false,
+			"variablesReference": 0,
+		}.merged(selector_metadata)
 	var reference := 0
 	if (typeof(value) == TYPE_ARRAY or typeof(value) == TYPE_DICTIONARY) and _references.size() < MAX_VARIABLES:
 		reference = _next_reference
 		_next_reference += 1
 		_references[reference] = value
+	var display := _bounded_text(_display_value(value))
 	return {
 		"name": safe_name,
 		"type": type_string(typeof(value)).left(128),
-		"value": _bounded_text(_display_value(value)),
+		"value": display.text,
+		"valueTruncated": display.truncated,
 		"variablesReference": reference,
-	}
+	}.merged(selector_metadata)
 
 func _display_value(value: Variant) -> String:
 	if value is Object:
@@ -140,11 +156,24 @@ func _display_value(value: Variant) -> String:
 		return "Array(size=%d)" % value.size()
 	if typeof(value) == TYPE_DICTIONARY:
 		return "Dictionary(size=%d)" % value.size()
+	if typeof(value) in [
+		TYPE_PACKED_BYTE_ARRAY,
+		TYPE_PACKED_INT32_ARRAY,
+		TYPE_PACKED_INT64_ARRAY,
+		TYPE_PACKED_FLOAT32_ARRAY,
+		TYPE_PACKED_FLOAT64_ARRAY,
+		TYPE_PACKED_STRING_ARRAY,
+		TYPE_PACKED_VECTOR2_ARRAY,
+		TYPE_PACKED_VECTOR3_ARRAY,
+		TYPE_PACKED_COLOR_ARRAY,
+		TYPE_PACKED_VECTOR4_ARRAY,
+	]:
+		return "%s(size=%d)" % [type_string(typeof(value)), value.size()]
 	return str(value)
 
-func _bounded_text(value: String) -> String:
+func _bounded_text(value: String) -> Dictionary:
 	if value.to_utf8_buffer().size() <= MAX_TEXT_BYTES:
-		return value
+		return {"text": value, "truncated": false}
 	var low := 0
 	var high := value.length()
 	while low < high:
@@ -153,7 +182,7 @@ func _bounded_text(value: String) -> String:
 			low = middle
 		else:
 			high = middle - 1
-	return value.left(low)
+	return {"text": value.left(low), "truncated": true}
 
 func _clear_snapshot() -> void:
 	_frame_scopes.clear()

@@ -86,7 +86,7 @@ try {
   });
   await withFixture("godot-mcp-phase-7-units-", async ({ project, environment }) => {
     await run("8/16 GDScript unit setup", process.execPath, ["packages/cli/dist/bin.js", "init", "--project", project], environment);
-    for (const unit of ["runtime_profiler_unit.gd", "runtime_harness_unit.gd"]) {
+    for (const unit of ["runtime_profiler_unit.gd", "runtime_debug_capture_unit.gd", "runtime_harness_unit.gd"]) {
       await run("8/16 runtime profiler and harness units", godot, ["--headless", "--path", project, "--script", `res://tests/${unit}`], environment);
     }
   });

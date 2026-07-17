@@ -611,7 +611,7 @@ export class RuntimeService {
       name: boundedText(raw.name, "<unnamed>", 128),
       type: boundedText(raw.type, "unknown", 128),
       value: value.text,
-      valueTruncated: value.truncated,
+      valueTruncated: raw.valueTruncated === true || value.truncated,
       hasChildren: childReference > 0,
       expandable: variableToken !== undefined,
       ...(variableToken === undefined ? {} : { variableToken }),
@@ -630,7 +630,12 @@ export class RuntimeService {
       const all = bodyArray(response, "variables");
       const bounded = all.slice(0, 256);
       this.debugTokens.consumeVariableEntries(bounded.length);
-      current = bounded.find((entry) => isRecord(entry) && String(entry.name) === String(segment));
+      current = bounded.find((entry) => {
+        if (!isRecord(entry)) return false;
+        const segmentKind = typeof segment;
+        if (entry.selectorKind === segmentKind) return entry.selectorValue === segment;
+        return entry.selectorKind === undefined && segmentKind === "string" && entry.name === segment;
+      });
       const body = isRecord(response.body) ? response.body : {};
       if (!current) return { selector, status: body.truncated === true || all.length > bounded.length ? "truncated" : "missing" };
       if (depthIndex === selector.path.length - 1) {
