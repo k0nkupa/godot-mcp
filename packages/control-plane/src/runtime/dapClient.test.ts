@@ -41,6 +41,15 @@ function response(request: Record<string, unknown>, body: Record<string, unknown
   };
 }
 
+async function waitFor(check: () => boolean, timeoutMs = 1_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() <= deadline) {
+    if (check()) return;
+    await new Promise<void>((resolve) => setTimeout(resolve, 1));
+  }
+  throw new Error("DAP state did not settle before the test deadline");
+}
+
 describe("closed-world Godot DAP client", () => {
   it("serializes requests and correlates responses", async () => {
     const received: string[] = [];
@@ -78,6 +87,7 @@ describe("closed-world Godot DAP client", () => {
     cleanups.push(() => client.close());
     await client.request("attach", { project: "/tmp/project" }, 1_000);
     await expect(client.nextStop(0, 1_000)).resolves.toMatchObject({ sequence: 1, reason: "breakpoint", body: { threadId: 1 } });
+    await waitFor(() => !client.snapshot().stopped);
     expect(client.snapshot()).toMatchObject({ connected: true, stopped: false, stopSequence: 1 });
   });
 
