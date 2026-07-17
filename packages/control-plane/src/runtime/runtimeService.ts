@@ -499,11 +499,11 @@ export class RuntimeService {
     try {
       for (const absolutePath of sources) {
         const entries = grouped.get(absolutePath) ?? [];
+        applied.push(absolutePath);
         const response = await debuggerClient.request("setBreakpoints", {
           source: { name: absolutePath.split(sep).at(-1), path: absolutePath },
           breakpoints: entries.map((entry) => ({ line: entry.line })),
         });
-        applied.push(absolutePath);
         const returned = bodyArray(response, "breakpoints");
         for (const [index, entry] of entries.entries()) {
           const raw = isRecord(returned[index]) ? returned[index] : {};
@@ -604,7 +604,7 @@ export class RuntimeService {
     const raw = isRecord(rawValue) ? rawValue : {};
     const childReference = Number.isInteger(raw.variablesReference) ? Number(raw.variablesReference) : 0;
     const value = truncateUtf8(typeof raw.value === "string" ? raw.value : String(raw.value ?? ""), 4_096);
-    const variableToken = childReference > 0 && depth <= 8
+    const variableToken = childReference > 0 && depth < 8
       ? this.debugTokens.issueVariable(childReference, depth)
       : undefined;
     return {
@@ -631,7 +631,8 @@ export class RuntimeService {
       const bounded = all.slice(0, 256);
       this.debugTokens.consumeVariableEntries(bounded.length);
       current = bounded.find((entry) => isRecord(entry) && String(entry.name) === String(segment));
-      if (!current) return { selector, status: all.length > bounded.length ? "truncated" : "missing" };
+      const body = isRecord(response.body) ? response.body : {};
+      if (!current) return { selector, status: body.truncated === true || all.length > bounded.length ? "truncated" : "missing" };
       if (depthIndex === selector.path.length - 1) {
         return { selector, status: "found", variable: this.formatVariable(current, depthIndex + 1) };
       }

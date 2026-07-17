@@ -21,6 +21,8 @@ class FakeDebuggerClient implements RuntimeDebuggerClient {
   stopSequence = 1;
   transientVariableFailures = 0;
   variablePageSize = 0;
+  variablePageTruncated = false;
+  deepVariables = false;
   failBreakpointPath: string | null = null;
   terminalNotAttached = false;
 
@@ -56,14 +58,19 @@ class FakeDebuggerClient implements RuntimeDebuggerClient {
       }
       const reference = Number(argumentsValue.variablesReference);
       if (this.variablePageSize > 0) {
-        return { body: { variables: Array.from({ length: this.variablePageSize }, (_, index) => ({ name: index === 0 ? "target" : `filler_${index}`, value: String(index), variablesReference: 0 })) } };
+        return { body: {
+          variables: Array.from({ length: this.variablePageSize }, (_, index) => ({ name: index === 0 ? "target" : `filler_${index}`, value: String(index), variablesReference: 0 })),
+          truncated: this.variablePageTruncated,
+        } };
       }
       if (reference === 10) return { body: { variables: [{ name: "player", type: "Object", value: "Player:<Node#1>", variablesReference: 11 }], totalVariables: 256, truncated: true } };
+      if (this.deepVariables && reference >= 11) return { body: { variables: [{ name: "child", type: "Dictionary", value: "Dictionary(size=1)", variablesReference: reference + 1 }] } };
       if (reference === 11) return { body: { variables: [{ name: "health", type: "int", value: "100", variablesReference: 0 }] } };
       return { body: { variables: [] } };
     }
     if (command === "setBreakpoints") {
       if (argumentsValue.source && (argumentsValue.source as { path?: string }).path === this.failBreakpointPath) {
+        this.failBreakpointPath = null;
         throw new DebuggerClientError("TRANSPORT_ERROR", "setBreakpoints failed");
       }
       const breakpoints = Array.isArray(argumentsValue.breakpoints) ? argumentsValue.breakpoints : [];
@@ -292,6 +299,35 @@ describe("Phase 7 RuntimeService debugging", () => {
     })).rejects.toThrow(/variable entry limit exceeded/i);
   });
 
+  it("reports a watch miss as truncated when the authenticated runtime omitted later entries", async () => {
+    const { dap, launched, service } = await debugFixture();
+    const stack = await service.execute({ operation: "debug_stack", handle: launched.handle, offset: 0, limit: 64 }) as { frames: Array<{ frameToken: string }> };
+    dap.variablePageSize = 256;
+    dap.variablePageTruncated = true;
+    await expect(service.execute({
+      operation: "debug_watch", handle: launched.handle, frameToken: stack.frames[0]!.frameToken,
+      selectors: [{ scope: "locals", path: ["beyond_page"] }],
+    })).resolves.toMatchObject({ watches: [{ status: "truncated" }] });
+  });
+
+  it("retains hasChildren without issuing an unusable token at the maximum depth", async () => {
+    const { dap, launched, service } = await debugFixture();
+    dap.deepVariables = true;
+    const stack = await service.execute({ operation: "debug_stack", handle: launched.handle, offset: 0, limit: 64 }) as { frames: Array<{ frameToken: string }> };
+    const locals = await service.execute({
+      operation: "debug_variables", handle: launched.handle, frameToken: stack.frames[0]!.frameToken,
+      scope: "locals", offset: 0, limit: 1,
+    }) as { variables: Array<{ variableToken?: string }> };
+    let variableToken = locals.variables[0]!.variableToken!;
+    let deepest: { variables: Array<{ variableToken?: string; hasChildren: boolean; expandable: boolean }> } | undefined;
+    for (let depth = 2; depth <= 8; depth += 1) {
+      deepest = await service.execute({ operation: "debug_children", handle: launched.handle, variableToken, offset: 0, limit: 1 }) as typeof deepest;
+      if (depth < 8) variableToken = deepest!.variables[0]!.variableToken!;
+    }
+    expect(deepest!.variables[0]).toMatchObject({ hasChildren: true, expandable: false });
+    expect(deepest!.variables[0]).not.toHaveProperty("variableToken");
+  });
+
   it("canonicalizes source breakpoints and clears them during cleanup", async () => {
     const { dap, launched, project, service } = await debugFixture();
     const result = await service.execute({
@@ -328,6 +364,10 @@ describe("Phase 7 RuntimeService debugging", () => {
       entry.command === "setBreakpoints"
       && (entry.arguments.source as { path?: string }).path === join(project.rootRealPath, "debug_fixture.gd"));
     expect(sourceOneCalls.at(-1)?.arguments.breakpoints).toEqual([{ line: 2 }]);
+    const sourceTwoCalls = dap.calls.filter((entry) =>
+      entry.command === "setBreakpoints"
+      && (entry.arguments.source as { path?: string }).path === join(project.rootRealPath, "debug_fixture_two.gd"));
+    expect(sourceTwoCalls.at(-1)?.arguments.breakpoints).toEqual([]);
     await expect(service.execute({ operation: "debug_status", handle: launched.handle })).resolves.toMatchObject({ breakpointCount: 1 });
   });
 
