@@ -19,6 +19,7 @@ var runtime_debugger: EditorDebuggerPlugin
 var editor_mutation: RefCounted
 var dap_guard: TCPServer
 var dap_disabled := false
+var _next_runtime_owner_check_ms := 0
 
 func _enter_tree() -> void:
 	# Secure launches already prevent DAP from binding by sharing its port with
@@ -97,6 +98,20 @@ func _deliver_command(command: Dictionary, outcome: Dictionary) -> void:
 
 func _on_command_failed(request_id: String, code: String, message: String, retryable: bool) -> void:
 	bridge.send_command_error(request_id, code, message, retryable)
+
+func _process(_delta: float) -> void:
+	if runtime_debugger == null:
+		return
+	var now_ms := int(Time.get_unix_time_from_system() * 1000.0)
+	if now_ms < _next_runtime_owner_check_ms:
+		return
+	_next_runtime_owner_check_ms = now_ms + 250
+	if not runtime_debugger.owner_lease_expired(now_ms):
+		return
+	push_error("Godot MCP owner lease expired; stopping the editor-owned runtime")
+	runtime_debugger.terminate_owned_runtime("owner_lease_expired")
+	if get_editor_interface().is_playing_scene():
+		get_editor_interface().stop_playing_scene()
 
 func _runtime_debug_port() -> int:
 	for argument in OS.get_cmdline_user_args():

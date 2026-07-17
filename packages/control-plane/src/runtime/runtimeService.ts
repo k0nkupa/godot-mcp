@@ -276,6 +276,9 @@ export class RuntimeService {
         throw runtimeError("AUTHENTICATION_FAILED", "Authenticated runtime omitted its debugger session identity");
       }
       this.debuggerSessionId = Number.isInteger(readySessionId) && readySessionId >= 0 ? readySessionId : null;
+      if (this.dependencies.requireAuthenticatedDebuggerMetadata) {
+        await this.dependencies.command("certify_owner_pid", { handle: this.handle, ownerPid: this.process.pid }, 5_000);
+      }
       await descriptor.consume?.();
       this.assertLaunchCurrent(epoch);
       if (this.processStopped) {

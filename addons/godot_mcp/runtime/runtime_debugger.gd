@@ -3,6 +3,7 @@ class_name GodotMcpRuntimeDebugger
 extends EditorDebuggerPlugin
 
 const SessionCrypto = preload("res://addons/godot_mcp/bridge/session_crypto.gd")
+const DescriptorReader = preload("res://addons/godot_mcp/bridge/descriptor_reader.gd")
 
 signal runtime_ready(info: Dictionary)
 signal runtime_stopped(info: Dictionary)
@@ -19,6 +20,7 @@ var _expected_stop_reason := "unknown"
 var _breakpoints: Dictionary = {}
 var _preexisting_breakpoints: Dictionary = {}
 var _debug_data_cleared_for_transition := false
+var _certified_owner_pid := 0
 
 const SCOPE_REFERENCE_BASE := 1000000
 
@@ -118,6 +120,8 @@ func prepare(descriptor: Dictionary, debug_port: int, editor_pid: int, dap_disab
 			return _error("INVALID_REQUEST", "Runtime preparation is missing required fields")
 	if typeof(descriptor.project) != TYPE_DICTIONARY or not descriptor.project.has("projectId"):
 		return _error("INVALID_REQUEST", "Runtime project identity is invalid")
+	if not owner_lease_path_is_allowed(String(descriptor.ownerLeasePath), DescriptorReader.runtime_directory()):
+		return _error("INVALID_REQUEST", "Runtime owner lease path is outside the private runtime directory")
 	if not debug_port_is_valid(debug_port):
 		return _error("GODOT_RUNTIME_ERROR", "Editor debugger port is invalid")
 	if editor_pid < 1:
@@ -129,6 +133,26 @@ func prepare(descriptor: Dictionary, debug_port: int, editor_pid: int, dap_disab
 
 static func debug_port_is_valid(port: int) -> bool:
 	return port >= 1 and port <= 65535
+
+func owner_lease_expired(now_unix_ms: int) -> bool:
+	if _bound_session_id < 0 or _prepared.is_empty() or _certified_owner_pid < 1:
+		return false
+	var path := String(_prepared.get("ownerLeasePath", ""))
+	return not owner_lease_path_is_allowed(path, DescriptorReader.runtime_directory()) or not owner_lease_is_fresh(FileAccess.get_modified_time(path), now_unix_ms)
+
+static func owner_lease_path_is_allowed(path: String, runtime_directory: String) -> bool:
+	if path.is_empty() or runtime_directory.is_empty() or not path.is_absolute_path():
+		return false
+	var normalized_path := path.simplify_path()
+	return normalized_path.get_base_dir() == runtime_directory.simplify_path() and normalized_path.get_file().begins_with("runtime-") and normalized_path.get_extension() == "lease"
+
+static func owner_lease_is_fresh(modified_unix_s: int, now_unix_ms: int) -> bool:
+	return modified_unix_s > 0 and now_unix_ms - modified_unix_s * 1000 <= 3999
+
+func terminate_owned_runtime(reason: String) -> bool:
+	var owner_pid := _certified_owner_pid
+	clear(reason)
+	return owner_pid > 0 and OS.kill(owner_pid) == OK
 
 static func binding_is_unambiguous(active_session_ids: Array, bound_session_id: int) -> bool:
 	return bound_session_id >= 0 and active_session_ids.size() == 1 and int(active_session_ids[0]) == bound_session_id
@@ -156,6 +180,12 @@ func execute(command: Dictionary) -> Dictionary:
 		return _error("NOT_ATTACHED", "No authenticated runtime is attached", true)
 	if not _matches_handle(command.get("arguments", {}).get("handle", {})):
 		return _error("STALE_HANDLE", "Runtime handle is stale")
+	if operation == "certify_owner_pid":
+		var owner_pid := int(command.get("arguments", {}).get("ownerPid", 0))
+		if owner_pid < 1 or owner_pid != int(_ready_info.get("pid", 0)):
+			return _error("AUTHENTICATION_FAILED", "Certified runtime PID does not match the authenticated child")
+		_certified_owner_pid = owner_pid
+		return {"ok": true, "data": {"certified": true}}
 	if operation == "debug_adapter":
 		return await _execute_debug_adapter(command, deadline)
 	return await _forward_runtime(command, operation, command.get("arguments", {}), deadline)
@@ -349,6 +379,7 @@ func clear(_reason := "requested") -> void:
 	_breakpoints.clear()
 	_preexisting_breakpoints.clear()
 	_debug_data_cleared_for_transition = false
+	_certified_owner_pid = 0
 
 func _accept_hello(payload: Dictionary, debugger_session_id: int) -> void:
 	if _prepared.is_empty() or _bound_session_id >= 0 or _now_ms() > int(_prepared.expiresAtUnixMs):

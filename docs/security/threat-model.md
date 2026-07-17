@@ -49,7 +49,7 @@ Future project operations must stay inside approved `res://` roots and deny `.gi
 | Scene or node escape | Bounded `res://` scene paths, relative node paths, traversal and subname rejection, no caller-selected host paths |
 | Enumeration or memory pressure | Node return and traversal queue capped at 1,000/depth 32; 128 properties/signals; 32 group names of 128 characters; 500 logs; 30-second waits; one-to-120-frame steps |
 | Capture pressure or byte confusion | One-to-eight sequential PNGs, bounded source readback, 2048×2048 and 8 MiB per frame, existing signed chunk limits, metadata/digest verification |
-| Runtime/editor/server crash | Owned child exit watcher, descriptor-bound owner heartbeat watchdog, harness lease removal, bounded startup pruning of expired/orphaned runtime files, and one idempotent cleanup path |
+| Runtime/editor/server crash | Owned child exit watcher, descriptor-bound owner heartbeat, control-plane PID certification, an editor-side lease watchdog that remains live during debugger stops, harness lease removal, bounded startup pruning of expired/orphaned runtime files, and one idempotent cleanup path |
 | Secret or image leakage | Descriptor paths and secrets excluded from receipts; structured/audit output contains metadata/opaque URIs, not PNG base64 |
 
 ### Phase 7 debugging and profiling controls

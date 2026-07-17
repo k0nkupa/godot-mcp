@@ -18,7 +18,7 @@ The approved implementation therefore has one debugger route:
 
 1. The certified `godot-mcp editor` launcher assigns Godot's authenticated editor debugger and native DAP server one loopback port. Godot initializes the debugger listener first, so DAP never binds; a DAP initialize probe is rejected by the non-DAP debugger transport.
 2. Runtime preparation succeeds only when the addon confirms that the native DAP server is disabled and reports `debugTransport: "authenticated-editor-session"` with the editor PID and debugger port.
-3. The control plane proves the editor owns the loopback debugger listener, launches the fixed runtime harness, and waits for the existing one-use descriptor and signed hello exchange to authenticate the owned child PID and unique `EditorDebuggerSession`.
+3. The control plane proves the editor owns the loopback debugger listener, launches the fixed runtime harness, and waits for the existing one-use descriptor and signed hello exchange to authenticate the owned child PID and unique `EditorDebuggerSession`. It then certifies the independently verified child PID back to the editor so an editor-side lease watchdog can terminate that exact child even while the game main thread is stopped in the debugger.
 4. Breakpoints and execution control use the bound `EditorDebuggerSession`. Stack and variable evidence is captured inside the authenticated runtime with `Engine.capture_script_backtraces(true)` and returned through the existing signed, sequenced, deadline-bound runtime command channel.
 5. Performance evidence uses the same authenticated runtime channel with public `Performance`, `EngineProfiler`, `RenderingServer`, and `RenderingDevice` APIs.
 
@@ -74,9 +74,9 @@ A stop that arrives before the execution-control response is preserved by sequen
 
 `debug_stack` requires a stopped session and returns at most 64 frames. Addon frames are omitted from the MCP result. Each visible frame contains a 256-bit opaque token, bounded function name, canonical project-local source path when available, and line/column.
 
-At capture time, the runtime projects locals, members, and globals into a bounded snapshot, then releases the engine `ScriptBacktrace`. Secret-named variables are redacted. Object values are summaries only; child expansion is limited to arrays and dictionaries. Display values are capped at 4,096 valid UTF-8 bytes.
+At capture time, the runtime projects locals, members, and globals into a bounded snapshot, records whether each scope was clipped, then releases the engine `ScriptBacktrace`. Secret-named variables are redacted. Object values are summaries only; child expansion is limited to arrays and dictionaries. Display values are capped at 4,096 valid UTF-8 bytes.
 
-`debug_variables` returns one `locals`, `members`, or `globals` page. `debug_children` expands one opaque variable token. Pages contain at most 256 entries; recursive client expansion is capped at depth eight and 2,048 entries per stop.
+`debug_variables` returns one `locals`, `members`, or `globals` page. `debug_children` expands one opaque variable token. Pages contain at most 256 entries; recursive client expansion is capped at depth eight and 2,048 entries per stop. Scope clipping remains explicit so a full retained page still reports `truncated` when additional variables were omitted.
 
 Frame and variable tokens bind run ID, runtime generation, authenticated debugger generation, and stop sequence. They expire on continue, step, a newer stop, reconnect, stop, crash, disconnect, or cleanup.
 

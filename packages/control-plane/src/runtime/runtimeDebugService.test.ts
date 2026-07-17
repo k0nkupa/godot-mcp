@@ -178,6 +178,8 @@ describe("Phase 7 RuntimeService debugging", () => {
     const { calls, dap, service, verifiedPorts } = await debugFixture();
     expect(verifiedPorts).toEqual([6007]);
     expect(calls).toContain("await_ready");
+    expect(calls).toContain("certify_owner_pid");
+    expect(calls.indexOf("await_ready")).toBeLessThan(calls.indexOf("certify_owner_pid"));
     expect(dap.calls.map((entry) => entry.command)).not.toContain("attach");
     await service.close();
     expect(calls).toContain("runtime.cleanup");

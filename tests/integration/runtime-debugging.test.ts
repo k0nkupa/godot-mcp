@@ -83,6 +83,20 @@ test("uses only the authenticated Godot debugger channel for breakpoints and bou
   }
 }, 60_000);
 
+test("stops an owned runtime when its owner dies while the debugger is paused", async () => {
+  const fixture = await createPhase7RuntimeFixture();
+  try {
+    const launched = await fixture.runtime.launch({ scenePath: "res://debug/debug_fixture.tscn", startupTimeoutMs: 15_000 });
+    await fixture.runtime.execute({ operation: "debug_pause", handle: launched.handle });
+    expect(fixture.runtimeAlive()).toBe(true);
+    await fixture.expireOwnerLease();
+    await waitUntil(() => !fixture.runtimeAlive(), 8_000);
+    expect(fixture.runtimeAlive(), fixture.diagnostics()).toBe(false);
+  } finally {
+    await fixture.close();
+  }
+}, 60_000);
+
 async function expectNativeDapToBeInert(port: number): Promise<void> {
   const socket = connect({ host: "127.0.0.1", port });
   await new Promise<void>((resolve, reject) => {
@@ -99,4 +113,9 @@ async function expectNativeDapToBeInert(port: number): Promise<void> {
   });
   socket.destroy();
   expect(producedProtocolData).toBe(false);
+}
+
+async function waitUntil(predicate: () => boolean, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
 }

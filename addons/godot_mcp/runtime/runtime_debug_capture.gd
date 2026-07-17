@@ -9,6 +9,7 @@ const MAX_TEXT_BYTES := 4096
 var _frame_scopes: Array[Dictionary] = []
 var _frames: Array[Dictionary] = []
 var _globals: Array[Dictionary] = []
+var _globals_truncated := false
 var _references: Dictionary = {}
 var _next_reference := 1
 
@@ -33,21 +34,28 @@ func stack(offset: int, limit: int) -> Dictionary:
 			break
 		var locals: Array[Dictionary] = []
 		var members: Array[Dictionary] = []
-		var local_count := mini(backtrace.get_local_variable_count(source_frame_index), mini(256, MAX_VARIABLES - captured_variables))
+		var source_local_count := backtrace.get_local_variable_count(source_frame_index)
+		var local_count := mini(source_local_count, mini(256, MAX_VARIABLES - captured_variables))
 		for variable_index in local_count:
 			locals.append(_variable(
 				backtrace.get_local_variable_name(source_frame_index, variable_index),
 				backtrace.get_local_variable_value(source_frame_index, variable_index),
 			))
 		captured_variables += local_count
-		var member_count := mini(backtrace.get_member_variable_count(source_frame_index), mini(256, MAX_VARIABLES - captured_variables))
+		var source_member_count := backtrace.get_member_variable_count(source_frame_index)
+		var member_count := mini(source_member_count, mini(256, MAX_VARIABLES - captured_variables))
 		for variable_index in member_count:
 			members.append(_variable(
 				backtrace.get_member_variable_name(source_frame_index, variable_index),
 				backtrace.get_member_variable_value(source_frame_index, variable_index),
 			))
 		captured_variables += member_count
-		_frame_scopes.append({"locals": locals, "members": members})
+		_frame_scopes.append({
+			"locals": locals,
+			"members": members,
+			"localsTruncated": source_local_count > local_count,
+			"membersTruncated": source_member_count > member_count,
+		})
 		_frames.append({
 			"id": frame_index,
 			"name": backtrace.get_frame_function(source_frame_index),
@@ -55,7 +63,9 @@ func stack(offset: int, limit: int) -> Dictionary:
 			"line": backtrace.get_frame_line(source_frame_index),
 			"column": 0,
 		})
-	var global_count := mini(backtrace.get_global_variable_count(), mini(256, MAX_VARIABLES - captured_variables))
+	var source_global_count := backtrace.get_global_variable_count()
+	var global_count := mini(source_global_count, mini(256, MAX_VARIABLES - captured_variables))
+	_globals_truncated = source_global_count > global_count
 	for variable_index in global_count:
 		_globals.append(_variable(
 			backtrace.get_global_variable_name(variable_index),
@@ -72,14 +82,21 @@ func _stack_page(offset: int, limit: int) -> Dictionary:
 func variables(frame_index: int, scope: String, offset: int, limit: int) -> Dictionary:
 	if frame_index < 0 or frame_index >= _frame_scopes.size():
 		return _error("STALE_HANDLE", "Debugger frame is stale or unavailable")
-	var entries: Array[Dictionary]
+	var entries: Array[Dictionary] = []
+	var capture_truncated := false
 	match scope:
-		"locals": entries = _frame_scopes[frame_index].locals
-		"members": entries = _frame_scopes[frame_index].members
-		"globals": entries = _globals
+		"locals":
+			entries.assign(_frame_scopes[frame_index].locals)
+			capture_truncated = bool(_frame_scopes[frame_index].get("localsTruncated", false))
+		"members":
+			entries.assign(_frame_scopes[frame_index].members)
+			capture_truncated = bool(_frame_scopes[frame_index].get("membersTruncated", false))
+		"globals":
+			entries.assign(_globals)
+			capture_truncated = _globals_truncated
 		_:
 			return _error("INVALID_REQUEST", "Debugger scope is invalid")
-	return _page(entries, offset, limit)
+	return _page(entries, offset, limit, capture_truncated)
 
 func children(reference: int, offset: int, limit: int) -> Dictionary:
 	if not _references.has(reference):
@@ -117,14 +134,14 @@ func children(reference: int, offset: int, limit: int) -> Dictionary:
 func clear() -> void:
 	_clear_snapshot()
 
-func _page(entries: Array[Dictionary], offset: int, limit: int) -> Dictionary:
+func _page(entries: Array[Dictionary], offset: int, limit: int, capture_truncated := false) -> Dictionary:
 	var bounded_total := mini(entries.size(), MAX_VARIABLES)
 	var start := clampi(offset, 0, bounded_total)
 	var finish := mini(start + clampi(limit, 1, 256), bounded_total)
 	return {"ok": true, "data": {"body": {
 		"variables": entries.slice(start, finish),
 		"totalVariables": bounded_total,
-		"truncated": entries.size() > bounded_total or finish < bounded_total,
+		"truncated": capture_truncated or entries.size() > bounded_total or finish < bounded_total,
 	}}}
 
 func _variable(name: String, value: Variant, selector_kind := "string", selector_value: Variant = null) -> Dictionary:
@@ -228,6 +245,7 @@ func _clear_snapshot() -> void:
 	_frame_scopes.clear()
 	_frames.clear()
 	_globals.clear()
+	_globals_truncated = false
 	_references.clear()
 	_next_reference = 1
 

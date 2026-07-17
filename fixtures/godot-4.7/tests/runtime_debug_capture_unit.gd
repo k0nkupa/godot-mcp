@@ -75,5 +75,18 @@ func _init() -> void:
 	var cached_stack: Dictionary = capture.stack(0, 64)
 	assert(cached_stack.ok and cached_stack.data.body.stackFrames[0].name == "cached")
 	assert(capture._references.has(77) and capture._references[77] == ["stable"])
+	capture._frame_scopes = [{
+		"locals": [capture._variable("kept", 1)],
+		"members": [],
+		"localsTruncated": true,
+		"membersTruncated": false,
+	}]
+	capture._globals = [capture._variable("global", 1)]
+	capture._globals_truncated = true
+	var clipped_locals: Dictionary = capture.variables(0, "locals", 0, 256)
+	assert(clipped_locals.ok and clipped_locals.data.body.variables.size() == 1)
+	assert(clipped_locals.data.body.truncated)
+	var clipped_globals: Dictionary = capture.variables(0, "globals", 0, 256)
+	assert(clipped_globals.ok and clipped_globals.data.body.truncated)
 	print("PHASE7_DEBUG_CAPTURE_UNIT_OK")
 	quit(0)

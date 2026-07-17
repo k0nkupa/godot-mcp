@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 import { startBridgeServer } from "@godot-mcp/bridge-client";
@@ -24,6 +24,8 @@ export interface Phase7RuntimeFixture {
   dapPort: number;
   runtime: RuntimeService;
   editor: EditorProcess;
+  expireOwnerLease(): Promise<void>;
+  runtimeAlive(): boolean;
   diagnostics(): string;
   close(): Promise<void>;
 }
@@ -38,6 +40,7 @@ export async function createPhase7RuntimeFixture(): Promise<Phase7RuntimeFixture
   let runtimePid: number | undefined;
   let runtimeDiagnostics: (() => string) | undefined;
   let bridge: Awaited<ReturnType<typeof startBridgeServer>> | undefined;
+  let ownerLeasePath: string | undefined;
   try {
     const imported = await runGodot(["--headless", "--editor", "--path", project.root, "--import"]);
     if (imported.exitCode !== 0) throw new Error(`Fixture import failed: ${imported.stderr}`);
@@ -61,8 +64,13 @@ export async function createPhase7RuntimeFixture(): Promise<Phase7RuntimeFixture
     runtime = new RuntimeService({
       project: identity,
       sessionId: () => session.sessionId,
+      requireAuthenticatedDebuggerMetadata: true,
       godotBin: await findGodotBinary(),
-      createDescriptor: createRuntimeDescriptor,
+      createDescriptor: async (input) => {
+        const material = await createRuntimeDescriptor(input);
+        ownerLeasePath = material.descriptor.ownerLeasePath;
+        return material;
+      },
       launchProcess: async (input) => {
         const owned = await OwnedGodotProcess.launch(input);
         runtimePid = owned.pid;
@@ -105,6 +113,11 @@ export async function createPhase7RuntimeFixture(): Promise<Phase7RuntimeFixture
       dapPort,
       runtime,
       editor,
+      async expireOwnerLease(): Promise<void> {
+        if (!ownerLeasePath) throw new Error("Runtime owner lease is unavailable");
+        await rm(ownerLeasePath, { force: true });
+      },
+      runtimeAlive: () => processExists(runtimePid),
       diagnostics: () => `Bridge: ${bridgeState}\nEditor (${processExists(editor?.pid) ? "alive" : "exited"}):\n${editor?.output ?? ""}\nRuntime (${processExists(runtimePid) ? "alive" : "exited"}):\n${runtimeDiagnostics?.() ?? runtimeOutput}`,
       close(): Promise<void> {
         closePromise ??= (async () => {
