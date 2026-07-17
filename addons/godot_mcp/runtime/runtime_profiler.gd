@@ -152,6 +152,9 @@ func start(input: Dictionary) -> Dictionary:
 		"observedSamples": 0,
 		"invalidSamples": 0,
 		"droppedSamples": 0,
+		"metricTruncationAffectedSamples": 0,
+		"metricTruncationMaxDropped": 0,
+		"metricTruncationGroups": {},
 		"terminalReason": "",
 	}
 	_register_engine_profiler()
@@ -178,11 +181,13 @@ func _sample_frame(force: bool) -> void:
 		_capture_profile_gpu_marker("end", sample_id)
 		_finalize("failed", false, String(sampled.get("message", "Profile sampling failed")))
 		return
-	var values := _flatten_values(sampled.data.groups)
-	for key: String in _tick_values.keys():
-		if values.size() >= MAX_METRICS:
-			break
-		values[key] = float(_tick_values[key])
+	var flattened := _flatten_values(sampled.data.groups, _tick_values)
+	var values: Dictionary = flattened.values
+	if bool(flattened.truncated):
+		_job.metricTruncationAffectedSamples = int(_job.metricTruncationAffectedSamples) + 1
+		_job.metricTruncationMaxDropped = maxi(int(_job.metricTruncationMaxDropped), int(flattened.droppedMetricCount))
+		for group: String in flattened.droppedGroups:
+			_job.metricTruncationGroups[group] = true
 	_job.observedSamples = int(_job.observedSamples) + 1
 	if values.is_empty():
 		_job.invalidSamples = int(_job.invalidSamples) + 1
@@ -321,6 +326,12 @@ func _finalize(state: String, complete: bool, reason: String) -> void:
 		"retainedSamples": _raw_samples.size() if bool(_job.retainRaw) else 0,
 		"invalidSamples": int(_job.invalidSamples),
 		"droppedSamples": int(_job.droppedSamples),
+		"metricTruncation": {
+			"truncated": int(_job.metricTruncationAffectedSamples) > 0,
+			"affectedSamples": int(_job.metricTruncationAffectedSamples),
+			"maxDroppedMetricsPerSample": int(_job.metricTruncationMaxDropped),
+			"droppedGroups": _sorted_string_keys(_job.metricTruncationGroups),
+		},
 		"aggregates": aggregates,
 		"rawSamples": _raw_samples.duplicate(true) if bool(_job.retainRaw) else [],
 		"engine": _engine_metadata(),
@@ -360,10 +371,13 @@ func _status_receipt() -> Dictionary:
 		receipt.terminalReason = String(_job.terminalReason)
 	return receipt
 
-func _flatten_values(groups: Dictionary) -> Dictionary:
+func _flatten_values(groups: Dictionary, tick_values: Dictionary = {}) -> Dictionary:
 	var values: Dictionary = {}
 	var group_names: Array = groups.keys()
 	group_names.sort()
+	group_names.erase("custom")
+	var dropped_metric_count := 0
+	var dropped_groups: Dictionary = {}
 	for group_value: Variant in group_names:
 		var group := String(group_value)
 		var monitor_values: Dictionary = groups[group]
@@ -371,10 +385,46 @@ func _flatten_values(groups: Dictionary) -> Dictionary:
 		monitor_names.sort()
 		for monitor_value: Variant in monitor_names:
 			if values.size() >= MAX_METRICS:
-				return values
+				dropped_metric_count += 1
+				dropped_groups[group] = true
+				continue
 			var monitor := String(monitor_value)
 			values["%s.%s" % [group, monitor]] = float(monitor_values[monitor])
-	return values
+	var tick_names: Array = tick_values.keys()
+	tick_names.sort()
+	for tick_value: Variant in tick_names:
+		var tick_name := String(tick_value)
+		if values.size() >= MAX_METRICS:
+			dropped_metric_count += 1
+			dropped_groups["profiler"] = true
+			continue
+		values[tick_name] = float(tick_values[tick_name])
+	# Custom monitors are lowest priority after requested built-in groups and
+	# EngineProfiler tick metrics reserve their capacity.
+	if groups.has("custom"):
+		var custom_values: Dictionary = groups.custom
+		var custom_names: Array = custom_values.keys()
+		custom_names.sort()
+		for custom_value: Variant in custom_names:
+			if values.size() >= MAX_METRICS:
+				dropped_metric_count += 1
+				dropped_groups["custom"] = true
+				continue
+			var custom_name := String(custom_value)
+			values["custom.%s" % custom_name] = float(custom_values[custom_name])
+	return {
+		"values": values,
+		"truncated": dropped_metric_count > 0,
+		"droppedMetricCount": dropped_metric_count,
+		"droppedGroups": _sorted_string_keys(dropped_groups),
+	}
+
+func _sorted_string_keys(source: Dictionary) -> Array[String]:
+	var output: Array[String] = []
+	for key: Variant in source.keys():
+		output.append(String(key))
+	output.sort()
+	return output
 
 func _custom_monitors(unavailable: Array[String]) -> Dictionary:
 	var values: Dictionary = {}

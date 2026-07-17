@@ -18,6 +18,7 @@ Godot's unauthenticated native DAP server is disabled and its configured loopbac
 - `monitor_snapshot` returns finite public engine monitor groups, bounded unavailability details, engine metadata, and explicit GPU timestamp support state.
 - `profile_start`, `profile_status`, `profile_cancel`, and `profile_result` manage one job per runtime.
 - A profile lasts 100 ms–30 seconds, samples every 1–120 frames, accepts at most eight unique groups, and retains at most 2,048 samples within a four MiB cap measured over the complete wire-encoded terminal evidence.
+- Requested built-in groups and EngineProfiler tick metrics take priority within the 128-metric sample cap. Custom monitors use the remaining capacity, and terminal evidence explicitly reports affected samples, dropped groups, and the maximum metrics dropped per sample.
 - Terminal evidence distinguishes complete, cancelled, and failed results; includes monotonic time/frame bounds, aggregates, optional bounded samples, engine/GPU metadata, and a canonical SHA-256.
 - Performance results are observations, not deterministic benchmark claims. Tests assert structure and workload direction rather than machine-specific absolute timing.
 

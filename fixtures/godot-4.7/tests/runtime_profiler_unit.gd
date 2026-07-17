@@ -83,6 +83,36 @@ func _init() -> void:
 	assert(reserved_custom.ok)
 	assert(not reserved_custom.data.groups.custom.has("$godotMcpFloat64Le"))
 	assert(reserved_custom.data.unavailable.any(func(message: String) -> bool: return message.contains("reserved")))
+	var crowded_custom: Dictionary = {}
+	for index in RuntimeProfiler.MAX_METRICS:
+		crowded_custom["Monitor%03d" % index] = float(index)
+	var bounded := profiler._flatten_values(
+		{"custom": crowded_custom, "frame": {"fps": 60.0}},
+		{"profiler.frame_seconds": 0.016},
+	)
+	assert(bounded.values.size() == RuntimeProfiler.MAX_METRICS)
+	assert(bounded.values.has("frame.fps"))
+	assert(bounded.values.has("profiler.frame_seconds"))
+	assert(bounded.truncated)
+	assert(bounded.droppedGroups == ["custom"])
+	assert(bounded.droppedMetricCount == 2)
+	for monitor_name: String in crowded_custom.keys():
+		Performance.add_custom_monitor(monitor_name, _custom_monitor_value)
+	var crowded_profile := profiler.start({"durationMs": 100, "intervalFrames": 1, "groups": ["frame", "custom"], "retainRaw": false})
+	assert(crowded_profile.ok)
+	var crowded_deadline := Time.get_ticks_msec() + 2000
+	while profiler.status(String(crowded_profile.data.jobToken)).data.state == "running" and Time.get_ticks_msec() < crowded_deadline:
+		profiler.process_frame()
+		await process_frame
+	var crowded_evidence: Dictionary = profiler.result(String(crowded_profile.data.jobToken)).data.evidence
+	assert(crowded_evidence.complete)
+	assert(crowded_evidence.metricTruncation.truncated)
+	assert(crowded_evidence.metricTruncation.affectedSamples > 0)
+	assert(crowded_evidence.metricTruncation.maxDroppedMetricsPerSample > 0)
+	assert(crowded_evidence.metricTruncation.droppedGroups == ["custom"])
+	assert(crowded_evidence.aggregates.has("frame.fps"))
+	for monitor_name: String in crowded_custom.keys():
+		Performance.remove_custom_monitor(monitor_name)
 	Performance.remove_custom_monitor("$godotMcpFloat64Le")
 	Performance.remove_custom_monitor("Phase7/Stable")
 	profiler.clear()
