@@ -1,5 +1,5 @@
 export { initProject } from "./commands/init.js";
-export { launchSecureEditor, secureEditorArguments } from "./commands/editor.js";
+export { createSecureEditorLaunchAttestation, launchSecureEditor, secureEditorArguments } from "./commands/editor.js";
 export { disableAddon } from "./commands/disable.js";
 export { doctorProject } from "./commands/doctor.js";
 export { uninstallProject } from "./commands/uninstall.js";

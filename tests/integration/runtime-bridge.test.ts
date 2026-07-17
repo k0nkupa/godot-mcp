@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 
 import { startBridgeServer } from "@godot-mcp/bridge-client";
-import { initProject } from "@godot-mcp/cli";
+import { createSecureEditorLaunchAttestation, initProject, secureEditorArguments } from "@godot-mcp/cli";
 import { createRuntimeDescriptor, JsonlAuditSink, OwnedGodotProcess, readProjectIdentity, RuntimeService, type RuntimeDescriptorMaterial } from "@godot-mcp/control-plane";
 import type { RuntimeCaptureFrameMetadata } from "@godot-mcp/protocol";
 import { copyFixture, findGodotBinary, reserveLoopbackPort, runGodot, waitUntil } from "@godot-mcp/testkit";
@@ -15,6 +15,7 @@ test("launches, inspects, controls, and cleans one authenticated runtime", async
   const previousRuntimeDirectory = process.env.XDG_RUNTIME_DIR;
   process.env.XDG_RUNTIME_DIR = join(project.root, "runtime-dir");
   let editor: ReturnType<typeof spawn> | undefined;
+  let launchAttestation: Awaited<ReturnType<typeof createSecureEditorLaunchAttestation>> | undefined;
   let editorOutput = "";
   let runtimeOutput = "";
   let phase = "setup";
@@ -32,11 +33,10 @@ test("launches, inspects, controls, and cleans one authenticated runtime", async
     });
     try {
       const debugServerPort = await reserveLoopbackPort();
+      launchAttestation = await createSecureEditorLaunchAttestation(identity.projectId, debugServerPort);
       editor = spawn(await findGodotBinary(), [
-        "--headless", "--editor", "--debug-server", `tcp://127.0.0.1:${debugServerPort}`,
-        "--dap-port", String(debugServerPort),
-        "--path", project.root, "--", `--godot-mcp-debug-port=${debugServerPort}`,
-        `--godot-mcp-dap-port=${debugServerPort}`, "--godot-mcp-secure-editor-launch=1",
+        "--headless",
+        ...secureEditorArguments(project.root, debugServerPort, launchAttestation.path),
       ], { env: process.env, stdio: ["ignore", "pipe", "pipe"] });
       editor.stdout?.on("data", (chunk: Buffer) => { editorOutput += chunk.toString(); });
       editor.stderr?.on("data", (chunk: Buffer) => { editorOutput += chunk.toString(); });
@@ -146,6 +146,7 @@ test("launches, inspects, controls, and cleans one authenticated runtime", async
     expect(await project.diffFromOriginal()).toEqual([]);
   } finally {
     if (editor?.exitCode === null) editor.kill("SIGTERM");
+    await launchAttestation?.cleanup();
     if (previousRuntimeDirectory === undefined) delete process.env.XDG_RUNTIME_DIR;
     else process.env.XDG_RUNTIME_DIR = previousRuntimeDirectory;
     await project.cleanup();
