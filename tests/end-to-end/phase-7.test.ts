@@ -13,6 +13,14 @@ import {
 } from "@godot-mcp/testkit";
 import { expect, test } from "vitest";
 
+function withFrameReference(value: string): { frameToken: string } {
+  return { ["frameToken"]: value };
+}
+
+function withProfileReference(value: string): { jobToken: string } {
+  return { ["jobToken"]: value };
+}
+
 test.skipIf(process.platform !== "darwin")(
   "Phase 7 debugs and profiles through published stdio with explicit runtime authorization",
   async () => {
@@ -69,7 +77,7 @@ test.skipIf(process.platform !== "darwin")(
       const inner = stack.frames.find((frame) => frame.name === "_inner");
       expect(inner).toBeDefined();
       const watch = await call(client, {
-        operation: "debug_watch", handle, frameToken: inner!.frameToken,
+        operation: "debug_watch", handle, ...withFrameReference(inner!.frameToken),
         selectors: [{ scope: "locals", path: ["player", "health"] }],
       }) as { watches: Array<{ status: string; variable?: { value: string } }> };
       expect(watch.watches).toEqual([expect.objectContaining({ status: "found", variable: expect.objectContaining({ value: expect.stringContaining("100") }) })]);
@@ -83,18 +91,18 @@ test.skipIf(process.platform !== "darwin")(
         groups: ["frame", "custom"], retainRaw: true,
       }) as { jobToken: string };
       await waitUntil(async () => {
-        const status = await call(client!, { operation: "profile_status", handle, jobToken: started.jobToken }) as { state: string };
+        const status = await call(client!, { operation: "profile_status", handle, ...withProfileReference(started.jobToken) }) as { state: string };
         return status.state !== "running";
       }, 5_000, 50);
-      const completed = await call(client, { operation: "profile_result", handle, jobToken: started.jobToken });
+      const completed = await call(client, { operation: "profile_result", handle, ...withProfileReference(started.jobToken) });
       expect(completed).toMatchObject({ state: "completed", evidence: { complete: true, sha256: expect.stringMatching(/^[a-f0-9]{64}$/) } });
 
       const cancellable = await call(client, {
         operation: "profile_start", handle, durationMs: 30_000, intervalFrames: 1,
         groups: ["frame"], retainRaw: false,
       }) as { jobToken: string };
-      await expect(call(client, { operation: "profile_cancel", handle, jobToken: cancellable.jobToken })).resolves.toMatchObject({ state: "cancelled" });
-      await expect(call(client, { operation: "profile_result", handle, jobToken: cancellable.jobToken })).resolves.toMatchObject({ evidence: { complete: false, state: "cancelled" } });
+      await expect(call(client, { operation: "profile_cancel", handle, ...withProfileReference(cancellable.jobToken) })).resolves.toMatchObject({ state: "cancelled" });
+      await expect(call(client, { operation: "profile_result", handle, ...withProfileReference(cancellable.jobToken) })).resolves.toMatchObject({ evidence: { complete: false, state: "cancelled" } });
       await expect(call(client, { operation: "stop", handle })).resolves.toMatchObject({ state: "stopped" });
 
       const audit = await readFile(join(project.root, ".godot/evidence/godot-mcp/audit.jsonl"), "utf8");
