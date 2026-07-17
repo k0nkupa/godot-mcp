@@ -191,6 +191,8 @@ func _sample_frame(force: bool) -> void:
 	_job.observedSamples = int(_job.observedSamples) + 1
 	if values.is_empty():
 		_job.invalidSamples = int(_job.invalidSamples) + 1
+		if bool(_job.retainRaw):
+			_job.droppedSamples = int(_job.droppedSamples) + 1
 		_capture_profile_gpu_marker("end", sample_id)
 		return
 	_record_aggregates(values, int(_job.observedSamples))
@@ -571,11 +573,15 @@ func _engine_metadata() -> Dictionary:
 	var api := RenderingServer.get_video_adapter_api_version()
 	var method := String(ProjectSettings.get_setting("rendering/renderer/rendering_method", "unknown"))
 	return {
-		"version": String(Engine.get_version_info().get("string", "unknown")),
-		"renderer": renderer if not renderer.is_empty() else "headless",
-		"renderingMethod": method if not method.is_empty() else "unknown",
-		"graphicsApi": api if not api.is_empty() else "unavailable",
+		"version": bound_metadata_value(String(Engine.get_version_info().get("string", "unknown")), "unknown"),
+		"renderer": bound_metadata_value(renderer, "headless"),
+		"renderingMethod": bound_metadata_value(method, "unknown"),
+		"graphicsApi": bound_metadata_value(api, "unavailable"),
 	}
+
+static func bound_metadata_value(value: String, fallback: String) -> String:
+	var normalized := value if not value.is_empty() else fallback
+	return normalized.left(128)
 
 func _token_matches(job_token: String) -> bool:
 	return not _job.is_empty() and job_token == String(_job.get("jobToken", ""))

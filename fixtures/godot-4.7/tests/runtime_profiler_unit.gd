@@ -21,6 +21,18 @@ func _init() -> void:
 	var custom: Dictionary = profiler.snapshot(["custom"])
 	assert(custom.ok and custom.data.groups.custom["Phase7/Stable"] == 12.5)
 	assert(not profiler.snapshot(["unknown"]).ok)
+	Performance.remove_custom_monitor("Phase7/Stable")
+	var invalid_retained := profiler.start({"durationMs": 30000, "intervalFrames": 1, "groups": ["custom"], "retainRaw": true})
+	assert(invalid_retained.ok)
+	assert(invalid_retained.data.observedSamples == 1)
+	assert(profiler.cancel(String(invalid_retained.data.jobToken)).ok)
+	var invalid_evidence: Dictionary = profiler.result(String(invalid_retained.data.jobToken)).data.evidence
+	assert(invalid_evidence.invalidSamples == 1)
+	assert(invalid_evidence.droppedSamples == 1)
+	assert(invalid_evidence.rawSamples.is_empty())
+	Performance.add_custom_monitor("Phase7/Stable", _custom_monitor_value)
+	assert(RuntimeProfiler.bound_metadata_value("x".repeat(129), "fallback").length() == 128)
+	assert(RuntimeProfiler.bound_metadata_value("", "fallback") == "fallback")
 
 	var first := profiler.start({"durationMs": 100, "intervalFrames": 1, "groups": ["frame"], "retainRaw": true})
 	assert(first.ok)
