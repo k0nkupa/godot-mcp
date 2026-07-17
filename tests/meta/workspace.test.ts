@@ -64,10 +64,26 @@ describe("workspace package contract", () => {
     expect(gate).toContain("tests/security/editor-authoring-hostile.test.ts");
     expect(gate).toContain("tests/end-to-end/phase-6.test.ts");
     expect(gate).toContain("scripts/verify-phase-6-cleanup.mjs");
-    const agents = await readFile("AGENTS.md", "utf8");
-    expect(agents).toContain("docs/superpowers/plans/2026-07-17-phase-6-complete-authoring-surface.md");
-    expect(agents).toContain("docs/testing/phase-6.md");
+    expect(await readFile("docs/superpowers/plans/2026-07-17-phase-6-complete-authoring-surface.md", "utf8")).toContain("Phase 6");
     expect(await readFile("README.md", "utf8")).toContain("pnpm qa:phase-6");
     expect(await readFile("docs/testing/phase-6.md", "utf8")).toContain("create_script");
+  });
+
+  it("defines the ordered Phase 7 certification gate and debugging documentation", async () => {
+    const packageJson = JSON.parse(await readFile("package.json", "utf8")) as { scripts?: Record<string, string> };
+    expect(packageJson.scripts?.["qa:phase-7"]).toBe("node scripts/qa-phase-7.mjs");
+    const gate = await readFile("scripts/qa-phase-7.mjs", "utf8");
+    expect(gate).toContain("4.7.stable.official.5b4e0cb0f");
+    for (let stage = 1; stage <= 16; stage += 1) expect(gate).toContain(`${stage}/16`);
+    expect(gate).toContain("runtime_profiler_unit.gd");
+    expect(gate).toContain("tests/integration/runtime-debugging.test.ts");
+    expect(gate).toContain("tests/security/runtime-debugging-hostile.test.ts");
+    expect(gate).toContain("tests/end-to-end/phase-7.test.ts");
+    expect(gate).toContain("scripts/verify-phase-7-cleanup.mjs");
+    const agents = await readFile("AGENTS.md", "utf8");
+    expect(agents).toContain("docs/superpowers/plans/2026-07-17-phase-7-debugging-performance.md");
+    expect(agents).toContain("docs/testing/phase-7.md");
+    expect(await readFile("README.md", "utf8")).toContain("pnpm qa:phase-7");
+    expect(await readFile("docs/testing/phase-7.md", "utf8")).toContain("debug_breakpoints_set");
   });
 });

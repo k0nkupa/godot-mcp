@@ -1,6 +1,6 @@
 # Godot MCP
 
-Godot MCP is an open-source, security-first MCP server and Godot editor addon. Phase 6 provides reversible installation, authenticated Godot 4.7 editor attachment, six default observe-only tools, explicitly gated runtime/input surfaces, and one permission-scoped editor tool for native Undo/Redo transactions across scenes, resources, and constrained source files.
+Godot MCP is an open-source, security-first MCP server and Godot editor addon. Phase 7 provides reversible installation, authenticated Godot 4.7 editor attachment, six default observe-only tools, explicitly gated runtime/input surfaces, permission-scoped editor authoring, native read-only GDScript debugging, and bounded structured performance evidence.
 
 ## Requirements
 
@@ -64,7 +64,7 @@ Uninstall refuses to remove the addon, project configuration, or `project.godot`
 
 The default six tools are read-only and closed-world. A runtime-authorized session additionally exposes:
 
-- `godot_runtime` — launch, status, bounded tree/node/log queries, waits, pause, step, resume, and stop for one authenticated child runtime
+- `godot_runtime` — launch, bounded runtime queries/control, native GDScript breakpoints/stacks/variables/selector watches, monitor snapshots, and cancellable structured profiles for one authenticated child runtime
 - `godot_runtime_capture` — one to eight ordered running-game PNG frames with verified evidence metadata
 - `godot_input` — bounded events, frame-indexed sequences, non-passive recording, and deterministic replay for the owned runtime
 - `godot_editor` — preview, apply, undo, and redo one bounded scene/node/resource/source authoring batch with durable idempotency and native editor history
@@ -75,6 +75,8 @@ For example:
 { "operation": "scene_tree", "scenePath": "res://main.tscn", "maxDepth": 8, "maxNodes": 250 }
 { "viewport": "2d", "maxWidth": 1280, "maxHeight": 720 }
 { "operation": "launch", "scenePath": "res://main.tscn" }
+{ "operation": "debug_breakpoints_set", "handle": { "runId": "<run UUID>", "generation": 1 }, "breakpoints": [{ "sourcePath": "res://player.gd", "line": 42 }] }
+{ "operation": "profile_start", "handle": { "runId": "<run UUID>", "generation": 1 }, "durationMs": 1000, "intervalFrames": 1, "groups": ["frame", "memory"], "retainRaw": false }
 { "operation": "sequence", "handle": { "runId": "<run UUID>", "generation": 1 }, "mode": "deterministic", "events": [{ "frameOffset": 0, "event": { "type": "action", "action": "jump", "pressed": true, "strengthMillionths": 1000000 } }, { "frameOffset": 1, "event": { "type": "action", "action": "jump", "pressed": false, "strengthMillionths": 0 } }] }
 ```
 
@@ -89,10 +91,11 @@ GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-3
 GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-4
 GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-5
 GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-6
+GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-7
 ```
 
-The Phase 6 gate certifies resource and typed-domain authoring, constrained script/shader creation and replacement, imported-reference expectations, preview/apply digest binding, redacted audit hashes, action-scoped Undo/Redo, hostile-input rejection, reversible stdio lifecycle, and zero fixture diff. Earlier gates remain required regressions. See [Phase 6 testing](docs/testing/phase-6.md), [Phase 5 testing](docs/testing/phase-5.md), the [threat model](docs/security/threat-model.md), the [bridge protocol](docs/protocol/bridge-v1.md), and the [master design](docs/superpowers/specs/2026-07-15-godot-mcp-master-design.md).
+The Phase 7 gate certifies verified loopback DAP attachment, breakpoints/stacks/variables/selector watches, bounded public monitor snapshots, completed and cancelled profiles, hostile-input rejection, published stdio behavior, and zero owned-state or fixture residue. Earlier gates remain required regressions. See [Phase 7 testing](docs/testing/phase-7.md), [Phase 6 testing](docs/testing/phase-6.md), the [threat model](docs/security/threat-model.md), the [bridge protocol](docs/protocol/bridge-v1.md), and the [master design](docs/superpowers/specs/2026-07-15-godot-mcp-master-design.md).
 
 ## Roadmap
 
-Later phases add debugger stacks and profiler integration, declarative playtests, imports/builds/exports, evidence retrieval, compatibility lanes, and explicitly gated disposable-fixture unsafe mode. None of those capabilities are claimed by Phase 6.
+Later phases add declarative playtests, imports/builds/exports, evidence retrieval, compatibility lanes, and explicitly gated disposable-fixture unsafe mode. None of those capabilities are claimed by Phase 7.
