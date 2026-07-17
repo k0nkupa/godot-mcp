@@ -7,7 +7,7 @@ Phase 7 extends the existing runtime-authorized surface with native read-only GD
 - `debug_breakpoints_set` sets or clears at most 64 unique breakpoints across 16 canonical project-local `.gd` files outside `res://addons/godot_mcp`.
 - Breakpoint receipts remain honestly unverified because Godot 4.7's editor API does not confirm executable source lines; real stop behavior is certified by integration and E2E tests.
 - `debug_status`, `debug_wait`, and `debug_pause` expose bounded stop state; `debug_continue`, `debug_step_over`, and `debug_step_into` control only the authenticated owned child.
-- `debug_stack`, `debug_variables`, and `debug_children` return at most 64 frames, 256 entries per page, 2,048 entries per stop-bound token set, and depth eight.
+- `debug_stack`, `debug_variables`, and `debug_children` return at most 64 frames, 256 entries per page, 2,048 entries per stop-bound token set, and depth eight. Stack capture deterministically selects the GDScript backtrace with the most project-local non-addon frames and rejects addon-only candidates.
 - `debug_watch` accepts at most 32 exact locals/members/globals selector paths of depth eight. It traverses returned variables and never evaluates expressions or invokes methods.
 - Dictionary selector metadata is emitted only for schema-selectable strings and bounded non-negative integers; oversized, empty, NUL-bearing, fractional, negative, and out-of-range keys remain visible only as unsupported bounded labels.
 - Freed object references render as a fixed summary without invoking methods on the invalid instance.

@@ -10,6 +10,8 @@ class SideEffectKey extends RefCounted:
 		return "unsafe-object-key"
 
 func _init() -> void:
+	assert(RuntimeDebugCapture.game_frame_score(["res://addons/godot_mcp/runtime/runtime_harness.gd", "res://player.gd", "res://enemy.gd"]) == 2)
+	assert(RuntimeDebugCapture.game_frame_score(["res://addons/godot_mcp/runtime/runtime_harness.gd"]) == 0)
 	var capture := RuntimeDebugCapture.new()
 	var packed := PackedByteArray()
 	packed.resize(2_000_000)

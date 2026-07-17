@@ -111,8 +111,6 @@ func _process(_delta: float) -> void:
 		return
 	push_error("Godot MCP owner lease expired; stopping the editor-owned runtime")
 	runtime_debugger.revoke_owned_runtime_lease("owner_lease_expired")
-	if get_editor_interface().is_playing_scene():
-		get_editor_interface().stop_playing_scene()
 
 func _runtime_debug_port() -> int:
 	for argument in OS.get_cmdline_user_args():
@@ -163,11 +161,10 @@ func _consume_secure_launch_attestation() -> bool:
 		return false
 	var document := JSON.parse_string(file.get_as_text())
 	file = null
-	DirAccess.remove_absolute(path)
 	if typeof(document) != TYPE_DICTIONARY:
 		return false
 	var identity := DescriptorReader.read_project_identity()
-	return RuntimeDebugger.launch_attestation_matches(
+	if not RuntimeDebugger.launch_attestation_matches(
 		document,
 		path,
 		runtime_directory,
@@ -175,7 +172,9 @@ func _consume_secure_launch_attestation() -> bool:
 		_runtime_debug_port(),
 		_runtime_dap_port(),
 		int(Time.get_unix_time_from_system() * 1000.0),
-	)
+	):
+		return false
+	return DirAccess.remove_absolute(path) == OK
 
 func _secure_launch_attestation_path() -> String:
 	var result := ""

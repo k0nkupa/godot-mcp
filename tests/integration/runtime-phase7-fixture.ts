@@ -33,7 +33,7 @@ export interface Phase7RuntimeFixture {
 
 export interface Phase7RuntimeFixtureOptions {
   spoofSecureUserArguments?: boolean;
-  uncontainedAttestation?: boolean;
+  nonmatchingAttestation?: boolean;
 }
 
 export async function createPhase7RuntimeFixture(options: Phase7RuntimeFixtureOptions = {}): Promise<Phase7RuntimeFixture> {
@@ -63,9 +63,16 @@ export async function createPhase7RuntimeFixture(options: Phase7RuntimeFixtureOp
     });
     const debugServerPort = await reserveLoopbackPort();
     const dapPort = debugServerPort;
-    if (options.uncontainedAttestation) {
-      attestationSentinelPath = join(dirname(project.root), "uncontained-launch-attestation.json");
-      await writeFile(attestationSentinelPath, "must-not-be-deleted\n", { mode: 0o600 });
+    if (options.nonmatchingAttestation) {
+      attestationSentinelPath = join(project.root, "runtime-dir", "godot-mcp", "editor-launch-nonmatching.json");
+      await writeFile(attestationSentinelPath, `${JSON.stringify({
+        schemaVersion: 1,
+        projectId: "different-project",
+        debugPort: debugServerPort,
+        dapPort,
+        createdAtUnixMs: Date.now(),
+        expiresAtUnixMs: Date.now() + 10_000,
+      })}\n`, { mode: 0o600 });
     }
     editor = options.spoofSecureUserArguments
       ? await launchEditor(project.root, {
@@ -146,12 +153,12 @@ export async function createPhase7RuntimeFixture(options: Phase7RuntimeFixtureOp
           await runtime?.close().catch(() => undefined);
           await bridge?.close().catch(() => undefined);
           await editor?.close().catch(() => undefined);
+          if (attestationSentinelPath) await rm(attestationSentinelPath, { force: true });
           let fixtureError: Error | undefined;
           try {
             const diff = await project.diffFromOriginal();
             if (diff.length > 0) fixtureError = new Error(`Phase 7 fixture changed:\n${diff.join("\n")}`);
           } finally {
-            if (attestationSentinelPath) await rm(attestationSentinelPath, { force: true });
             await project.cleanup();
             if (previousRuntimeDirectory === undefined) delete process.env.XDG_RUNTIME_DIR;
             else process.env.XDG_RUNTIME_DIR = previousRuntimeDirectory;

@@ -18,10 +18,17 @@ func stack(offset: int, limit: int) -> Dictionary:
 		return _stack_page(offset, limit)
 	_clear_snapshot()
 	var backtrace: ScriptBacktrace
+	var best_score := 0
 	for candidate: ScriptBacktrace in Engine.capture_script_backtraces(true):
-		if candidate.get_language_name() == "GDScript" and not candidate.is_empty():
+		if candidate.get_language_name() != "GDScript" or candidate.is_empty():
+			continue
+		var sources: Array[String] = []
+		for frame_index in candidate.get_frame_count():
+			sources.append(candidate.get_frame_file(frame_index))
+		var score := game_frame_score(sources)
+		if score > best_score:
 			backtrace = candidate
-			break
+			best_score = score
 	if backtrace == null:
 		return _error("PRECONDITION_FAILED", "No stopped GDScript backtrace is available")
 	var captured_variables := 0
@@ -72,6 +79,14 @@ func stack(offset: int, limit: int) -> Dictionary:
 			backtrace.get_global_variable_value(variable_index),
 		))
 	return _stack_page(offset, limit)
+
+static func game_frame_score(source_paths: Array[String]) -> int:
+	var score := 0
+	for source_path in source_paths:
+		var normalized := source_path.to_lower()
+		if normalized.begins_with("res://") and not normalized.begins_with("res://addons/godot_mcp/"):
+			score += 1
+	return score
 
 func _stack_page(offset: int, limit: int) -> Dictionary:
 	var total := _frames.size()

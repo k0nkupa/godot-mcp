@@ -100,7 +100,7 @@ test("stops an owned runtime when its owner dies while the debugger is paused", 
 }, 60_000);
 
 test("rejects spoofed secure-launch user arguments without matching engine endpoints", async () => {
-  const fixture = await createPhase7RuntimeFixture({ spoofSecureUserArguments: true, uncontainedAttestation: true });
+  const fixture = await createPhase7RuntimeFixture({ spoofSecureUserArguments: true, nonmatchingAttestation: true });
   try {
     await expect(fixture.runtime.launch({ scenePath: "res://debug/debug_fixture.tscn", startupTimeoutMs: 5_000 }))
       .rejects.toMatchObject({ code: "AUTHENTICATION_FAILED" });
