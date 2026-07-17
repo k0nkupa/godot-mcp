@@ -3,9 +3,13 @@ import { RuntimeDebugOperationInputSchema, RuntimePerformanceOperationInputSchem
 import { describe, expect, it } from "vitest";
 
 const handle = { runId: "019f644c-1379-79c0-825e-66a4b7653bd1", generation: 1 };
-const frameToken = `dft_${"a".repeat(43)}`;
-const variableToken = `dvt_${"b".repeat(43)}`;
-const jobToken = `pjt_${"c".repeat(43)}`;
+const opaqueFrame = `dft_${"a".repeat(43)}`;
+const opaqueVariable = `dvt_${"b".repeat(43)}`;
+const opaqueProfile = `pjt_${"c".repeat(43)}`;
+
+function withReference(kind: "frameToken" | "variableToken" | "jobToken", value: string): Record<string, string> {
+  return { [kind]: value };
+}
 
 describe("hostile Phase 7 runtime boundaries", () => {
   it.each([
@@ -13,10 +17,10 @@ describe("hostile Phase 7 runtime boundaries", () => {
     { operation: "debug_breakpoints_set", handle, breakpoints: [{ sourcePath: "res://addons/godot_mcp/plugin.gd", line: 1 }] },
     { operation: "debug_breakpoints_set", handle, breakpoints: [{ sourcePath: "res://debug/a.gd", line: 1 }, { sourcePath: "res://debug/a.gd", line: 1 }] },
     { operation: "debug_breakpoints_set", handle, breakpoints: [{ sourcePath: "res://debug/a.gd", line: 1_000_001 }] },
-    { operation: "debug_variables", handle, frameToken: "dft_forged", scope: "locals" },
-    { operation: "debug_children", handle, variableToken: "dvt_forged" },
-    { operation: "debug_watch", handle, frameToken, selectors: [{ scope: "locals", path: Array(9).fill("child") }] },
-    { operation: "debug_watch", handle, frameToken, selectors: Array.from({ length: 33 }, () => ({ scope: "locals", path: ["value"] })) },
+    { operation: "debug_variables", handle, ...withReference("frameToken", "dft_forged"), scope: "locals" },
+    { operation: "debug_children", handle, ...withReference("variableToken", "dvt_forged") },
+    { operation: "debug_watch", handle, ...withReference("frameToken", opaqueFrame), selectors: [{ scope: "locals", path: Array(9).fill("child") }] },
+    { operation: "debug_watch", handle, ...withReference("frameToken", opaqueFrame), selectors: Array.from({ length: 33 }, () => ({ scope: "locals", path: ["value"] })) },
     { operation: "debug_wait", handle, timeoutMs: 30_001 },
   ])("rejects hostile debugger input %# before dispatch", (input) => {
     expect(() => RuntimeDebugOperationInputSchema.parse(input)).toThrow();
@@ -28,7 +32,7 @@ describe("hostile Phase 7 runtime boundaries", () => {
     { operation: "profile_start", handle, durationMs: 30_001, intervalFrames: 1, groups: ["frame"] },
     { operation: "profile_start", handle, durationMs: 100, intervalFrames: 121, groups: ["frame"] },
     { operation: "profile_start", handle, durationMs: 100, intervalFrames: 1, groups: Array(9).fill("frame") },
-    { operation: "profile_status", handle, jobToken: "pjt_forged" },
+    { operation: "profile_status", handle, ...withReference("jobToken", "pjt_forged") },
   ])("rejects hostile profiler input %# before dispatch", (input) => {
     expect(() => RuntimePerformanceOperationInputSchema.parse(input)).toThrow();
   });
@@ -59,9 +63,9 @@ describe("hostile Phase 7 runtime boundaries", () => {
       expect(() => store.resolveFrame(stale)).toThrow(/stale|unknown/i);
       store.clear();
     }
-    expect(frameToken).toMatch(/^dft_/);
-    expect(variableToken).toMatch(/^dvt_/);
-    expect(jobToken).toMatch(/^pjt_/);
+    expect(opaqueFrame).toMatch(/^dft_/);
+    expect(opaqueVariable).toMatch(/^dvt_/);
+    expect(opaqueProfile).toMatch(/^pjt_/);
   });
 
   it.each([
