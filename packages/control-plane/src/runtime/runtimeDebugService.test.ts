@@ -121,11 +121,29 @@ describe("Phase 7 RuntimeService debugging", () => {
     const { dap, launched, service } = await debugFixture();
     const stack = await service.execute({ operation: "debug_stack", handle: launched.handle, offset: 0, limit: 64 }) as { frames: Array<{ frameToken: string; name: string }> };
     expect(stack.frames.map((frame) => frame.name)).toEqual(["inner", "outer"]);
-    const locals = await service.execute({ operation: "debug_variables", handle: launched.handle, frameToken: stack.frames[0]!.frameToken, scope: "locals", offset: 0, limit: 100 }) as { variables: Array<{ variableToken?: string; name: string }> };
+    const locals = await service.execute({
+      operation: "debug_variables",
+      handle: launched.handle,
+      frameToken: stack.frames[0]!.frameToken,
+      scope: "locals",
+      offset: 0,
+      limit: 100,
+    }) as { variables: Array<{ variableToken?: string; name: string }> };
     expect(locals.variables[0]).toMatchObject({ name: "player", variableToken: expect.stringMatching(/^dvt_/) });
-    const children = await service.execute({ operation: "debug_children", handle: launched.handle, variableToken: locals.variables[0]!.variableToken!, offset: 0, limit: 100 }) as { variables: Array<{ name: string; value: string }> };
+    const children = await service.execute({
+      operation: "debug_children",
+      handle: launched.handle,
+      variableToken: locals.variables[0]!.variableToken!,
+      offset: 0,
+      limit: 100,
+    }) as { variables: Array<{ name: string; value: string }> };
     expect(children.variables).toEqual([expect.objectContaining({ name: "health", value: "100" })]);
-    const watched = await service.execute({ operation: "debug_watch", handle: launched.handle, frameToken: stack.frames[0]!.frameToken, selectors: [{ scope: "locals", path: ["player", "health"] }] }) as { watches: unknown[] };
+    const watched = await service.execute({
+      operation: "debug_watch",
+      handle: launched.handle,
+      frameToken: stack.frames[0]!.frameToken,
+      selectors: [{ scope: "locals", path: ["player", "health"] }],
+    }) as { watches: unknown[] };
     expect(watched.watches).toEqual([expect.objectContaining({ status: "found", variable: expect.objectContaining({ name: "health", value: "100" }) })]);
     expect(dap.calls.map((entry) => entry.command)).not.toContain("evaluate");
     await service.close();
@@ -135,7 +153,14 @@ describe("Phase 7 RuntimeService debugging", () => {
     const { dap, launched, service } = await debugFixture();
     const stack = await service.execute({ operation: "debug_stack", handle: launched.handle, offset: 0, limit: 64 }) as { frames: Array<{ frameToken: string }> };
     dap.transientVariableFailures = 2;
-    await expect(service.execute({ operation: "debug_variables", handle: launched.handle, frameToken: stack.frames[0]!.frameToken, scope: "locals", offset: 0, limit: 100 })).resolves.toMatchObject({ returned: 1 });
+    await expect(service.execute({
+      operation: "debug_variables",
+      handle: launched.handle,
+      frameToken: stack.frames[0]!.frameToken,
+      scope: "locals",
+      offset: 0,
+      limit: 100,
+    })).resolves.toMatchObject({ returned: 1 });
     expect(dap.calls.filter((entry) => entry.command === "variables")).toHaveLength(3);
     await service.close();
   });
@@ -144,7 +169,14 @@ describe("Phase 7 RuntimeService debugging", () => {
     const { launched, service } = await debugFixture();
     const first = await service.execute({ operation: "debug_stack", handle: launched.handle, offset: 0, limit: 64 }) as { frames: Array<{ frameToken: string }> };
     await service.execute({ operation: "debug_continue", handle: launched.handle });
-    await expect(service.execute({ operation: "debug_variables", handle: launched.handle, frameToken: first.frames[0]!.frameToken, scope: "locals", offset: 0, limit: 100 })).rejects.toMatchObject({ code: "STALE_HANDLE" });
+    await expect(service.execute({
+      operation: "debug_variables",
+      handle: launched.handle,
+      frameToken: first.frames[0]!.frameToken,
+      scope: "locals",
+      offset: 0,
+      limit: 100,
+    })).rejects.toMatchObject({ code: "STALE_HANDLE" });
     const stopped = await service.execute({ operation: "debug_wait", handle: launched.handle, afterSequence: 1, timeoutMs: 1_000 });
     expect(stopped).toMatchObject({ sequence: 2, reason: "breakpoint" });
     await service.close();
