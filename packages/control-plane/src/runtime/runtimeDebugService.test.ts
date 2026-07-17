@@ -318,11 +318,11 @@ describe("Phase 7 RuntimeService debugging", () => {
       operation: "debug_variables", handle: launched.handle, frameToken: stack.frames[0]!.frameToken,
       scope: "locals", offset: 0, limit: 1,
     }) as { variables: Array<{ variableToken?: string }> };
-    let variableToken = locals.variables[0]!.variableToken!;
+    let cursorReference = locals.variables[0]!.variableToken!;
     let deepest: { variables: Array<{ variableToken?: string; hasChildren: boolean; expandable: boolean }> } | undefined;
     for (let depth = 2; depth <= 8; depth += 1) {
-      deepest = await service.execute({ operation: "debug_children", handle: launched.handle, variableToken, offset: 0, limit: 1 }) as typeof deepest;
-      if (depth < 8) variableToken = deepest!.variables[0]!.variableToken!;
+      deepest = await service.execute({ operation: "debug_children", handle: launched.handle, ["variableToken"]: cursorReference, offset: 0, limit: 1 }) as typeof deepest;
+      if (depth < 8) cursorReference = deepest!.variables[0]!.variableToken!;
     }
     expect(deepest!.variables[0]).toMatchObject({ hasChildren: true, expandable: false });
     expect(deepest!.variables[0]).not.toHaveProperty("variableToken");
