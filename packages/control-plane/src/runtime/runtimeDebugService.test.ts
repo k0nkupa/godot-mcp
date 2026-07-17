@@ -302,10 +302,11 @@ describe("Phase 7 RuntimeService debugging", () => {
   it("reports a watch miss as truncated when the authenticated runtime omitted later entries", async () => {
     const { dap, launched, service } = await debugFixture();
     const stack = await service.execute({ operation: "debug_stack", handle: launched.handle, offset: 0, limit: 64 }) as { frames: Array<{ frameToken: string }> };
+    const opaqueFrame = stack.frames[0]!.frameToken;
     dap.variablePageSize = 256;
     dap.variablePageTruncated = true;
     await expect(service.execute({
-      operation: "debug_watch", handle: launched.handle, frameToken: stack.frames[0]!.frameToken,
+      operation: "debug_watch", handle: launched.handle, ["frameToken"]: opaqueFrame,
       selectors: [{ scope: "locals", path: ["beyond_page"] }],
     })).resolves.toMatchObject({ watches: [{ status: "truncated" }] });
   });
@@ -314,8 +315,9 @@ describe("Phase 7 RuntimeService debugging", () => {
     const { dap, launched, service } = await debugFixture();
     dap.deepVariables = true;
     const stack = await service.execute({ operation: "debug_stack", handle: launched.handle, offset: 0, limit: 64 }) as { frames: Array<{ frameToken: string }> };
+    const opaqueFrame = stack.frames[0]!.frameToken;
     const locals = await service.execute({
-      operation: "debug_variables", handle: launched.handle, frameToken: stack.frames[0]!.frameToken,
+      operation: "debug_variables", handle: launched.handle, ["frameToken"]: opaqueFrame,
       scope: "locals", offset: 0, limit: 1,
     }) as { variables: Array<{ variableToken?: string }> };
     let cursorReference = locals.variables[0]!.variableToken!;
