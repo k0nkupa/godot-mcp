@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { isAbsolute, relative, sep } from "node:path";
+import { realpath } from "node:fs/promises";
+import { isAbsolute, join, relative, sep } from "node:path";
 
 import type {
   InputOperationInput,
@@ -46,6 +47,7 @@ export interface RuntimeServiceDependencies {
   project: ProjectIdentity;
   sessionId(): string | null;
   godotBin?: string;
+  requireDapMetadata?: boolean;
   createDescriptor?(input: RuntimeDescriptorInput): Promise<RuntimeDescriptorMaterial>;
   prepare(input: { descriptor: RuntimeDescriptorMaterial["descriptor"] }): Promise<{ debugPort: number; dapPort?: number; editorPid?: number }>;
   verifyDebuggerListener?(pid: number, port: number): Promise<void>;
@@ -160,6 +162,9 @@ export class RuntimeService {
       this.assertLaunchCurrent(epoch);
       if (!Number.isInteger(prepared.debugPort) || prepared.debugPort < 1 || prepared.debugPort > 65_535) {
         throw runtimeError("GODOT_RUNTIME_ERROR", "Editor reported an invalid debugger port");
+      }
+      if (this.dependencies.requireDapMetadata && (prepared.dapPort === undefined || prepared.editorPid === undefined)) {
+        throw runtimeError("AUTHENTICATION_FAILED", "Editor DAP port and process identity are required for runtime debugging");
       }
       if (prepared.dapPort !== undefined && (!Number.isInteger(prepared.dapPort) || prepared.dapPort < 1_024 || prepared.dapPort > 49_151)) {
         throw runtimeError("GODOT_RUNTIME_ERROR", "Editor reported an invalid DAP port");
@@ -420,10 +425,13 @@ export class RuntimeService {
   ): Promise<{ breakpoints: unknown[] }> {
     const grouped = new Map<string, Array<{ sourcePath: string; line: number }>>();
     for (const breakpoint of input.breakpoints) {
-      if (breakpoint.sourcePath.startsWith("res://addons/godot_mcp/")) {
+      if (breakpoint.sourcePath.toLowerCase().startsWith("res://addons/godot_mcp/")) {
         throw runtimeError("INVALID_REQUEST", "Debugger breakpoints cannot target the Godot MCP addon");
       }
-      const absolutePath = await resolveProjectPath(this.dependencies.project, breakpoint.sourcePath, "read");
+      const absolutePath = await realpath(await resolveProjectPath(this.dependencies.project, breakpoint.sourcePath, "read"));
+      if (isPathInsideCaseInsensitive(join(this.dependencies.project.rootRealPath, "addons", "godot_mcp"), absolutePath)) {
+        throw runtimeError("INVALID_REQUEST", "Debugger breakpoints cannot target the Godot MCP addon");
+      }
       const entries = grouped.get(absolutePath) ?? [];
       entries.push(breakpoint);
       grouped.set(absolutePath, entries);
@@ -793,6 +801,11 @@ function bodyArray(response: Record<string, unknown>, key: string): unknown[] {
 
 function integerOr(value: unknown, fallback: number): number {
   return Number.isInteger(value) ? Number(value) : fallback;
+}
+
+function isPathInsideCaseInsensitive(parent: string, candidate: string): boolean {
+  const relation = relative(parent.toLowerCase(), candidate.toLowerCase());
+  return relation === "" || (relation !== ".." && !relation.startsWith(`..${sep}`) && !isAbsolute(relation));
 }
 
 function boundedText(value: unknown, fallback: string, maxLength: number): string {

@@ -63,14 +63,17 @@ export function registerRuntimeTools(server: McpServer, dependencies: RuntimeToo
     inputSchema: RuntimeOperationInputSchema,
     outputSchema: ToolResultSchema,
     annotations: runtimeAnnotations,
-  }, async (input) => toMcpToolResult(await executeTool(dependencies, RUNTIME_POLICY, input, async () => {
-    if (input.operation === "launch") {
-      return { data: await dependencies.runtime.launch({ scenePath: input.scenePath, startupTimeoutMs: input.startupTimeoutMs }) };
-    }
-    const data = await dependencies.runtime.execute(input);
-    const audit = performanceAuditFacts(input, data);
-    return { data, ...(audit === undefined ? {} : { audit }) };
-  }, { auditArguments: runtimeAuditArguments(input) })));
+  }, async (input) => {
+    const auditArguments = runtimeAuditArguments(input);
+    return toMcpToolResult(await executeTool(dependencies, RUNTIME_POLICY, input, async () => {
+      if (input.operation === "launch") {
+        return { data: await dependencies.runtime.launch({ scenePath: input.scenePath, startupTimeoutMs: input.startupTimeoutMs }) };
+      }
+      const data = await dependencies.runtime.execute(input);
+      const audit = performanceAuditFacts(input, data);
+      return { data, ...(audit === undefined ? {} : { audit }) };
+    }, { auditArguments }));
+  });
 
   server.registerTool("godot_runtime_capture", {
     title: "Capture ephemeral Godot runtime",

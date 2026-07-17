@@ -25,7 +25,7 @@ const DebugSourcePathSchema = z
     if (value.includes("\0") || value.includes("\\")) return false;
     const segments = value.slice(6).split("/");
     if (segments.some((segment) => segment.length === 0 || segment === "." || segment === "..")) return false;
-    return !value.startsWith("res://addons/godot_mcp/");
+    return !value.toLowerCase().startsWith("res://addons/godot_mcp/");
   }, { message: "Debugger source must be a canonical project-local GDScript outside the Godot MCP addon" });
 
 const RuntimeBreakpointSchema = z

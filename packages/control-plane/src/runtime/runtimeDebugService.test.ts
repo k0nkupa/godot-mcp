@@ -1,4 +1,4 @@
-import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -77,6 +77,11 @@ async function debugFixture() {
   const root = await mkdtemp(join(tmpdir(), "godot-mcp-debug-service-"));
   cleanups.push(async () => rm(root, { recursive: true, force: true }));
   await writeFile(join(root, "debug_fixture.gd"), "extends Node\nfunc inner():\n\tpass\n", "utf8");
+  const addonDirectory = join(root, "addons/godot_mcp");
+  await mkdir(addonDirectory, { recursive: true });
+  const protectedScript = join(addonDirectory, "protected.gd");
+  await writeFile(protectedScript, "extends Node\n", "utf8");
+  await symlink(protectedScript, join(root, "debug_alias.gd"));
   const canonicalRoot = await realpath(root);
   const project = {
     projectId: "019f644c-1379-79c0-825e-66a4b7653bd1",
@@ -89,6 +94,7 @@ async function debugFixture() {
   const service = new RuntimeService({
     project,
     sessionId: () => "session_12345678",
+    requireDapMetadata: true,
     createDescriptor: async (input) => ({
       path: join(root, "runtime.json"),
       descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001, ownerLeasePath: join(root, "runtime.lease") },
@@ -257,6 +263,35 @@ describe("Phase 7 RuntimeService debugging", () => {
     await service.close();
     const clears = dap.calls.filter((entry) => entry.command === "setBreakpoints" && Array.isArray(entry.arguments.breakpoints) && entry.arguments.breakpoints.length === 0);
     expect(clears).toHaveLength(1);
+  });
+
+  it("rejects a breakpoint whose resolved path aliases the protected addon", async () => {
+    const { dap, launched, service } = await debugFixture();
+    await expect(service.execute({
+      operation: "debug_breakpoints_set",
+      handle: launched.handle,
+      breakpoints: [{ sourcePath: "res://debug_alias.gd", line: 1 }],
+    })).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    expect(dap.calls.filter((entry) => entry.command === "setBreakpoints")).toHaveLength(0);
+  });
+
+  it("requires DAP metadata when the production launch contract enables debugging", async () => {
+    let launched = false;
+    const service = new RuntimeService({
+      project: { projectId: "019f644c-1379-79c0-825e-66a4b7653bd1", rootRealPath: "/private/project", projectConfigSha256: "a".repeat(64) },
+      sessionId: () => "session_12345678",
+      requireDapMetadata: true,
+      createDescriptor: async (input) => ({
+        path: "/private/runtime.json",
+        descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001, ownerLeasePath: "/private/runtime.lease" },
+        secret: Buffer.alloc(32), cleanup: async () => undefined,
+      }),
+      prepare: async () => ({ debugPort: 6007 }),
+      launchProcess: async () => { launched = true; throw new Error("must not launch"); },
+      command: async () => ({ pid: 42 }),
+    });
+    await expect(service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 })).rejects.toMatchObject({ code: "AUTHENTICATION_FAILED" });
+    expect(launched).toBe(false);
   });
 
   it("rejects duplicate editor listener ports before launching", async () => {

@@ -129,6 +129,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<GodotMcpRu
       project,
       sessionId: () => bridge?.session?.sessionId ?? null,
       godotBin,
+      requireDapMetadata: true,
       prepare: async ({ descriptor }) => {
         const attached = bridge?.session;
         if (!attached) throw new Error("Godot editor addon is not attached");

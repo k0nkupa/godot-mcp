@@ -41,6 +41,7 @@ describe("Phase 7 runtime debugging schemas", () => {
   it.each([
     "res://../escape.gd",
     "res://addons/godot_mcp/plugin.gd",
+    "res://addons/GODOT_MCP/runtime/runtime_harness.gd",
     "res://debug/not_script.txt",
     "/tmp/escape.gd",
   ])("rejects unsafe debugger source %s", (sourcePath) => {
