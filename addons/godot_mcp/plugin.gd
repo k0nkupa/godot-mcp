@@ -121,7 +121,9 @@ func _dap_server_is_disabled() -> bool:
 
 func _collect_dap_servers(node: Node, output: Array[Node]) -> void:
 	for child: Node in node.get_children():
-		if child != self and child.get_class() == "DebugAdapterServer":
+		if child == self:
+			continue
+		if child.get_class() == "DebugAdapterServer":
 			output.append(child)
 		_collect_dap_servers(child, output)
 
