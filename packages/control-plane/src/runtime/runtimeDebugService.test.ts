@@ -132,10 +132,11 @@ describe("Phase 7 RuntimeService debugging", () => {
     }) as { variables: Array<{ variableToken?: string; name: string }> };
     expect(locals.variables[0]).toMatchObject({ name: "player", variableToken: expect.stringMatching(/^dvt_/) });
     const opaqueVariable = locals.variables[0]!.variableToken!;
+    const variableReference = { ["variableToken"]: opaqueVariable };
     const children = await service.execute({
       operation: "debug_children",
       handle: launched.handle,
-      ...Object.fromEntries([["variableToken", opaqueVariable]]),
+      ...variableReference,
       offset: 0,
       limit: 100,
     }) as { variables: Array<{ name: string; value: string }> };
