@@ -34,12 +34,13 @@ test("hits a real Godot DAP breakpoint and reads bounded stack and watch data", 
     expect(stack.frames.map((frame) => frame.name)).toEqual(expect.arrayContaining(["_inner", "_middle", "_outer"]));
     const inner = stack.frames.find((frame) => frame.name === "_inner");
     expect(inner).toMatchObject({ frameToken: expect.stringMatching(/^dft_/), sourcePath: "res://debug/debug_fixture.gd" });
+    const opaqueFrame = inner!.frameToken;
 
     phase = "locals";
     const locals = await fixture.runtime.execute({
       operation: "debug_variables",
       handle: launched.handle,
-      frameToken: inner!.frameToken,
+      frameToken: opaqueFrame,
       scope: "locals",
       offset: 0,
       limit: 100,
@@ -49,7 +50,7 @@ test("hits a real Godot DAP breakpoint and reads bounded stack and watch data", 
     const watched = await fixture.runtime.execute({
       operation: "debug_watch",
       handle: launched.handle,
-      frameToken: inner!.frameToken,
+      frameToken: opaqueFrame,
       selectors: [{ scope: "locals", path: ["player", "health"] }],
     }) as { watches: Array<{ status: string; variable?: { value: string } }> };
     expect(watched.watches).toEqual([expect.objectContaining({ status: "found", variable: expect.objectContaining({ value: expect.stringContaining("100") }) })]);
@@ -60,7 +61,7 @@ test("hits a real Godot DAP breakpoint and reads bounded stack and watch data", 
     await expect(fixture.runtime.execute({
       operation: "debug_variables",
       handle: launched.handle,
-      frameToken: inner!.frameToken,
+      frameToken: opaqueFrame,
       scope: "locals",
       offset: 0,
       limit: 100,
