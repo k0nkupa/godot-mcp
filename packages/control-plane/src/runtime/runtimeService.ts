@@ -104,9 +104,9 @@ class AuthenticatedDebuggerClient implements RuntimeDebuggerClient {
     if (!isRecord(response) || !Number.isInteger(response.sequence) || typeof response.reason !== "string") {
       throw runtimeError("GODOT_RUNTIME_ERROR", "Authenticated debugger returned a malformed stop event");
     }
-    this.stopped = true;
-    this.stopSequence = Number(response.sequence);
-    return { sequence: this.stopSequence, reason: response.reason, body: { reason: response.reason, threadId: 1 } };
+    const eventSequence = Number(response.sequence);
+    await this.refresh();
+    return { sequence: eventSequence, reason: response.reason, body: { reason: response.reason, threadId: 1 } };
   }
 
   snapshot() {
@@ -394,7 +394,9 @@ export class RuntimeService {
     switch (input.operation) {
       case "debug_wait": {
         const stopped = await debuggerClient.nextStop(input.afterSequence, input.timeoutMs);
-        this.bindDebugStop(stopped.sequence);
+        const live = debuggerClient.snapshot();
+        if (live.stopped && live.stopSequence === stopped.sequence) this.bindDebugStop(stopped.sequence);
+        else this.debugTokens.clear();
         return projectDebugStop(stopped);
       }
       case "debug_pause":
@@ -417,21 +419,21 @@ export class RuntimeService {
       case "debug_stack":
         return this.debugStack(debuggerClient, input.offset, input.limit);
       case "debug_variables": {
-        this.bindDebugStop();
+        const stopSequence = this.bindDebugStop();
         const frameId = this.debugTokens.resolveFrame(input.frameToken);
-        const reference = await this.scopeReference(debuggerClient, frameId, input.scope);
-        return this.readVariables(debuggerClient, reference, 1, input.offset, input.limit);
+        const reference = await this.scopeReference(debuggerClient, frameId, input.scope, stopSequence);
+        return this.readVariables(debuggerClient, reference, 1, input.offset, input.limit, stopSequence);
       }
       case "debug_children": {
-        this.bindDebugStop();
+        const stopSequence = this.bindDebugStop();
         const record = this.debugTokens.resolveVariable(input.variableToken);
-        return this.readVariables(debuggerClient, record.variablesReference, record.depth + 1, input.offset, input.limit);
+        return this.readVariables(debuggerClient, record.variablesReference, record.depth + 1, input.offset, input.limit, stopSequence);
       }
       case "debug_watch": {
-        this.bindDebugStop();
+        const stopSequence = this.bindDebugStop();
         const frameId = this.debugTokens.resolveFrame(input.frameToken);
         const watches = [];
-        for (const selector of input.selectors) watches.push(await this.resolveWatch(debuggerClient, frameId, selector));
+        for (const selector of input.selectors) watches.push(await this.resolveWatch(debuggerClient, frameId, selector, stopSequence));
         return { watches };
       }
     }
@@ -453,11 +455,12 @@ export class RuntimeService {
     }
   }
 
-  private bindDebugStop(stopSequence?: number): void {
+  private bindDebugStop(stopSequence?: number): number {
     const debuggerClient = this.requireDebuggerClient();
     const snapshot = debuggerClient.snapshot();
     const sequence = stopSequence ?? snapshot.stopSequence;
-    if (!snapshot.stopped || sequence < 1 || !this.handle) {
+    if (!snapshot.stopped || sequence < 1 || snapshot.stopSequence !== sequence || !this.handle) {
+      this.debugTokens.clear();
       throw runtimeError("PRECONDITION_FAILED", "Godot runtime is not stopped in a debuggable frame");
     }
     this.debugTokens.bind({
@@ -466,6 +469,7 @@ export class RuntimeService {
       debuggerGeneration: this.debuggerGeneration,
       stopSequence: sequence,
     });
+    return sequence;
   }
 
   private async stepDebugger(debuggerClient: RuntimeDebuggerClient, command: "next" | "stepIn"): Promise<DebugStopResult> {
@@ -549,8 +553,9 @@ export class RuntimeService {
   }
 
   private async debugStack(debuggerClient: RuntimeDebuggerClient, offset: number, limit: number): Promise<{ frames: unknown[]; totalFrames: number }> {
-    this.bindDebugStop();
+    const stopSequence = this.bindDebugStop();
     const response = await debuggerClient.request("stackTrace", { threadId: 1, startFrame: offset, levels: limit });
+    this.bindDebugStop(stopSequence);
     const rawFrames = bodyArray(response, "stackFrames").slice(0, limit);
     const frames = rawFrames.flatMap((raw) => {
       if (!isRecord(raw) || !Number.isInteger(raw.id)) return [];
@@ -574,8 +579,9 @@ export class RuntimeService {
     return { frames, totalFrames };
   }
 
-  private async scopeReference(debuggerClient: RuntimeDebuggerClient, frameId: number, scope: "locals" | "members" | "globals"): Promise<number> {
+  private async scopeReference(debuggerClient: RuntimeDebuggerClient, frameId: number, scope: "locals" | "members" | "globals", stopSequence: number): Promise<number> {
     const response = await debuggerClient.request("scopes", { frameId });
+    this.bindDebugStop(stopSequence);
     const match = bodyArray(response, "scopes").find((entry) => isRecord(entry) && typeof entry.name === "string" && entry.name.toLowerCase() === scope);
     if (!isRecord(match) || !Number.isInteger(match.variablesReference) || Number(match.variablesReference) < 1) {
       throw runtimeError("PRECONDITION_FAILED", `Godot debugger did not return the ${scope} scope`);
@@ -589,9 +595,11 @@ export class RuntimeService {
     depth: number,
     offset: number,
     limit: number,
+    stopSequence: number,
   ): Promise<{ variables: unknown[]; offset: number; returned: number; total: number; truncated: boolean }> {
     if (depth > 8) throw runtimeError("PRECONDITION_FAILED", "Debugger variable depth limit exceeded");
     const response = await this.requestVariables(debuggerClient, { variablesReference, start: offset, count: limit });
+    this.bindDebugStop(stopSequence);
     const all = bodyArray(response, "variables");
     const selected = all.slice(0, limit);
     const body = isRecord(response.body) ? response.body : {};
@@ -650,11 +658,13 @@ export class RuntimeService {
     debuggerClient: RuntimeDebuggerClient,
     frameId: number,
     selector: Extract<RuntimeDebugOperationInput, { operation: "debug_watch" }>["selectors"][number],
+    stopSequence: number,
   ): Promise<Record<string, unknown>> {
-    let reference = await this.scopeReference(debuggerClient, frameId, selector.scope);
+    let reference = await this.scopeReference(debuggerClient, frameId, selector.scope, stopSequence);
     let current: unknown;
     for (const [depthIndex, segment] of selector.path.entries()) {
       const response = await this.requestVariables(debuggerClient, { variablesReference: reference, start: 0, count: 256 });
+      this.bindDebugStop(stopSequence);
       const all = bodyArray(response, "variables");
       const bounded = all.slice(0, 256);
       this.debugTokens.consumeVariableEntries(bounded.length);

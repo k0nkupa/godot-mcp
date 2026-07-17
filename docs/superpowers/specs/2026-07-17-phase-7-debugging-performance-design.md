@@ -68,7 +68,7 @@ Execution control uses the bound editor debugger session. Stack capture immediat
 
 `debug_pause`, `debug_continue`, `debug_step_over`, and `debug_step_into` control the script debugger. Continue and step require a stopped session; pause requires a running session. A step completes only after a newer stop event. Step-out is excluded.
 
-A stop that arrives before the execution-control response is preserved by sequence comparison; it must not be discarded as stale.
+A stop that arrives before the execution-control response is preserved by sequence comparison; it must not be discarded as stale. Retained stop events are historical cursors, not live-state assertions: the control plane refreshes current debugger status after each wait and binds tokens only when the session is still stopped at that exact sequence.
 
 ### 5.3 Stacks and variables
 
@@ -78,7 +78,7 @@ At capture time, the runtime projects locals, members, and globals into a bounde
 
 `debug_variables` returns one `locals`, `members`, or `globals` page. `debug_children` expands one opaque variable token. Pages contain at most 256 entries; recursive client expansion is capped at depth eight and 2,048 entries per stop. Scope clipping remains explicit so a full retained page still reports `truncated` when additional variables were omitted.
 
-Frame and variable tokens bind run ID, runtime generation, authenticated debugger generation, and stop sequence. They expire on continue, step, a newer stop, reconnect, stop, crash, disconnect, or cleanup.
+Frame and variable tokens bind run ID, runtime generation, authenticated debugger generation, and stop sequence. They expire on continue, step, a newer stop, reconnect, stop, crash, disconnect, or cleanup. Stack, scope, variable, child, and watch reads revalidate the live stopped sequence after every asynchronous debugger request before projecting evidence or issuing tokens.
 
 ### 5.4 Safe watches
 

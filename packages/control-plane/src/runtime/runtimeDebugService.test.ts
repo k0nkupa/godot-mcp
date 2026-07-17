@@ -25,6 +25,8 @@ class FakeDebuggerClient implements RuntimeDebuggerClient {
   outOfRangePages = false;
   deepVariables = false;
   typedWatchVariables = false;
+  historicalWait = false;
+  invalidateStopAfterCommand: DebuggerCommand | null = null;
   failBreakpointPath: string | null = null;
   readonly persistentBreakpointFailures = new Set<string>();
   terminalNotAttached = false;
@@ -45,17 +47,21 @@ class FakeDebuggerClient implements RuntimeDebuggerClient {
       if (this.outOfRangePages && Number(argumentsValue.startFrame) > 0) {
         return { body: { stackFrames: [], totalFrames: 3 } };
       }
-      return { body: { stackFrames: [
+      const response = { body: { stackFrames: [
         { id: 7, name: "inner", source: { path: "/tmp/project/debug_fixture.gd" }, line: 17, column: 2 },
         { id: 8, name: "outer", source: { path: "/tmp/project/debug_fixture.gd" }, line: 9, column: 1 },
       ], totalFrames: 12 } };
+      this.invalidateStop(command);
+      return response;
     }
     if (command === "scopes") {
-      return { body: { scopes: [
+      const response = { body: { scopes: [
         { name: "Locals", variablesReference: 10 },
         { name: "Members", variablesReference: 20 },
         { name: "Globals", variablesReference: 30 },
       ] } };
+      this.invalidateStop(command);
+      return response;
     }
     if (command === "variables") {
       if (this.transientVariableFailures > 0) {
@@ -100,6 +106,12 @@ class FakeDebuggerClient implements RuntimeDebuggerClient {
   }
 
   async nextStop(afterSequence: number): Promise<DebuggerStopEvent> {
+    if (this.historicalWait) {
+      const eventSequence = Math.max(this.stopSequence + 1, afterSequence + 1);
+      this.stopSequence = eventSequence + 1;
+      this.stopped = false;
+      return { sequence: eventSequence, reason: "breakpoint", body: { reason: "breakpoint", threadId: 1 } };
+    }
     this.stopSequence = Math.max(this.stopSequence + 1, afterSequence + 1);
     this.stopped = true;
     return { sequence: this.stopSequence, reason: "breakpoint", body: { reason: "breakpoint", threadId: 1 } };
@@ -115,6 +127,13 @@ class FakeDebuggerClient implements RuntimeDebuggerClient {
 
   async close(): Promise<void> {
     this.closed = true;
+  }
+
+  private invalidateStop(command: DebuggerCommand): void {
+    if (this.invalidateStopAfterCommand !== command) return;
+    this.invalidateStopAfterCommand = null;
+    this.stopSequence += 1;
+    this.stopped = false;
   }
 }
 
@@ -184,6 +203,37 @@ describe("Phase 7 RuntimeService debugging", () => {
     await service.close();
     expect(calls).toContain("runtime.cleanup");
     expect(calls.indexOf("process.stop")).toBeLessThan(calls.indexOf("runtime.cleanup"));
+  });
+
+  it("keeps historical stop events separate from the live running state", async () => {
+    const { dap, launched, service } = await debugFixture();
+    dap.stopped = false;
+    dap.historicalWait = true;
+    await expect(service.execute({
+      operation: "debug_wait", handle: launched.handle, afterSequence: 1, timeoutMs: 100,
+    })).resolves.toMatchObject({ sequence: 2, reason: "breakpoint" });
+    await expect(service.execute({ operation: "debug_status", handle: launched.handle })).resolves.toMatchObject({ stopped: false, stopSequence: 3 });
+    await expect(service.execute({
+      operation: "debug_stack", handle: launched.handle, offset: 0, limit: 64,
+    })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+  });
+
+  it("rejects stack and variable evidence if the live stop changes during the read", async () => {
+    const first = await debugFixture();
+    first.dap.invalidateStopAfterCommand = "stackTrace";
+    await expect(first.service.execute({
+      operation: "debug_stack", handle: first.launched.handle, offset: 0, limit: 64,
+    })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+
+    const second = await debugFixture();
+    const stack = await second.service.execute({
+      operation: "debug_stack", handle: second.launched.handle, offset: 0, limit: 64,
+    }) as { frames: Array<{ frameToken: string }> };
+    second.dap.invalidateStopAfterCommand = "scopes";
+    await expect(second.service.execute({
+      operation: "debug_variables", handle: second.launched.handle, ["frameToken"]: stack.frames[0]!.frameToken,
+      scope: "locals", offset: 0, limit: 100,
+    })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
   });
 
   it("returns bounded stacks, variables, children, and selector watches without evaluation", async () => {
