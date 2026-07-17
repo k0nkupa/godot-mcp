@@ -134,11 +134,20 @@ static func _valid_float_wire_params(value: Variant) -> bool:
 		return true
 	if value.size() == 1 and value.has(FLOAT_WIRE_KEY):
 		var encoded: Variant = value[FLOAT_WIRE_KEY]
-		if typeof(encoded) != TYPE_STRING or encoded.length() != 16 or String(encoded) != String(encoded).to_lower() or not String(encoded).is_valid_hex_number(false):
+		if not _is_lower_hex_16(encoded):
 			return false
 		return is_finite(String(encoded).hex_decode().decode_double(0))
 	for entry in value.values():
 		if not _valid_float_wire_params(entry): return false
+	return true
+
+static func _is_lower_hex_16(value: Variant) -> bool:
+	if typeof(value) != TYPE_STRING or String(value).length() != 16:
+		return false
+	for index in 16:
+		var code := String(value).unicode_at(index)
+		if not ((code >= 48 and code <= 57) or (code >= 97 and code <= 102)):
+			return false
 	return true
 
 static func _decode_float_params(value: Variant) -> Variant:

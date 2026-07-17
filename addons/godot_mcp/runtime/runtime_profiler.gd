@@ -289,6 +289,7 @@ func _retain_raw(sample: Dictionary, observed_count: int) -> void:
 			return
 		_raw_bytes -= old_bytes
 		_raw_samples[slot] = sample
+		_job.droppedSamples = int(_job.droppedSamples) + 1
 	else:
 		if _raw_bytes + encoded_bytes > MAX_EVIDENCE_BYTES:
 			_job.droppedSamples = int(_job.droppedSamples) + 1

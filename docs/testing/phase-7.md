@@ -22,6 +22,7 @@ The certified `godot-mcp editor` launch assigns Godot's authenticated editor deb
 - `profile_start`, `profile_status`, `profile_cancel`, and `profile_result` manage one job per runtime.
 - Active and terminal profile jobs remain bound to the owned runtime across ordinary game-scene transitions; runtime stop, exit, or explicit clear cancels and removes them.
 - A profile lasts 100 ms–30 seconds, samples every 1–120 frames, accepts at most eight unique groups, and retains at most 2,048 samples within a four MiB cap measured over the complete wire-encoded terminal evidence.
+- `droppedSamples` counts every observation absent from retained raw evidence, including both rejected samples and samples evicted by deterministic reservoir replacement.
 - Requested built-in groups and EngineProfiler tick metrics take priority within the 128-metric sample cap. Custom monitors use the remaining capacity, and terminal evidence explicitly reports affected samples, dropped groups, and the maximum metrics dropped per sample.
 - Terminal evidence distinguishes complete, cancelled, and failed results; includes monotonic time/frame bounds, aggregates, optional bounded samples, engine/GPU metadata, and a canonical SHA-256.
 - Performance results are observations, not deterministic benchmark claims. Tests assert structure and workload direction rather than machine-specific absolute timing.

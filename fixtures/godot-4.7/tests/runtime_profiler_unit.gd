@@ -71,6 +71,21 @@ func _init() -> void:
 		slots_b.append(RuntimeProfiler.retention_slot(observed + 1, 2048))
 	assert(slots_a == slots_b)
 	assert(slots_a.max() < 2048)
+	profiler._job = {"droppedSamples": 0}
+	profiler._raw_samples.clear()
+	profiler._raw_bytes = 0
+	var retained_sample := {"frame": 1, "monotonicUsec": 1, "values": {"frame.fps": 60.0}}
+	for index in RuntimeProfiler.MAX_SAMPLES:
+		var sample: Dictionary = retained_sample.duplicate(true)
+		sample.frame = index
+		profiler._raw_samples.append(sample)
+		profiler._raw_bytes += profiler._wire_size(sample)
+	var replacement_observed := RuntimeProfiler.MAX_SAMPLES + 1
+	while RuntimeProfiler.retention_slot(replacement_observed, RuntimeProfiler.MAX_SAMPLES) < 0:
+		replacement_observed += 1
+	profiler._retain_raw({"frame": replacement_observed, "monotonicUsec": 2, "values": {"frame.fps": 59.0}}, replacement_observed)
+	assert(profiler._raw_samples.size() == RuntimeProfiler.MAX_SAMPLES)
+	assert(profiler._job.droppedSamples == 1)
 	assert(profiler.snapshot(["rendering"]).data.gpuTimestamps.has("supported"))
 	assert(RuntimeProfiler.gpu_microseconds_delta(1500) == 1500.0)
 	assert(RuntimeProfiler.extract_profile_gpu_deltas(
