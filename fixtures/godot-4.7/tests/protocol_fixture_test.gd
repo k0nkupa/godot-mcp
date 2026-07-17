@@ -32,6 +32,8 @@ func _init() -> void:
 	assert(SessionCrypto._canonical_signing_params(unsafe_integral_float) == {
 		"$godotMcpFloat64Le": SessionCrypto.float64_le_hex(unsafe_integral_float),
 	})
+	assert(not SessionCrypto._valid_float_wire_params({"$godotMcpFloat64Le": "000000000000f07f"}))
+	assert(not SessionCrypto._valid_float_wire_params({"$godotMcpFloat64Le": "000000000000f87f"}))
 	assert(SessionCrypto.float64_le_hex(precise) == "5ff64637dd9abf3f", SessionCrypto.float64_le_hex(precise))
 	assert(SessionCrypto.float64_le_hex(tiny) == "59f3f8c21f6ea501", SessionCrypto.float64_le_hex(tiny))
 	assert(SessionCrypto.float64_le_hex(huge) == "84f19de8d893b654", SessionCrypto.float64_le_hex(huge))

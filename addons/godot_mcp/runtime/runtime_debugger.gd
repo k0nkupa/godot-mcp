@@ -281,11 +281,10 @@ func _set_breakpoints(session: EditorDebuggerSession, arguments: Dictionary) -> 
 			session.set_breakpoint(localized, line, false)
 	var next_preserved: Array[int] = []
 	for line: int in lines:
-		if previous.has(line):
-			if preserved.has(line): next_preserved.append(line)
-		elif active.has(breakpoint_key(localized, line)):
+		var is_active := active.has(breakpoint_key(localized, line))
+		if should_preserve_breakpoint(previous.has(line), preserved.has(line), is_active):
 			next_preserved.append(line)
-		else:
+		if should_enable_breakpoint(is_active):
 			session.set_breakpoint(localized, line, true)
 	if lines.is_empty():
 		_breakpoints.erase(localized)
@@ -309,6 +308,12 @@ static func breakpoints_to_disable(owned: Array, preserved: Array) -> Array[int]
 	for line: int in owned:
 		if not preserved.has(line): result.append(line)
 	return result
+
+static func should_enable_breakpoint(is_active: bool) -> bool:
+	return not is_active
+
+static func should_preserve_breakpoint(was_requested: bool, was_preserved: bool, is_active: bool) -> bool:
+	return is_active and (not was_requested or was_preserved)
 
 func _wait_for_stop(after_sequence: int, deadline: int) -> Dictionary:
 	while _now_ms() < deadline:

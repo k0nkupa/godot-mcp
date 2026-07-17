@@ -531,7 +531,9 @@ export class RuntimeService {
         }
       }
       if (rollbackFailed) {
-        await this.cleanupDebuggerClient().catch(() => undefined);
+        await this.stopProcess().catch(() => undefined);
+        await this.cleanup().catch(() => undefined);
+        this.state = "failed";
         throw runtimeError("TRANSPORT_ERROR", "Breakpoint replacement failed and could not be rolled back", true);
       }
       throw error;

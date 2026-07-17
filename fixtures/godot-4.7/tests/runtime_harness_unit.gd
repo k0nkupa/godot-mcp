@@ -28,6 +28,10 @@ func _init() -> void:
 	assert(not RuntimeDebugger.continue_transition_complete(true, 4, 4))
 	assert(RuntimeDebugger.breakpoint_key("res://player.gd", 12) == "res://player.gd:12")
 	assert(RuntimeDebugger.breakpoints_to_disable([10, 11, 12], [11]) == [10, 12])
+	assert(RuntimeDebugger.should_enable_breakpoint(false))
+	assert(not RuntimeDebugger.should_enable_breakpoint(true))
+	assert(not RuntimeDebugger.should_preserve_breakpoint(true, true, false))
+	assert(RuntimeDebugger.should_preserve_breakpoint(true, true, true))
 	var hello := {"runId": "run", "generation": 1, "projectId": "project", "sessionId": "session", "launchNonce": "nonce", "pid": 42, "proof": "client-proof"}
 	assert(RuntimeHarness.hello_signing_text(hello) == RuntimeDebugger.hello_signing_text(hello))
 	assert(RuntimeHarness.server_proof_signing_text(hello) == RuntimeDebugger.server_proof_signing_text(hello))

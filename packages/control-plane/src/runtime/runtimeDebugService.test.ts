@@ -25,6 +25,7 @@ class FakeDebuggerClient implements RuntimeDebuggerClient {
   deepVariables = false;
   typedWatchVariables = false;
   failBreakpointPath: string | null = null;
+  readonly persistentBreakpointFailures = new Set<string>();
   terminalNotAttached = false;
 
   async request(command: DebuggerCommand, argumentsValue: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -77,7 +78,8 @@ class FakeDebuggerClient implements RuntimeDebuggerClient {
       return { body: { variables: [] } };
     }
     if (command === "setBreakpoints") {
-      if (argumentsValue.source && (argumentsValue.source as { path?: string }).path === this.failBreakpointPath) {
+      const sourcePath = (argumentsValue.source as { path?: unknown } | undefined)?.path;
+      if (typeof sourcePath === "string" && (sourcePath === this.failBreakpointPath || this.persistentBreakpointFailures.has(sourcePath))) {
         this.failBreakpointPath = null;
         throw new DebuggerClientError("TRANSPORT_ERROR", "setBreakpoints failed");
       }
@@ -395,6 +397,27 @@ describe("Phase 7 RuntimeService debugging", () => {
       && (entry.arguments.source as { path?: string }).path === join(project.rootRealPath, "debug_fixture_two.gd"));
     expect(sourceTwoCalls.at(-1)?.arguments.breakpoints).toEqual([]);
     await expect(service.execute({ operation: "debug_status", handle: launched.handle })).resolves.toMatchObject({ breakpointCount: 1 });
+  });
+
+  it("terminates and cleans the run when breakpoint rollback also fails", async () => {
+    const { calls, dap, launched, project, service } = await debugFixture();
+    await service.execute({
+      operation: "debug_breakpoints_set",
+      handle: launched.handle,
+      breakpoints: [{ sourcePath: "res://debug_fixture.gd", line: 2 }],
+    });
+    dap.persistentBreakpointFailures.add(join(project.rootRealPath, "debug_fixture_two.gd"));
+    await expect(service.execute({
+      operation: "debug_breakpoints_set",
+      handle: launched.handle,
+      breakpoints: [
+        { sourcePath: "res://debug_fixture.gd", line: 3 },
+        { sourcePath: "res://debug_fixture_two.gd", line: 2 },
+      ],
+    })).rejects.toMatchObject({ code: "TRANSPORT_ERROR" });
+    expect(calls).toContain("process.stop");
+    expect(calls).toContain("runtime.cleanup");
+    expect(service.snapshot().state).toBe("failed");
   });
 
   it("rejects a breakpoint whose resolved path aliases the protected addon", async () => {

@@ -134,7 +134,9 @@ static func _valid_float_wire_params(value: Variant) -> bool:
 		return true
 	if value.size() == 1 and value.has(FLOAT_WIRE_KEY):
 		var encoded: Variant = value[FLOAT_WIRE_KEY]
-		return typeof(encoded) == TYPE_STRING and encoded.length() == 16 and String(encoded) == String(encoded).to_lower() and String(encoded).is_valid_hex_number(false)
+		if typeof(encoded) != TYPE_STRING or encoded.length() != 16 or String(encoded) != String(encoded).to_lower() or not String(encoded).is_valid_hex_number(false):
+			return false
+		return is_finite(String(encoded).hex_decode().decode_double(0))
 	for entry in value.values():
 		if not _valid_float_wire_params(entry): return false
 	return true
