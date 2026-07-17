@@ -68,6 +68,7 @@ describe("Phase 7 runtime performance schemas", () => {
       retainedSamples: 1,
       invalidSamples: 0,
       droppedSamples: 0,
+      metricTruncation: { truncated: false, affectedSamples: 0, maxDroppedMetricsPerSample: 0, droppedGroups: [] },
       aggregates: { time_fps: { min: 60, max: 60, mean: 60, p50: 60, p95: 60, p99: 60 } },
       rawSamples: [],
       engine: { version: "4.7.stable.official.test", renderer: "gl_compatibility", renderingMethod: "gl_compatibility", graphicsApi: "OpenGL" },
@@ -75,6 +76,14 @@ describe("Phase 7 runtime performance schemas", () => {
       sha256: "a".repeat(64),
     });
     expect(baseline).toMatchObject({ state: "completed", observedSamples: 1 });
+    expect(ProfileEvidenceSchema.parse({
+      ...baseline,
+      metricTruncation: { truncated: true, affectedSamples: 1, maxDroppedMetricsPerSample: 4, droppedGroups: ["custom"] },
+    })).toMatchObject({ metricTruncation: { truncated: true, droppedGroups: ["custom"] } });
+    expect(() => ProfileEvidenceSchema.parse({
+      ...baseline,
+      metricTruncation: { truncated: false, affectedSamples: 1, maxDroppedMetricsPerSample: 4, droppedGroups: ["custom"] },
+    })).toThrow();
     const flattenedCustomMetric = `custom.${"m".repeat(128)}`;
     expect(ProfileEvidenceSchema.parse({
       ...baseline,
@@ -112,6 +121,7 @@ describe("Phase 7 runtime performance schemas", () => {
       retainedSamples: 0,
       invalidSamples: 0,
       droppedSamples: 0,
+      metricTruncation: { truncated: false, affectedSamples: 0, maxDroppedMetricsPerSample: 0, droppedGroups: [] },
       aggregates: {},
       rawSamples: [],
       engine: { version: "4.7", renderer: "headless", renderingMethod: "gl_compatibility", graphicsApi: "unavailable" },

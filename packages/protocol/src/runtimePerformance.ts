@@ -105,6 +105,25 @@ const ProfileSampleSchema = z
   })
   .strict();
 
+const ProfileMetricTruncationSchema = z
+  .object({
+    truncated: z.boolean(),
+    affectedSamples: z.number().int().min(0),
+    maxDroppedMetricsPerSample: z.number().int().min(0),
+    droppedGroups: z
+      .array(z.enum([...MonitorGroupSchema.options, "profiler"]))
+      .max(10)
+      .refine((groups) => new Set(groups).size === groups.length, { message: "Dropped metric groups must be unique" }),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      value.truncated
+        ? value.affectedSamples > 0 && value.maxDroppedMetricsPerSample > 0 && value.droppedGroups.length > 0
+        : value.affectedSamples === 0 && value.maxDroppedMetricsPerSample === 0 && value.droppedGroups.length === 0,
+    { message: "Metric truncation metadata must match its truncation state" },
+  );
+
 export const ProfileEvidenceSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -121,6 +140,7 @@ export const ProfileEvidenceSchema = z
     retainedSamples: z.number().int().min(0).max(2_048),
     invalidSamples: z.number().int().min(0),
     droppedSamples: z.number().int().min(0),
+    metricTruncation: ProfileMetricTruncationSchema,
     aggregates: z.record(FlattenedMetricNameSchema, ProfileAggregateSchema),
     rawSamples: z.array(ProfileSampleSchema).max(2_048),
     engine: EngineMetadataSchema,
@@ -134,6 +154,9 @@ export const ProfileEvidenceSchema = z
   })
   .refine((evidence) => evidence.retainedSamples === evidence.rawSamples.length || evidence.rawSamples.length === 0, {
     message: "Retained sample metadata must match included raw samples",
+  })
+  .refine((evidence) => evidence.metricTruncation.affectedSamples <= evidence.observedSamples, {
+    message: "Metric truncation cannot affect more samples than were observed",
   });
 
 export const ProfileJobReceiptSchema = z

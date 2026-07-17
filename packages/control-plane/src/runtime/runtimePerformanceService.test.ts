@@ -39,6 +39,7 @@ function evidence(state: "completed" | "cancelled" | "failed" = "completed") {
     retainedSamples: 0,
     invalidSamples: 0,
     droppedSamples: 0,
+    metricTruncation: { truncated: false, affectedSamples: 0, maxDroppedMetricsPerSample: 0, droppedGroups: [] },
     aggregates: {},
     rawSamples: [],
     engine: monitorSnapshot.engine,
