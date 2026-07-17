@@ -135,6 +135,9 @@ export async function launchEditor(
   project: string,
   options: LaunchEditorOptions = {},
 ): Promise<EditorProcess> {
+  if (options.dapPort !== undefined && options.dapPort !== options.debugServerPort) {
+    throw new Error("Secure editor launch requires DAP and authenticated debugger to share one port");
+  }
   const godot = await findGodotBinary();
   if (options.scene) {
     const selectedMainEditor = options.scene.includes("3d") ? 1 : 0;
@@ -157,6 +160,7 @@ export async function launchEditor(
       "--",
       ...(options.debugServerPort === undefined ? [] : [`--godot-mcp-debug-port=${options.debugServerPort}`]),
       ...(options.dapPort === undefined ? [] : [`--godot-mcp-dap-port=${options.dapPort}`]),
+      ...(options.dapPort === undefined ? [] : ["--godot-mcp-secure-editor-launch=1"]),
     ]),
   ], {
     env: process.env,

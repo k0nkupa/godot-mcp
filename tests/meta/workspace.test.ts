@@ -92,5 +92,8 @@ describe("workspace package contract", () => {
     expect(agents).toContain("docs/testing/phase-7.md");
     expect(await readFile("README.md", "utf8")).toContain("pnpm qa:phase-7");
     expect(await readFile("docs/testing/phase-7.md", "utf8")).toContain("debug_breakpoints_set");
+    const plugin = await readFile("addons/godot_mcp/plugin.gd", "utf8");
+    expect(plugin).toContain("_secure_editor_launch_requested()");
+    expect(plugin).toContain("_runtime_dap_port() == _runtime_debug_port()");
   });
 });

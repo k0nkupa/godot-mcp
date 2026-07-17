@@ -6,7 +6,6 @@ import {
   launchEditor,
   launchMcpClient,
   reserveLoopbackPort,
-  reserveLoopbackPortInRange,
   runCli,
   runGodot,
   waitUntil,
@@ -40,8 +39,7 @@ test.skipIf(process.platform !== "darwin")(
       expect(imported.exitCode, imported.stderr).toBe(0);
       expect((await runCli(["init", "--project", project.root])).exitCode).toBe(0);
       debugServerPort = await reserveLoopbackPort();
-      dapPort = await reserveLoopbackPortInRange(1_024, 49_151);
-      while (dapPort === debugServerPort) dapPort = await reserveLoopbackPortInRange(1_024, 49_151);
+      dapPort = debugServerPort;
       editor = await launchEditor(project.root, { headless: true, debugServerPort, dapPort });
       editorPid = editor.pid;
       client = await launchMcpClient([

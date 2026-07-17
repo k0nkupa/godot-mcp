@@ -56,7 +56,7 @@ Future project operations must stay inside approved `res://` roots and deny `.gi
 
 | Abuse case | Control |
 |---|---|
-| Unauthenticated loopback DAP client | The addon stops Godot 4.7's native DAP server, holds its configured loopback port with an inert guard, and refuses runtime preparation unless the guard is active |
+| Unauthenticated loopback DAP client | The certified CLI launch assigns native DAP and the authenticated editor debugger one port; the debugger binds first so DAP never listens, the addon stops the inactive DAP plugin, and runtime preparation refuses any launch lacking the marker/shared-port proof and editor-PID listener verification |
 | Wrong-run attachment or listener replacement | Runtime handle, generation, editor PID, debugger port, authenticated descriptor/hello, owned child PID, and unique editor debugger session are bound before debugger state exists |
 | Arbitrary debugger execution | A fixed internal adapter maps only disconnect, breakpoints, threads, stack/scopes/variables, pause, continue, next, and step-in; no raw socket, passthrough, launch, terminate, evaluate, set-variable, or method call exists |
 | Source or addon escape | Breakpoints require canonical project-local `.gd` paths; traversal, symlinks, non-scripts, and `res://addons/godot_mcp` are rejected after real-path containment checks |

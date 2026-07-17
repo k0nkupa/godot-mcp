@@ -22,6 +22,7 @@ class FakeDebuggerClient implements RuntimeDebuggerClient {
   transientVariableFailures = 0;
   variablePageSize = 0;
   variablePageTruncated = false;
+  outOfRangePages = false;
   deepVariables = false;
   typedWatchVariables = false;
   failBreakpointPath: string | null = null;
@@ -41,6 +42,9 @@ class FakeDebuggerClient implements RuntimeDebuggerClient {
     }
     this.calls.push({ command, arguments: argumentsValue });
     if (command === "stackTrace") {
+      if (this.outOfRangePages && Number(argumentsValue.startFrame) > 0) {
+        return { body: { stackFrames: [], totalFrames: 3 } };
+      }
       return { body: { stackFrames: [
         { id: 7, name: "inner", source: { path: "/tmp/project/debug_fixture.gd" }, line: 17, column: 2 },
         { id: 8, name: "outer", source: { path: "/tmp/project/debug_fixture.gd" }, line: 9, column: 1 },
@@ -59,6 +63,9 @@ class FakeDebuggerClient implements RuntimeDebuggerClient {
         throw new DebuggerClientError("TRANSPORT_ERROR", "unknown");
       }
       const reference = Number(argumentsValue.variablesReference);
+      if (this.outOfRangePages && Number(argumentsValue.start) > 0) {
+        return { body: { variables: [], totalVariables: 1 } };
+      }
       if (this.variablePageSize > 0) {
         return { body: {
           variables: Array.from({ length: this.variablePageSize }, (_, index) => ({ name: index === 0 ? "target" : `filler_${index}`, value: String(index), variablesReference: 0 })),
@@ -226,6 +233,23 @@ describe("Phase 7 RuntimeService debugging", () => {
       limit: 100,
     })).resolves.toMatchObject({ returned: 1 });
     expect(dap.calls.filter((entry) => entry.command === "variables")).toHaveLength(1);
+    await service.close();
+  });
+
+  it("preserves reported totals for offsets beyond the available page", async () => {
+    const { dap, launched, service } = await debugFixture();
+    dap.outOfRangePages = true;
+    await expect(service.execute({ operation: "debug_stack", handle: launched.handle, offset: 64, limit: 64 }))
+      .resolves.toMatchObject({ frames: [], totalFrames: 3 });
+    const stack = await service.execute({ operation: "debug_stack", handle: launched.handle, offset: 0, limit: 64 }) as { frames: Array<{ frameToken: string }> };
+    await expect(service.execute({
+      operation: "debug_variables",
+      handle: launched.handle,
+      frameToken: stack.frames[0]!.frameToken,
+      scope: "locals",
+      offset: 2_048,
+      limit: 100,
+    })).resolves.toMatchObject({ variables: [], total: 1, truncated: false });
     await service.close();
   });
 

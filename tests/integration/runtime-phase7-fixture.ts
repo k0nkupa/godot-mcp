@@ -15,7 +15,6 @@ import {
   findGodotBinary,
   launchEditor,
   reserveLoopbackPort,
-  reserveLoopbackPortInRange,
   runGodot,
   type EditorProcess,
 } from "@godot-mcp/testkit";
@@ -53,8 +52,7 @@ export async function createPhase7RuntimeFixture(): Promise<Phase7RuntimeFixture
       auditSink: new JsonlAuditSink(join(dirname(project.root), "runtime-phase7-audit.jsonl")),
     });
     const debugServerPort = await reserveLoopbackPort();
-    let dapPort = await reserveLoopbackPortInRange(1_024, 49_151);
-    while (dapPort === debugServerPort) dapPort = await reserveLoopbackPortInRange(1_024, 49_151);
+    const dapPort = debugServerPort;
     editor = await launchEditor(project.root, { headless: true, debugServerPort, dapPort });
     const session = await bridge.waitForAttachment(15_000);
     let bridgeState = "attached";

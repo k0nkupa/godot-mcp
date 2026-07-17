@@ -16,9 +16,10 @@ pnpm install --frozen-lockfile
 pnpm build
 node /absolute/path/to/godot-mcp/packages/cli/dist/bin.js init --project /absolute/path/to/godot-project
 node /absolute/path/to/godot-mcp/packages/cli/dist/bin.js doctor --project /absolute/path/to/godot-project
+node /absolute/path/to/godot-mcp/packages/cli/dist/bin.js editor --project /absolute/path/to/godot-project
 ```
 
-Open the project in Godot after `init`. The addon connects outward only when a matching MCP runtime publishes a short-lived pairing descriptor.
+Use the `editor` command for the Phase 7-certified launch. It starts Godot with the authenticated editor debugger and native DAP assigned to one loopback port; the debugger binds first, so unauthenticated DAP never acquires a listener. The addon connects outward only when a matching MCP runtime publishes a short-lived pairing descriptor. Opening the project through another launcher keeps earlier editor features available, but runtime debugging fails closed because secure startup cannot be proven.
 
 Register the source checkout with Codex using absolute paths:
 
@@ -94,7 +95,7 @@ GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-6
 GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-7
 ```
 
-The Phase 7 gate certifies native-DAP shutdown and inert guarding, authenticated editor-session debugging, breakpoints/stacks/variables/selector watches, bounded public monitor snapshots, completed and cancelled profiles, hostile-input rejection, published stdio behavior, and zero owned-state or fixture residue. Earlier gates remain required regressions. See [Phase 7 testing](docs/testing/phase-7.md), [Phase 6 testing](docs/testing/phase-6.md), the [threat model](docs/security/threat-model.md), the [bridge protocol](docs/protocol/bridge-v1.md), and the [master design](docs/superpowers/specs/2026-07-15-godot-mcp-master-design.md).
+The Phase 7 gate certifies secure shared-port editor startup, native-DAP inertness, authenticated editor-session debugging, breakpoints/stacks/variables/selector watches, bounded public monitor snapshots, completed and cancelled profiles, hostile-input rejection, published stdio behavior, and zero owned-state or fixture residue. Earlier gates remain required regressions. See [Phase 7 testing](docs/testing/phase-7.md), [Phase 6 testing](docs/testing/phase-6.md), the [threat model](docs/security/threat-model.md), the [bridge protocol](docs/protocol/bridge-v1.md), and the [master design](docs/superpowers/specs/2026-07-15-godot-mcp-master-design.md).
 
 ## Roadmap
 

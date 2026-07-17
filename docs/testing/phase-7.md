@@ -14,7 +14,7 @@ Phase 7 extends the existing runtime-authorized surface with native read-only GD
 - Frame and variable references are 256-bit opaque tokens bound to run ID, generation, authenticated debugger generation, and stop sequence. They become stale on continue, step, a new stop, reconnect, stop, crash, disconnect, or close.
 - Debugger display strings are UTF-8 bounded from a fixed-size character prefix, so enforcing the 4,096-byte wire cap never encodes an unbounded original value.
 
-Godot's unauthenticated native DAP server is disabled and its configured loopback port is held by an inert guard before runtime preparation succeeds. The debugger client is created only after the editor PID is proven to own the debugger listener and the owned runtime authenticates as the sole active editor debugger session. That binding is rechecked before every debugger operation. The fixed internal command set excludes launch, terminate, evaluate, variable mutation, method calls, sockets, and raw protocol passthrough.
+The certified `godot-mcp editor` launch assigns Godot's authenticated editor debugger and unauthenticated native DAP server to the same loopback port. The authenticated debugger binds first during editor startup, so native DAP never acquires a listener; the addon then stops the inactive native DAP plugin. Runtime preparation fails unless the secure-launch marker and shared-port identity are both present, and the control plane independently proves that the editor PID owns the debugger listener. The owned runtime must then authenticate as the sole active editor debugger session. That binding is rechecked before every debugger operation. The fixed internal command set excludes launch, terminate, evaluate, variable mutation, method calls, sockets, and raw protocol passthrough.
 
 ## Certified performance contract
 
@@ -34,7 +34,7 @@ Audit records contain debugger operation metadata and performance operation/coun
 GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-7
 ```
 
-The 16-stage macOS gate pins Godot `4.7.stable.official.5b4e0cb0f`; checks generated protocol drift; runs build, lint, typecheck, focused Phase 7 tests, disposable import, Godot profiler/harness units with script-error scanning and mandatory success markers, an inert-native-DAP probe, authenticated debugger/profiler integrations, hostile inputs, published stdio, and the serialized full suite; then proves cleanup and clean committed/working diffs. Phase 0–1 through Phase 6 gates remain required regressions.
+The 16-stage macOS gate pins Godot `4.7.stable.official.5b4e0cb0f`; checks generated protocol drift; runs build, lint, typecheck, focused Phase 7 tests, disposable import, Godot profiler/harness units with script-error scanning and mandatory success markers, a shared-port native-DAP inertness probe, authenticated debugger/profiler integrations, hostile inputs, published stdio, and the serialized full suite; then proves cleanup and clean committed/working diffs. Phase 0–1 through Phase 6 gates remain required regressions.
 
 ## Exclusions
 

@@ -16,7 +16,7 @@ The initial design attached a TypeScript client to Godot's native loopback Debug
 
 The approved implementation therefore has one debugger route:
 
-1. The addon disables Godot's native DAP server and retains its configured port with an inert loopback guard. A probe may connect to the guard, but it receives no protocol response and no debugger authority.
+1. The certified `godot-mcp editor` launcher assigns Godot's authenticated editor debugger and native DAP server one loopback port. Godot initializes the debugger listener first, so DAP never binds; a DAP initialize probe is rejected by the non-DAP debugger transport.
 2. Runtime preparation succeeds only when the addon confirms that the native DAP server is disabled and reports `debugTransport: "authenticated-editor-session"` with the editor PID and debugger port.
 3. The control plane proves the editor owns the loopback debugger listener, launches the fixed runtime harness, and waits for the existing one-use descriptor and signed hello exchange to authenticate the owned child PID and unique `EditorDebuggerSession`.
 4. Breakpoints and execution control use the bound `EditorDebuggerSession`. Stack and variable evidence is captured inside the authenticated runtime with `Engine.capture_script_backtraces(true)` and returned through the existing signed, sequenced, deadline-bound runtime command channel.
@@ -24,7 +24,7 @@ The approved implementation therefore has one debugger route:
 
 The control plane remains the sole authority. It validates public inputs, owns runtime and debugger lifecycle, issues opaque stop-bound tokens, enforces bounds and deadlines, redacts audit records, and converges terminal paths on idempotent cleanup.
 
-Godot 4.7 does not expose a supported switch that disables the native DAP editor plugin. The addon invokes the native editor plugin's idempotent `NOTIFICATION_EXIT_TREE` stop path without freeing its node, then holds the configured loopback port so an editor-settings change cannot reopen it. This behavior is pinned to the certified Godot build and must be exercised by the Phase 11 compatibility matrix.
+Godot 4.7 does not expose a supported switch that disables the native DAP editor plugin. Stopping it from the addon alone leaves a startup race, so that design was rejected in review. The CLI instead launches the editor with `--debug-server` and `--dap-port` targeting one port. The authenticated editor debugger wins the startup bind before DAP initialization; the addon then invokes the native plugin's idempotent `NOTIFICATION_EXIT_TREE` stop path without freeing its node. Runtime preparation requires the secure-launch marker, identical port arguments, and independent editor-PID listener ownership verification. This behavior is pinned to the certified Godot build and must be exercised by the Phase 11 compatibility matrix.
 
 ## 3. Retained invariants
 
@@ -125,13 +125,13 @@ Cleanup attempts every reachable action:
 3. Remove MCP-owned breakpoints through the authenticated editor session.
 4. Close the internal debugger client.
 5. Run the existing runtime cleanup for harness state, process ownership, descriptor, lease, debugger binding, and evidence buffers.
-6. On addon exit, release the inert native-DAP port guard.
+6. On addon exit, clear debugger state; ordinary non-certified launches also release their best-effort post-startup containment guard.
 
 Repeated cleanup is safe; failures are accumulated only after all actions are attempted.
 
 ## 9. Certification
 
-`GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-7` runs 16 ordered stages covering protocol drift, build/lint/typecheck, focused protocol/runtime/debugger tests, disposable import, GDScript units, an inert-native-DAP probe, real authenticated breakpoint/stack/variable/watch/control integration, profiler integration, hostile inputs, published stdio E2E, serialized regressions, cleanup, and clean committed/working diffs.
+`GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-7` runs 16 ordered stages covering protocol drift, build/lint/typecheck, focused protocol/runtime/debugger tests, disposable import, GDScript units, a shared-port native-DAP inertness probe, real authenticated breakpoint/stack/variable/watch/control integration, profiler integration, hostile inputs, published stdio E2E, serialized regressions, cleanup, and clean committed/working diffs.
 
 After that gate passes, the Phase 0–1 and Phase 2–6 gates run as regressions. Autoreview must then exit clean before Phase 8 begins.
 

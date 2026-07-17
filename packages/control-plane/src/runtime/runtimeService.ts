@@ -565,8 +565,9 @@ export class RuntimeService {
       }];
     });
     const body = isRecord(response.body) ? response.body : {};
-    const reportedTotal = Number.isInteger(body.totalFrames) ? Number(body.totalFrames) : offset + rawFrames.length;
-    const totalFrames = Math.min(64, Math.max(offset + rawFrames.length, reportedTotal));
+    const totalFrames = Number.isInteger(body.totalFrames)
+      ? Math.min(64, Math.max(0, Number(body.totalFrames)))
+      : Math.min(64, offset + rawFrames.length);
     return { frames, totalFrames };
   }
 
@@ -591,8 +592,9 @@ export class RuntimeService {
     const all = bodyArray(response, "variables");
     const selected = all.slice(0, limit);
     const body = isRecord(response.body) ? response.body : {};
-    const reportedTotal = Number.isInteger(body.totalVariables) ? Number(body.totalVariables) : offset + all.length;
-    const total = Math.min(2_048, Math.max(offset + selected.length, reportedTotal));
+    const total = Number.isInteger(body.totalVariables)
+      ? Math.min(2_048, Math.max(0, Number(body.totalVariables)))
+      : Math.min(2_048, offset + all.length);
     this.debugTokens.consumeVariableEntries(selected.length);
     return {
       variables: selected.map((entry) => this.formatVariable(entry, depth)),

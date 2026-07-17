@@ -4,7 +4,7 @@
 
 **Goal:** Add bounded authenticated GDScript debugging and performance evidence without expanding the Phase 0–6 authority boundary.
 
-**Architecture:** Extend `godot_runtime`. Disable and inert-guard Godot's unauthenticated native DAP listener. Route breakpoints and execution control through the uniquely authenticated `EditorDebuggerSession`; route bounded stack/variable capture and profiler work through the existing signed runtime command channel. Bind every opaque reference to runtime, debugger, and stop identity.
+**Architecture:** Extend `godot_runtime`. Launch the editor through the CLI with authenticated debugger and native DAP assigned one port so DAP never wins a startup bind, then stop the inactive DAP plugin and fail closed on ordinary launches. Route breakpoints and execution control through the uniquely authenticated `EditorDebuggerSession`; route bounded stack/variable capture and profiler work through the existing signed runtime command channel. Bind every opaque reference to runtime, debugger, and stop identity.
 
 **Gate rule:** Phase 8 may start only after the full Phase 7 gate, Phase 0–6 regression gates, and branch autoreview are green.
 
@@ -27,7 +27,8 @@ packages/protocol/src/runtimePerformance.ts             monitor/profile schemas
 packages/control-plane/src/runtime/debuggerClient.ts    closed internal command types
 packages/control-plane/src/runtime/debugTokenStore.ts   opaque stop-bound references
 packages/control-plane/src/runtime/runtimeService.ts    debugger/profile lifecycle
-addons/godot_mcp/plugin.gd                              native-DAP shutdown and inert guard
+addons/godot_mcp/plugin.gd                              secure-launch proof and native-DAP shutdown
+packages/cli/src/commands/editor.ts                     certified shared-port editor launcher
 addons/godot_mcp/runtime/runtime_debugger.gd            authenticated editor-session adapter
 addons/godot_mcp/runtime/runtime_debug_capture.gd       bounded ScriptBacktrace projection
 addons/godot_mcp/runtime/runtime_harness.gd             signed debug/performance routing
@@ -69,9 +70,9 @@ pnpm exec vitest run packages/control-plane/src/runtime/debugTokenStore.test.ts 
 
 ## Task 3: Secure the editor debugger boundary
 
-- Locate Godot 4.7's native `DebugAdapterServer` editor plugin after editor startup.
+- Launch Godot 4.7 with the authenticated debugger and native `DebugAdapterServer` assigned one port so DAP never obtains a startup listener.
 - Invoke its idempotent exit-tree stop path without freeing the editor-owned node.
-- Bind an inert `TCPServer` guard to the configured DAP loopback port so settings changes cannot reopen native DAP.
+- Require a secure-launch marker plus identical debugger/DAP ports; ordinary launches remain ineligible for runtime debugging.
 - Refuse `runtime.prepare` unless the guard is active.
 - Return `{ debugPort, editorPid, debugTransport: "authenticated-editor-session" }`.
 - Prove editor ownership of the debugger listener before launching the runtime.
@@ -79,7 +80,7 @@ pnpm exec vitest run packages/control-plane/src/runtime/debugTokenStore.test.ts 
 
 Validation:
 
-- Real editor integration connects to the guarded DAP port, sends a valid initialize frame, and receives no protocol data.
+- Real editor integration connects to the shared debugger port, sends a valid DAP initialize frame, and receives no DAP protocol data.
 - Runtime launch rejects absent transport metadata or a native DAP server that was not disabled.
 
 ## Task 4: Implement breakpoints and execution control

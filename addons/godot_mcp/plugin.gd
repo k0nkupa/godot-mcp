@@ -21,7 +21,9 @@ var dap_guard: TCPServer
 var dap_disabled := false
 
 func _enter_tree() -> void:
-	call_deferred("_disable_unauthenticated_dap_server")
+	_disable_unauthenticated_dap_server()
+	if not dap_disabled:
+		call_deferred("_disable_unauthenticated_dap_server")
 	diagnostic_logger = DiagnosticLogger.new(ProjectSettings.globalize_path("res://"))
 	OS.add_logger(diagnostic_logger)
 	editor_query = EditorQuery.new(get_editor_interface(), diagnostic_logger)
@@ -112,12 +114,29 @@ func _disable_unauthenticated_dap_server() -> void:
 		# Its EXIT_TREE notification calls the native idempotent stop() method
 		# without freeing the editor-owned plugin node.
 		server.notification(Node.NOTIFICATION_EXIT_TREE)
-	# Retain the configured port so settings changes cannot reopen native DAP.
+	# The certified launcher binds the authenticated editor debugger and native
+	# DAP to the same port before this plugin loads. Godot starts the authenticated
+	# debugger first, so native DAP never acquires a listener. Runtime debugging
+	# remains disabled for ordinary launches that cannot prove this startup state.
+	var secure_shared_port := _secure_editor_launch_requested() and _runtime_dap_port() == _runtime_debug_port()
+	dap_disabled = not servers.is_empty() and secure_shared_port
+	if dap_disabled:
+		return
+	# Best-effort containment for observe-only ordinary launches. This closes the
+	# listener after startup but is intentionally insufficient for runtime.prepare.
+	if dap_guard != null:
+		dap_guard.stop()
 	dap_guard = TCPServer.new()
-	dap_disabled = not servers.is_empty() and dap_guard.listen(_runtime_dap_port(), "127.0.0.1") == OK
+	dap_guard.listen(_runtime_dap_port(), "127.0.0.1")
 
 func _dap_server_is_disabled() -> bool:
-	return dap_disabled and dap_guard != null and dap_guard.is_listening()
+	return dap_disabled and _secure_editor_launch_requested() and _runtime_dap_port() == _runtime_debug_port()
+
+func _secure_editor_launch_requested() -> bool:
+	for argument in OS.get_cmdline_user_args():
+		if String(argument) == "--godot-mcp-secure-editor-launch=1":
+			return true
+	return false
 
 func _collect_dap_servers(node: Node, output: Array[Node]) -> void:
 	for child: Node in node.get_children():
