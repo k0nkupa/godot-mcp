@@ -40,7 +40,7 @@ class FakeDebuggerClient implements RuntimeDebuggerClient {
       return { body: { stackFrames: [
         { id: 7, name: "inner", source: { path: "/tmp/project/debug_fixture.gd" }, line: 17, column: 2 },
         { id: 8, name: "outer", source: { path: "/tmp/project/debug_fixture.gd" }, line: 9, column: 1 },
-      ] } };
+      ], totalFrames: 12 } };
     }
     if (command === "scopes") {
       return { body: { scopes: [
@@ -58,7 +58,7 @@ class FakeDebuggerClient implements RuntimeDebuggerClient {
       if (this.variablePageSize > 0) {
         return { body: { variables: Array.from({ length: this.variablePageSize }, (_, index) => ({ name: index === 0 ? "target" : `filler_${index}`, value: String(index), variablesReference: 0 })) } };
       }
-      if (reference === 10) return { body: { variables: [{ name: "player", type: "Object", value: "Player:<Node#1>", variablesReference: 11 }] } };
+      if (reference === 10) return { body: { variables: [{ name: "player", type: "Object", value: "Player:<Node#1>", variablesReference: 11 }], totalVariables: 256, truncated: true } };
       if (reference === 11) return { body: { variables: [{ name: "health", type: "int", value: "100", variablesReference: 0 }] } };
       return { body: { variables: [] } };
     }
@@ -160,9 +160,10 @@ describe("Phase 7 RuntimeService debugging", () => {
 
   it("returns bounded stacks, variables, children, and selector watches without evaluation", async () => {
     const { dap, launched, service } = await debugFixture();
-    const stack = await service.execute({ operation: "debug_stack", handle: launched.handle, offset: 0, limit: 64 }) as { frames: Array<{ frameToken: string; name: string }> };
+    const stack = await service.execute({ operation: "debug_stack", handle: launched.handle, offset: 0, limit: 64 }) as { frames: Array<{ frameToken: string; name: string }>; totalFrames: number };
     const opaqueFrame = stack.frames[0]!.frameToken;
     expect(stack.frames.map((frame) => frame.name)).toEqual(["inner", "outer"]);
+    expect(stack.totalFrames).toBe(12);
     const locals = await service.execute({
       operation: "debug_variables",
       handle: launched.handle,
@@ -170,8 +171,9 @@ describe("Phase 7 RuntimeService debugging", () => {
       scope: "locals",
       offset: 0,
       limit: 100,
-    }) as { variables: Array<{ variableToken?: string; name: string }> };
+    }) as { variables: Array<{ variableToken?: string; name: string }>; total: number; truncated: boolean };
     expect(locals.variables[0]).toMatchObject({ name: "player", variableToken: expect.stringMatching(/^dvt_/) });
+    expect(locals).toMatchObject({ total: 256, truncated: true });
     const opaqueVariable = locals.variables[0]!.variableToken!;
     const variableReference = { ["variableToken"]: opaqueVariable };
     const children = await service.execute({

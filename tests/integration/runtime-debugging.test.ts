@@ -27,7 +27,7 @@ test("uses only the authenticated Godot debugger channel for breakpoints and bou
 
     phase = "wait-breakpoint";
     const stopped = await fixture.runtime.execute({ operation: "debug_wait", handle: launched.handle, afterSequence: 0, timeoutMs: 10_000 });
-    expect(stopped).toMatchObject({ reason: "breakpoint" });
+    expect(stopped).toMatchObject({ reason: "unknown" });
 
     phase = "stack";
     const stack = await fixture.runtime.execute({ operation: "debug_stack", handle: launched.handle, offset: 0, limit: 64 }) as {

@@ -81,17 +81,28 @@ func children(reference: int, offset: int, limit: int) -> Dictionary:
 		return _error("STALE_HANDLE", "Debugger variable reference is stale or unavailable")
 	var value: Variant = _references[reference]
 	var entries: Array[Dictionary] = []
+	var source_size: int = int(value.size())
+	var bounded_total := mini(source_size, MAX_VARIABLES)
+	var start := clampi(offset, 0, bounded_total)
+	var finish := mini(start + clampi(limit, 1, 256), bounded_total)
 	if typeof(value) == TYPE_DICTIONARY:
-		var keys: Array = value.keys()
-		keys.sort_custom(func(a: Variant, b: Variant) -> bool: return String(a) < String(b))
-		for key: Variant in keys:
-			entries.append(_variable(String(key), value[key]))
+		var index := 0
+		for key: Variant in value:
+			if index >= finish:
+				break
+			if index >= start:
+				entries.append(_variable(String(key), value[key]))
+			index += 1
 	elif typeof(value) == TYPE_ARRAY:
-		for index in value.size():
+		for index in range(start, finish):
 			entries.append(_variable(str(index), value[index]))
 	else:
 		return _error("PRECONDITION_FAILED", "Debugger variable has no safe children")
-	return _page(entries, offset, limit)
+	return {"ok": true, "data": {"body": {
+		"variables": entries,
+		"totalVariables": bounded_total,
+		"truncated": source_size > bounded_total or finish < bounded_total,
+	}}}
 
 func clear() -> void:
 	_clear_snapshot()

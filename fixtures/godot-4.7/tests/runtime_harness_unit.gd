@@ -6,6 +6,7 @@ const RuntimeCapture = preload("res://addons/godot_mcp/runtime/runtime_capture.g
 const RuntimeControl = preload("res://addons/godot_mcp/runtime/runtime_control.gd")
 const SessionCrypto = preload("res://addons/godot_mcp/bridge/session_crypto.gd")
 const RuntimeQuery = preload("res://addons/godot_mcp/runtime/runtime_query.gd")
+const RuntimeDebugCapture = preload("res://addons/godot_mcp/runtime/runtime_debug_capture.gd")
 
 func _init() -> void:
 	assert(RuntimeHarness.descriptor_argument(PackedStringArray(["--other=x", "--godot-mcp-runtime-descriptor=/tmp/godot-mcp/runtime-a.json"])) == "/tmp/godot-mcp/runtime-a.json")
@@ -39,6 +40,15 @@ func _init() -> void:
 	assert(not RuntimeControl.safe_property_pattern("(a+)+$"))
 	assert(not RuntimeControl.bounded_primitive_subject(["large", "container"]).valid)
 	assert(String(RuntimeControl.bounded_primitive_subject("x".repeat(5000)).subject).length() == 4096)
+	var debug_capture := RuntimeDebugCapture.new()
+	var large_children: Array = []
+	large_children.resize(3000)
+	debug_capture._references[1] = large_children
+	var bounded_children: Dictionary = debug_capture.children(1, 2000, 256)
+	assert(bounded_children.ok)
+	assert(bounded_children.data.body.variables.size() == 48)
+	assert(bounded_children.data.body.totalVariables == RuntimeDebugCapture.MAX_VARIABLES)
+	assert(bounded_children.data.body.truncated)
 	await process_frame
 	var runtime_root := Node.new()
 	root.add_child(runtime_root)

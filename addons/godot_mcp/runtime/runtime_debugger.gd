@@ -15,7 +15,7 @@ var _send_sequence := 0
 var _active_sessions: Dictionary = {}
 var _stop_sequence := 0
 var _stop_events: Array[Dictionary] = []
-var _expected_stop_reason := "breakpoint"
+var _expected_stop_reason := "unknown"
 var _breakpoints: Dictionary = {}
 
 const SCOPE_REFERENCE_BASE := 1000000
@@ -54,17 +54,17 @@ func _setup_session(debugger_session_id: int) -> void:
 			_clear_after_session_stopped(debugger_session_id)
 	)
 	session.breaked.connect(func(can_debug: bool) -> void:
-		if debugger_session_id != _bound_session_id or not can_debug:
+		if debugger_session_id != _bound_session_id:
 			return
 		_stop_sequence += 1
-		_stop_events.append({"sequence": _stop_sequence, "reason": _expected_stop_reason})
+		_stop_events.append({"sequence": _stop_sequence, "reason": _expected_stop_reason if can_debug else "unknown"})
 		if _stop_events.size() > 512:
 			_stop_events.pop_front()
-		_expected_stop_reason = "breakpoint"
+		_expected_stop_reason = "unknown"
 	)
 	session.continued.connect(func() -> void:
 		if debugger_session_id == _bound_session_id:
-			_expected_stop_reason = "breakpoint"
+			_expected_stop_reason = "unknown"
 	)
 
 func _clear_after_session_stopped(debugger_session_id: int) -> void:
@@ -275,7 +275,7 @@ func clear(_reason := "requested") -> void:
 	_send_sequence = 0
 	_stop_sequence = 0
 	_stop_events.clear()
-	_expected_stop_reason = "breakpoint"
+	_expected_stop_reason = "unknown"
 	_breakpoints.clear()
 
 func _accept_hello(payload: Dictionary, debugger_session_id: int) -> void:

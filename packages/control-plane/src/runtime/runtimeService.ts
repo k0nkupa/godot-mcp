@@ -561,7 +561,10 @@ export class RuntimeService {
         column: integerOr(raw.column, 0),
       }];
     });
-    return { frames, totalFrames: rawFrames.length };
+    const body = isRecord(response.body) ? response.body : {};
+    const reportedTotal = Number.isInteger(body.totalFrames) ? Number(body.totalFrames) : offset + rawFrames.length;
+    const totalFrames = Math.min(64, Math.max(offset + rawFrames.length, reportedTotal));
+    return { frames, totalFrames };
   }
 
   private async scopeReference(debuggerClient: RuntimeDebuggerClient, frameId: number, scope: "locals" | "members" | "globals"): Promise<number> {
@@ -584,13 +587,16 @@ export class RuntimeService {
     const response = await this.requestVariables(debuggerClient, { variablesReference, start: offset, count: limit });
     const all = bodyArray(response, "variables");
     const selected = all.slice(0, limit);
+    const body = isRecord(response.body) ? response.body : {};
+    const reportedTotal = Number.isInteger(body.totalVariables) ? Number(body.totalVariables) : offset + all.length;
+    const total = Math.min(2_048, Math.max(offset + selected.length, reportedTotal));
     this.debugTokens.consumeVariableEntries(selected.length);
     return {
       variables: selected.map((entry) => this.formatVariable(entry, depth)),
       offset,
       returned: selected.length,
-      total: Math.min(offset + all.length, 2_048),
-      truncated: all.length > selected.length || offset + all.length > 2_048,
+      total,
+      truncated: body.truncated === true || all.length > selected.length || offset + selected.length < total,
     };
   }
 

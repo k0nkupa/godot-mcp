@@ -154,17 +154,20 @@ func start(input: Dictionary) -> Dictionary:
 	if _rendering_device != null:
 		_job.gpuTimestampStartIndex = _rendering_device.get_captured_timestamps_count()
 		_rendering_device.capture_timestamp("godot_mcp_profile_start")
+	_sample_frame(true)
 	return {"ok": true, "data": _status_receipt()}
 
 func process_frame() -> void:
 	if _job.is_empty() or String(_job.get("state", "")) != "running":
 		return
-	var elapsed_usec := Time.get_ticks_usec() - int(_job.startedMonotonicUsec)
-	if elapsed_usec >= int(_job.requestedDurationMs) * 1000:
-		_finalize("completed", true, "")
+	_advance_deadline()
+	if String(_job.get("state", "")) != "running":
 		return
+	_sample_frame(false)
+
+func _sample_frame(force: bool) -> void:
 	var frame := Engine.get_process_frames()
-	if (frame - int(_job.startFrame)) % int(_job.intervalFrames) != 0:
+	if not force and (frame - int(_job.startFrame)) % int(_job.intervalFrames) != 0:
 		return
 	var sampled := snapshot(_job.groups)
 	if not sampled.ok:
@@ -185,14 +188,22 @@ func process_frame() -> void:
 	if _rendering_device != null:
 		_rendering_device.capture_timestamp("godot_mcp_profile_%d" % int(_job.observedSamples))
 
+func _advance_deadline() -> void:
+	if _job.is_empty() or String(_job.get("state", "")) != "running":
+		return
+	if Time.get_ticks_usec() - int(_job.startedMonotonicUsec) >= int(_job.requestedDurationMs) * 1000:
+		_finalize("completed", true, "")
+
 func status(job_token: String) -> Dictionary:
 	if not _token_matches(job_token):
 		return _error("STALE_HANDLE", "Profile job token is stale or unknown")
+	_advance_deadline()
 	return {"ok": true, "data": _status_receipt()}
 
 func cancel(job_token: String) -> Dictionary:
 	if not _token_matches(job_token):
 		return _error("STALE_HANDLE", "Profile job token is stale or unknown")
+	_advance_deadline()
 	if String(_job.state) == "running":
 		_finalize("cancelled", false, "Profile cancelled by request")
 	return {"ok": true, "data": _status_receipt()}
@@ -200,6 +211,7 @@ func cancel(job_token: String) -> Dictionary:
 func result(job_token: String) -> Dictionary:
 	if not _token_matches(job_token):
 		return _error("STALE_HANDLE", "Profile job token is stale or unknown")
+	_advance_deadline()
 	if String(_job.state) == "running":
 		return _error("CONFLICT", "Profile evidence is not terminal")
 	return {"ok": true, "data": {"state": String(_job.state), "evidence": _job.evidence.duplicate(true)}}
@@ -387,13 +399,16 @@ func _aggregate(raw_values: Array) -> Dictionary:
 		return {"min": 0.0, "max": 0.0, "mean": 0.0, "p50": 0.0, "p95": 0.0, "p99": 0.0}
 	var values := raw_values.duplicate()
 	values.sort()
-	var total := 0.0
-	for value: Variant in values:
-		total += float(value)
+	var scale := maxf(absf(float(values[0])), absf(float(values[-1])))
+	var normalized_total := 0.0
+	if scale > 0.0:
+		for value: Variant in values:
+			normalized_total += float(value) / scale
+	var mean := clampf(normalized_total / float(values.size()), -1.0, 1.0) * scale
 	return {
 		"min": float(values[0]),
 		"max": float(values[-1]),
-		"mean": total / float(values.size()),
+		"mean": mean,
 		"p50": _percentile(values, 0.50),
 		"p95": _percentile(values, 0.95),
 		"p99": _percentile(values, 0.99),

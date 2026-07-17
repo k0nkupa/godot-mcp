@@ -24,6 +24,7 @@ func _init() -> void:
 
 	var first := profiler.start({"durationMs": 100, "intervalFrames": 1, "groups": ["frame"], "retainRaw": true})
 	assert(first.ok)
+	assert(first.data.observedSamples > 0)
 	assert(String(first.data.jobToken).begins_with("pjt_") and String(first.data.jobToken).length() == 47)
 	assert(not profiler.start({"durationMs": 100, "intervalFrames": 1, "groups": ["frame"], "retainRaw": true}).ok)
 	var deadline := Time.get_ticks_msec() + 2000
@@ -42,6 +43,15 @@ func _init() -> void:
 	var precise_float: float = JSON.parse_string("0.12345678901234567")
 	assert(profiler._evidence_digest({"value": precise_float}) == CanonicalJson.encode(SessionCrypto._canonical_signing_params({"value": precise_float})).sha256_text())
 	assert(profiler._wire_size({"value": 0.25}) > JSON.stringify({"value": 0.25}).to_utf8_buffer().size())
+	var extreme := profiler._aggregate([1.0e308, 1.0e308])
+	assert(is_finite(float(extreme.mean)) and float(extreme.mean) > 9.0e307)
+
+	var deadline_only := profiler.start({"durationMs": 100, "intervalFrames": 120, "groups": ["frame"], "retainRaw": false})
+	assert(deadline_only.ok and deadline_only.data.observedSamples > 0)
+	await create_timer(0.12).timeout
+	var deadline_status := profiler.status(String(deadline_only.data.jobToken))
+	assert(deadline_status.ok and deadline_status.data.state == "completed")
+	assert(profiler.result(String(deadline_only.data.jobToken)).ok)
 
 	var cancellation := profiler.start({"durationMs": 30000, "intervalFrames": 1, "groups": ["frame"], "retainRaw": false})
 	assert(cancellation.ok)
