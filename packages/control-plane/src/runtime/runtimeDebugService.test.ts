@@ -19,6 +19,7 @@ class FakeDap implements RuntimeDapClient {
   stopped = true;
   stopSequence = 1;
   transientVariableFailures = 0;
+  variablePageSize = 0;
 
   async request(command: DapCommand, argumentsValue: Record<string, unknown>): Promise<Record<string, unknown>> {
     this.calls.push({ command, arguments: argumentsValue });
@@ -41,6 +42,9 @@ class FakeDap implements RuntimeDapClient {
         throw new DapClientError("TRANSPORT_ERROR", "unknown");
       }
       const reference = Number(argumentsValue.variablesReference);
+      if (this.variablePageSize > 0) {
+        return { body: { variables: Array.from({ length: this.variablePageSize }, (_, index) => ({ name: index === 0 ? "target" : `filler_${index}`, value: String(index), variablesReference: 0 })) } };
+      }
       if (reference === 10) return { body: { variables: [{ name: "player", type: "Object", value: "Player:<Node#1>", variablesReference: 11 }] } };
       if (reference === 11) return { body: { variables: [{ name: "health", type: "int", value: "100", variablesReference: 0 }] } };
       return { body: { variables: [] } };
@@ -49,6 +53,7 @@ class FakeDap implements RuntimeDapClient {
       const breakpoints = Array.isArray(argumentsValue.breakpoints) ? argumentsValue.breakpoints : [];
       return { body: { breakpoints: breakpoints.map((entry, index) => ({ id: index + 1, verified: true, line: (entry as { line: number }).line })) } };
     }
+    if (command === "pause") this.stopped = true;
     if (command === "continue" || command === "next" || command === "stepIn") this.stopped = false;
     return { body: {} };
   }
@@ -110,8 +115,10 @@ async function debugFixture() {
 describe("Phase 7 RuntimeService debugging", () => {
   it("verifies both editor listeners and attaches DAP only after runtime authentication", async () => {
     const { calls, dap, service, verifiedPorts } = await debugFixture();
-    expect(verifiedPorts).toEqual([6007, 6006]);
+    expect(verifiedPorts).toEqual([6007, 6006, 6006]);
     expect(calls.indexOf("await_ready")).toBeLessThan(calls.indexOf("dap.connect:6006"));
+    expect(calls.lastIndexOf("verify:6006")).toBeGreaterThan(calls.indexOf("await_ready"));
+    expect(calls.lastIndexOf("verify:6006")).toBeLessThan(calls.indexOf("dap.connect:6006"));
     expect(dap.calls.slice(0, 2).map((entry) => entry.command)).toEqual(["initialize", "attach"]);
     await service.close();
     expect(dap.closed).toBe(true);
@@ -187,16 +194,44 @@ describe("Phase 7 RuntimeService debugging", () => {
     await service.close();
   });
 
+  it("reports disconnected debugger status without requiring an active DAP transport", async () => {
+    const { dap, launched, service } = await debugFixture();
+    dap.closed = true;
+    await expect(service.execute({ operation: "debug_status", handle: launched.handle })).resolves.toMatchObject({ connected: false, stopped: true });
+  });
+
+  it("enforces pause and continue state preconditions before changing tokens", async () => {
+    const { dap, launched, service } = await debugFixture();
+    await expect(service.execute({ operation: "debug_pause", handle: launched.handle })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    dap.stopped = false;
+    await expect(service.execute({ operation: "debug_continue", handle: launched.handle })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    await expect(service.execute({ operation: "debug_pause", handle: launched.handle })).resolves.toMatchObject({ stopped: true });
+  });
+
+  it("charges every watch page against the shared per-stop variable budget", async () => {
+    const { dap, launched, service } = await debugFixture();
+    const stack = await service.execute({ operation: "debug_stack", handle: launched.handle, offset: 0, limit: 64 }) as { frames: Array<{ frameToken: string }> };
+    const opaqueFrame = stack.frames[0]!.frameToken;
+    dap.variablePageSize = 256;
+    await expect(service.execute({
+      operation: "debug_watch",
+      handle: launched.handle,
+      frameToken: opaqueFrame,
+      selectors: Array.from({ length: 9 }, () => ({ scope: "locals" as const, path: ["target"] })),
+    })).rejects.toThrow(/variable entry limit exceeded/i);
+  });
+
   it("canonicalizes source breakpoints and clears them during cleanup", async () => {
     const { dap, launched, project, service } = await debugFixture();
     const result = await service.execute({
       operation: "debug_breakpoints_set",
       handle: launched.handle,
-      breakpoints: [{ sourcePath: "res://debug_fixture.gd", line: 2 }],
+      breakpoints: [{ sourcePath: "res://debug_fixture.gd", line: 2 }, { sourcePath: "res://debug_fixture.gd", line: 3 }],
     }) as { breakpoints: Array<{ verified: boolean }> };
-    expect(result.breakpoints).toEqual([expect.objectContaining({ verified: true })]);
+    expect(result.breakpoints).toHaveLength(2);
     const set = dap.calls.find((entry) => entry.command === "setBreakpoints");
-    expect(set?.arguments).toMatchObject({ source: { path: join(project.rootRealPath, "debug_fixture.gd") }, breakpoints: [{ line: 2 }] });
+    expect(set?.arguments).toMatchObject({ source: { path: join(project.rootRealPath, "debug_fixture.gd") }, breakpoints: [{ line: 2 }, { line: 3 }] });
+    await expect(service.execute({ operation: "debug_status", handle: launched.handle })).resolves.toMatchObject({ breakpointCount: 2 });
     await service.close();
     const clears = dap.calls.filter((entry) => entry.command === "setBreakpoints" && Array.isArray(entry.arguments.breakpoints) && entry.arguments.breakpoints.length === 0);
     expect(clears).toHaveLength(1);

@@ -127,6 +127,25 @@ function runtimeAuditArguments(input: RuntimeOperationInput): unknown {
   if (input.operation === "profile_status" || input.operation === "profile_cancel" || input.operation === "profile_result") {
     return { operation: input.operation };
   }
+  if (input.operation === "debug_breakpoints_set") {
+    return {
+      operation: input.operation,
+      breakpointCount: input.breakpoints.length,
+      sourceCount: new Set(input.breakpoints.map((entry) => entry.sourcePath)).size,
+    };
+  }
+  if (input.operation === "debug_watch") {
+    return {
+      operation: input.operation,
+      selectorCount: input.selectors.length,
+      maxDepth: Math.max(...input.selectors.map((selector) => selector.path.length)),
+    };
+  }
+  if (input.operation === "debug_stack") return { operation: input.operation, offset: input.offset, limit: input.limit };
+  if (input.operation === "debug_variables") return { operation: input.operation, scope: input.scope, offset: input.offset, limit: input.limit };
+  if (input.operation === "debug_children") return { operation: input.operation, offset: input.offset, limit: input.limit };
+  if (input.operation === "debug_wait") return { operation: input.operation, afterSequence: input.afterSequence, timeoutMs: input.timeoutMs };
+  if (input.operation.startsWith("debug_")) return { operation: input.operation };
   return input;
 }
 

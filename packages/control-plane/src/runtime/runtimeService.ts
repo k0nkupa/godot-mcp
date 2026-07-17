@@ -106,7 +106,7 @@ export class RuntimeService {
   private dap: RuntimeDapClient | null = null;
   private dapGeneration = 0;
   private readonly debugTokens = new DebugTokenStore();
-  private readonly breakpointSources = new Set<string>();
+  private readonly breakpointSources = new Map<string, number>();
   private opaqueProfileId: string | null = null;
 
   constructor(private readonly dependencies: RuntimeServiceDependencies) {}
@@ -212,6 +212,9 @@ export class RuntimeService {
         throw runtimeError("GODOT_RUNTIME_ERROR", "Owned runtime exited before launch completed");
       }
       if (prepared.dapPort !== undefined) {
+        const verifyListener = this.dependencies.verifyEditorListener ?? this.dependencies.verifyDebuggerListener ?? assertLoopbackListenerOwnedByProcess;
+        await verifyListener(prepared.editorPid!, prepared.dapPort);
+        this.assertLaunchCurrent(epoch);
         await this.attachDap(prepared.dapPort);
         this.assertLaunchCurrent(epoch);
       }
@@ -328,21 +331,26 @@ export class RuntimeService {
   }
 
   private async executeDebug(input: RuntimeDebugOperationInput): Promise<unknown> {
+    if (input.operation === "debug_status") {
+      const snapshot = this.dap?.snapshot() ?? { connected: false, stopped: false, stopSequence: 0 };
+      const breakpointCount = [...this.breakpointSources.values()].reduce((total, count) => total + count, 0);
+      return { ...snapshot, breakpointCount };
+    }
     const dap = this.requireDap();
     switch (input.operation) {
-      case "debug_status":
-        return { ...dap.snapshot(), breakpointCount: this.breakpointSources.size };
       case "debug_wait": {
         const stopped = await dap.nextStop(input.afterSequence, input.timeoutMs);
         this.bindDebugStop(stopped.sequence);
         return stopped;
       }
       case "debug_pause":
+        if (dap.snapshot().stopped) throw runtimeError("PRECONDITION_FAILED", "Godot debugger is already stopped");
         await dap.request("pause", { threadId: 1 });
         return dap.snapshot();
       case "debug_continue":
-        this.debugTokens.clear();
+        if (!dap.snapshot().stopped) throw runtimeError("PRECONDITION_FAILED", "Godot debugger must be stopped before continuing");
         await dap.request("continue", { threadId: 1 });
+        this.debugTokens.clear();
         return dap.snapshot();
       case "debug_step_over":
         return this.stepDebugger(dap, "next");
@@ -395,8 +403,8 @@ export class RuntimeService {
   private async stepDebugger(dap: RuntimeDapClient, command: "next" | "stepIn"): Promise<DapStopEvent> {
     const snapshot = dap.snapshot();
     if (!snapshot.stopped) throw runtimeError("PRECONDITION_FAILED", "Godot debugger must be stopped before stepping");
-    this.debugTokens.clear();
     await dap.request(command, { threadId: 1 });
+    this.debugTokens.clear();
     const stopped = await dap.nextStop(snapshot.stopSequence, 10_000);
     this.bindDebugStop(stopped.sequence);
     return stopped;
@@ -416,11 +424,10 @@ export class RuntimeService {
       entries.push(breakpoint);
       grouped.set(absolutePath, entries);
     }
-    const sources = new Set([...this.breakpointSources, ...grouped.keys()]);
+    const sources = new Set([...this.breakpointSources.keys(), ...grouped.keys()]);
     const results: unknown[] = [];
     for (const absolutePath of sources) {
       const entries = grouped.get(absolutePath) ?? [];
-      this.breakpointSources.add(absolutePath);
       const response = await dap.request("setBreakpoints", {
         source: { name: absolutePath.split(sep).at(-1), path: absolutePath },
         breakpoints: entries.map((entry) => ({ line: entry.line })),
@@ -437,6 +444,7 @@ export class RuntimeService {
         });
       }
       if (entries.length === 0) this.breakpointSources.delete(absolutePath);
+      else this.breakpointSources.set(absolutePath, entries.length);
     }
     return { breakpoints: results };
   }
@@ -520,6 +528,7 @@ export class RuntimeService {
       const response = await this.requestVariables(dap, { variablesReference: reference, start: 0, count: 256 });
       const all = bodyArray(response, "variables");
       const bounded = all.slice(0, 256);
+      this.debugTokens.consumeVariableEntries(bounded.length);
       current = bounded.find((entry) => isRecord(entry) && String(entry.name) === String(segment));
       if (!current) return { selector, status: all.length > bounded.length ? "truncated" : "missing" };
       if (depthIndex === selector.path.length - 1) {
@@ -724,7 +733,7 @@ export class RuntimeService {
     const dap = this.dap;
     this.dap = null;
     this.debugTokens.clear();
-    const sources = [...this.breakpointSources];
+    const sources = [...this.breakpointSources.keys()];
     this.breakpointSources.clear();
     if (!dap) return;
     let cleanupError: unknown;

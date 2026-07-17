@@ -36,6 +36,8 @@ func _init() -> void:
 	assert(completed.data.evidence.retainedSamples == completed.data.evidence.rawSamples.size())
 	assert(String(completed.data.evidence.sha256).length() == 64)
 	assert(profiler.result(String(first.data.jobToken)).data.evidence.sha256 == completed.data.evidence.sha256)
+	var precise_float := 0.12345678901234567
+	assert(profiler._tag_floats(precise_float).value == JSON.stringify(precise_float))
 
 	var cancellation := profiler.start({"durationMs": 30000, "intervalFrames": 1, "groups": ["frame"], "retainRaw": false})
 	assert(cancellation.ok)

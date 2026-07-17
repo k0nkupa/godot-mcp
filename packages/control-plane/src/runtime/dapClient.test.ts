@@ -91,6 +91,26 @@ describe("closed-world Godot DAP client", () => {
     expect(client.snapshot()).toMatchObject({ connected: true, stopped: false, stopSequence: 1 });
   });
 
+  it("consumes delivered stops so a default wait cannot replay stale state", async () => {
+    let peer: Socket | undefined;
+    const { port } = await fakeDapServer((message, socket) => {
+      peer = socket;
+      socket.write(encodeDapMessage(response(message)));
+    });
+    const client = await DapClient.connect({ host: "127.0.0.1", port });
+    cleanups.push(() => client.close());
+    await client.request("attach", { project: "/tmp/project" }, 1_000);
+    peer!.write(encodeDapMessage({ seq: 91, type: "event", event: "stopped", body: { reason: "first" } }));
+    await expect(client.nextStop(0, 1_000)).resolves.toMatchObject({ sequence: 1, reason: "first" });
+    const next = client.nextStop(0, 1_000);
+    let settled = false;
+    void next.finally(() => { settled = true; });
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    expect(settled).toBe(false);
+    peer!.write(encodeDapMessage({ seq: 92, type: "event", event: "stopped", body: { reason: "second" } }));
+    await expect(next).resolves.toMatchObject({ sequence: 2, reason: "second" });
+  });
+
   it("times out one request and remains closed to late response reassignment", async () => {
     let firstRequest: Record<string, unknown> | undefined;
     const { port } = await fakeDapServer((message, socket) => {

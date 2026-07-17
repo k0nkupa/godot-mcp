@@ -39,7 +39,15 @@ describe("hostile Phase 6 authoring boundaries", () => {
       await initProject(project.root, resolve(process.cwd(), "addons/godot_mcp"), process.env.GODOT_BIN);
       await project.snapshot();
       for (const unit of ["authoring_resource_unit.gd", "authoring_source_unit.gd", "authoring_domains_unit.gd", "editor_authoring_transaction_unit.gd"]) {
-        const result = await runGodot(["--headless", "--path", project.root, "--script", `res://tests/${unit}`], { timeoutMs: 20_000 });
+        const result = await runGodot(["--headless", "--path", project.root, "--script", `res://tests/${unit}`], {
+          timeoutMs: 20_000,
+          ...(unit === "authoring_source_unit.gd" ? {
+            expectedScriptFailure: {
+              successMarker: "PHASE6_SOURCE_UNIT_OK",
+              failureLine: /^SCRIPT ERROR: Parse Error: Expected closing "\)" after function parameters\.$/,
+            },
+          } : {}),
+        });
         expect(result.exitCode, `${unit}\n${result.stdout}\n${result.stderr}`).toBe(0);
         expect(`${result.stdout}\n${result.stderr}`).not.toContain("fixture-secret");
       }

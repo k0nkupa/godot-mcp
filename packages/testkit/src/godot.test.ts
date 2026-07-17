@@ -11,7 +11,16 @@ describe("Godot script result detection", () => {
     expect(hasUnexpectedGodotScriptFailure(
       "Godot Engine\nPHASE6_SOURCE_UNIT_OK\n",
       "SCRIPT ERROR: Parse Error: Expected closing parenthesis\n",
+      { successMarker: "PHASE6_SOURCE_UNIT_OK", failureLine: /^SCRIPT ERROR: Parse Error: Expected closing parenthesis$/ },
     )).toBe(false);
+  });
+
+  it("does not let a success marker hide an unrelated script failure", () => {
+    expect(hasUnexpectedGodotScriptFailure(
+      "Godot Engine\nPHASE6_SOURCE_UNIT_OK\n",
+      "SCRIPT ERROR: Parse Error: Expected closing parenthesis\nSCRIPT ERROR: Invalid call in unrelated.gd\n",
+      { successMarker: "PHASE6_SOURCE_UNIT_OK", failureLine: /^SCRIPT ERROR: Parse Error: Expected closing parenthesis$/ },
+    )).toBe(true);
   });
 
   it("accepts output without script failures", () => {

@@ -95,11 +95,13 @@ const ProfileAggregateSchema = z
   })
   .strict();
 
+const FlattenedMetricNameSchema = z.string().min(1).max(139);
+
 const ProfileSampleSchema = z
   .object({
     frame: z.number().int().min(0),
     monotonicUsec: z.number().int().min(0),
-    values: z.record(z.string().min(1).max(128), z.number().finite()),
+    values: z.record(FlattenedMetricNameSchema, z.number().finite()),
   })
   .strict();
 
@@ -119,7 +121,7 @@ export const ProfileEvidenceSchema = z
     retainedSamples: z.number().int().min(0).max(2_048),
     invalidSamples: z.number().int().min(0),
     droppedSamples: z.number().int().min(0),
-    aggregates: z.record(z.string().min(1).max(128), ProfileAggregateSchema),
+    aggregates: z.record(FlattenedMetricNameSchema, ProfileAggregateSchema),
     rawSamples: z.array(ProfileSampleSchema).max(2_048),
     engine: EngineMetadataSchema,
     gpuTimestamps: GpuTimestampsSchema,

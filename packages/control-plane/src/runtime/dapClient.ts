@@ -96,8 +96,12 @@ export class DapClient {
       return Promise.reject(new DapClientError("INVALID_REQUEST", "DAP stop wait bounds are invalid"));
     }
     if (this.terminalError) return Promise.reject(this.terminalError);
-    const available = this.stopEvents.find((event) => event.sequence > afterSequence);
-    if (available) return Promise.resolve({ ...available, body: { ...available.body } });
+    const availableIndex = this.stopEvents.findIndex((event) => event.sequence > afterSequence);
+    if (availableIndex >= 0) {
+      const available = this.stopEvents[availableIndex]!;
+      this.stopEvents.splice(0, availableIndex + 1);
+      return Promise.resolve({ ...available, body: { ...available.body } });
+    }
     return new Promise<DapStopEvent>((resolve, reject) => {
       const waiter: StopWaiter = {
         afterSequence,
@@ -183,15 +187,19 @@ export class DapClient {
     if (message.type !== "event" || typeof message.event !== "string") throw new DapProtocolError("DAP message type is unsupported");
     const body = isRecord(message.body) ? message.body : {};
     if (message.event === "stopped") {
-      if (this.stopEvents.length >= 512) throw new DapProtocolError("DAP stopped-event queue overflowed");
       this.stopped = true;
       const event: DapStopEvent = { sequence: ++this.stopSequence, reason: boundedMessage(body.reason, "unknown"), body: { ...body } };
-      this.stopEvents.push(event);
+      let delivered = false;
       for (const waiter of [...this.stopWaiters]) {
         if (event.sequence <= waiter.afterSequence) continue;
         clearTimeout(waiter.timer);
         this.stopWaiters.delete(waiter);
         waiter.resolve({ ...event, body: { ...event.body } });
+        delivered = true;
+      }
+      if (!delivered) {
+        this.stopEvents.push(event);
+        if (this.stopEvents.length > 512) this.stopEvents.shift();
       }
       return;
     }

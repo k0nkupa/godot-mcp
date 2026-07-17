@@ -6,6 +6,12 @@ import { spawn } from "node:child_process";
 export interface RunGodotOptions {
   cwd?: string;
   timeoutMs?: number;
+  expectedScriptFailure?: ExpectedGodotScriptFailure;
+}
+
+export interface ExpectedGodotScriptFailure {
+  successMarker: string;
+  failureLine: RegExp;
 }
 
 export interface RunGodotResult {
@@ -14,11 +20,19 @@ export interface RunGodotResult {
   stderr: string;
 }
 
-export function hasUnexpectedGodotScriptFailure(stdout: string, stderr: string): boolean {
+export function hasUnexpectedGodotScriptFailure(
+  stdout: string,
+  stderr: string,
+  expected?: ExpectedGodotScriptFailure,
+): boolean {
   const output = `${stdout}\n${stderr}`;
-  const hasFailure = /SCRIPT ERROR:|Failed to load script/.test(output);
-  const hasExplicitUnitSuccess = /^[A-Z][A-Z0-9_]*_OK\s*$/m.test(stdout);
-  return hasFailure && !hasExplicitUnitSuccess;
+  const failureLines = output.split(/\r?\n/).map((line) => line.trim()).filter((line) => /SCRIPT ERROR:|Failed to load script/.test(line));
+  if (failureLines.length === 0) return false;
+  if (!expected || !stdout.split(/\r?\n/).includes(expected.successMarker)) return true;
+  return failureLines.some((line) => {
+    expected.failureLine.lastIndex = 0;
+    return !expected.failureLine.test(line);
+  });
 }
 
 interface SpawnAndCollectOptions {
@@ -120,7 +134,7 @@ export async function runGodot(
   }
 
   const result = await spawnAndCollect(executable, args, { cwd: options.cwd, timeoutMs });
-  if (hasUnexpectedGodotScriptFailure(result.stdout, result.stderr)) {
+  if (hasUnexpectedGodotScriptFailure(result.stdout, result.stderr, options.expectedScriptFailure)) {
     throw new Error(`Godot reported a script failure despite exit code ${result.exitCode}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
   }
   return result;

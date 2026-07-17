@@ -446,7 +446,7 @@ func _evidence_digest(evidence: Dictionary) -> String:
 
 func _tag_floats(value: Variant) -> Variant:
 	if typeof(value) == TYPE_FLOAT:
-		return {"type": "Float", "value": str(value)}
+		return {"type": "FloatJson", "value": JSON.stringify(value)}
 	if typeof(value) == TYPE_ARRAY:
 		var output: Array = []
 		for item: Variant in value:

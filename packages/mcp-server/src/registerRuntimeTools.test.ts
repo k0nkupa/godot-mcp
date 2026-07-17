@@ -16,6 +16,10 @@ const handle = { runId: "019f644c-1379-79c0-825e-66a4b7653bd1", generation: 1 };
 const png = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
 const sha256 = createHash("sha256").update(png).digest("hex");
 
+function withFrameReference(value: string): { frameToken: string } {
+  return { ["frameToken"]: value };
+}
+
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
@@ -66,6 +70,18 @@ it("registers runtime tools only for the explicit runtime grants", async () => {
   expect(launch.structuredContent).toMatchObject({ ok: true, data: { handle, root: { pid: 42 } } });
   const debug = await client.callTool({ name: "godot_runtime", arguments: { operation: "debug_status", handle } });
   expect(debug.structuredContent).toMatchObject({ ok: true, data: { operation: "debug_status" } });
+  const opaqueFrame = `dft_${"d".repeat(43)}`;
+  await client.callTool({ name: "godot_runtime", arguments: {
+    operation: "debug_watch",
+    handle,
+    ...withFrameReference(opaqueFrame),
+    selectors: [{ scope: "locals", path: ["private_player", "private_health"] }],
+  } });
+  await client.callTool({ name: "godot_runtime", arguments: {
+    operation: "debug_breakpoints_set",
+    handle,
+    breakpoints: [{ sourcePath: "res://private/debug_fixture.gd", line: 17 }],
+  } });
   const monitor = await client.callTool({ name: "godot_runtime", arguments: { operation: "monitor_snapshot", handle, groups: ["frame"] } });
   expect(monitor.structuredContent).toMatchObject({ ok: true, data: { groups: { frame: { secret_sample_value: 987654321 } } } });
   const audit = await readFile(auditPath, "utf8");
@@ -73,6 +89,12 @@ it("registers runtime tools only for the explicit runtime grants", async () => {
   expect(audit).toContain('"groupCount":1');
   expect(audit).not.toContain("secret_sample_value");
   expect(audit).not.toContain("987654321");
+  expect(audit).not.toContain("private_player");
+  expect(audit).not.toContain("private_health");
+  expect(audit).not.toContain("debug_fixture.gd");
+  expect(audit).not.toContain(opaqueFrame);
+  expect(audit).toContain('"selectorCount":1');
+  expect(audit).toContain('"breakpointCount":1');
 });
 
 it("returns ordered runtime images without putting bytes in structured or audit output", async () => {

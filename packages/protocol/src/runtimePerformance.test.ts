@@ -53,7 +53,7 @@ describe("Phase 7 runtime performance schemas", () => {
       unavailable: [],
       gpuTimestamps: { supported: false },
     })).toMatchObject({ frame: 12 });
-    expect(ProfileEvidenceSchema.parse({
+    const baseline = ProfileEvidenceSchema.parse({
       schemaVersion: 1,
       ...withProfileReference(opaqueProfile),
       state: "completed",
@@ -73,7 +73,15 @@ describe("Phase 7 runtime performance schemas", () => {
       engine: { version: "4.7.stable.official.test", renderer: "gl_compatibility", renderingMethod: "gl_compatibility", graphicsApi: "OpenGL" },
       gpuTimestamps: { supported: false },
       sha256: "a".repeat(64),
-    })).toMatchObject({ state: "completed", observedSamples: 1 });
+    });
+    expect(baseline).toMatchObject({ state: "completed", observedSamples: 1 });
+    const flattenedCustomMetric = `custom.${"m".repeat(128)}`;
+    expect(ProfileEvidenceSchema.parse({
+      ...baseline,
+      retainedSamples: 1,
+      aggregates: { [flattenedCustomMetric]: baseline.aggregates.time_fps },
+      rawSamples: [{ frame: 1, monotonicUsec: 1, values: { [flattenedCustomMetric]: 60 } }],
+    })).toMatchObject({ retainedSamples: 1 });
   });
 
   it("validates opaque job tokens", () => {
