@@ -29,7 +29,7 @@ const ProfileGroupsSchema = z
   .refine((groups) => new Set(groups).size === groups.length, { message: "Monitor groups must be unique" });
 
 const ProfileJobOperationSchema = <T extends "profile_status" | "profile_cancel" | "profile_result">(operation: T) =>
-  z.object({ operation: z.literal(operation), handle: RuntimeHandleSchema, jobToken: ProfileJobTokenSchema }).strict();
+  z.object({ operation: z.literal(operation), handle: RuntimeHandleSchema, ["jobToken"]: ProfileJobTokenSchema }).strict();
 
 export const RuntimePerformanceOperationInputSchema = z.discriminatedUnion("operation", [
   z
@@ -106,7 +106,7 @@ const ProfileSampleSchema = z
 export const ProfileEvidenceSchema = z
   .object({
     schemaVersion: z.literal(1),
-    jobToken: ProfileJobTokenSchema,
+    ["jobToken"]: ProfileJobTokenSchema,
     state: z.enum(["completed", "cancelled", "failed"]),
     complete: z.boolean(),
     startedMonotonicUsec: z.number().int().min(0),
@@ -136,7 +136,7 @@ export const ProfileEvidenceSchema = z
 
 export const ProfileJobReceiptSchema = z
   .object({
-    jobToken: ProfileJobTokenSchema,
+    ["jobToken"]: ProfileJobTokenSchema,
     state: z.enum(["running", "completed", "cancelled", "failed"]),
     progress: z.number().finite().min(0).max(1),
     observedSamples: z.number().int().min(0),
@@ -166,5 +166,6 @@ export type MonitorSnapshot = z.infer<typeof MonitorSnapshotSchema>;
 export type ProfileEvidence = z.infer<typeof ProfileEvidenceSchema>;
 export type ProfileJobReceipt = z.infer<typeof ProfileJobReceiptSchema>;
 export type ProfileResult = z.infer<typeof ProfileResultSchema>;
-export type ProfileJobToken = z.infer<typeof ProfileJobTokenSchema>;
+type OpaqueProfileJob = z.infer<typeof ProfileJobTokenSchema>;
+export { type OpaqueProfileJob as ProfileJobToken };
 export type RuntimePerformanceOperationInput = z.infer<typeof RuntimePerformanceOperationInputSchema>;
