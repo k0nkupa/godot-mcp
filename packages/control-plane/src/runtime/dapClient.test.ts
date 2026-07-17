@@ -139,6 +139,17 @@ describe("closed-world Godot DAP client", () => {
     await client.close();
   });
 
+  it("fails closed on a response without a protocol sequence", async () => {
+    const { port } = await fakeDapServer((message, socket) => {
+      const malformed: Record<string, unknown> = response(message);
+      delete malformed.seq;
+      socket.write(encodeDapMessage(malformed));
+    });
+    const client = await DapClient.connect({ host: "127.0.0.1", port });
+    cleanups.push(() => client.close());
+    await expect(client.request("threads", {}, 1_000)).rejects.toMatchObject({ code: "TRANSPORT_ERROR" });
+  });
+
   it.each([
     { seq: 91, type: "event", event: "stopped" },
     { type: "event", event: "stopped", body: { reason: "breakpoint" } },

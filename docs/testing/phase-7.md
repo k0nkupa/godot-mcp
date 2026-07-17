@@ -10,13 +10,13 @@ Phase 7 extends the existing runtime-authorized surface with native read-only GD
 - `debug_watch` accepts at most 32 exact locals/members/globals selector paths of depth eight. It traverses returned variables and never evaluates expressions or invokes methods.
 - Frame and variable references are 256-bit opaque tokens bound to run ID, generation, DAP generation, and stop sequence. They become stale on continue, step, a new stop, reconnect, stop, crash, disconnect, or close.
 
-The TypeScript DAP client attaches only after runtime authentication and after the editor PID is proven to own distinct loopback debugger and DAP listeners. Its outbound allowlist excludes launch, terminate, evaluate, variable mutation, method calls, and raw protocol passthrough.
+The TypeScript DAP client attaches only after runtime authentication, after the editor PID is proven to own distinct loopback debugger and DAP listeners, and while the authenticated runtime is the sole active editor debugger session. That binding is rechecked after attach and before every debugger operation. Its outbound allowlist excludes launch, terminate, evaluate, variable mutation, method calls, and raw protocol passthrough.
 
 ## Certified performance contract
 
 - `monitor_snapshot` returns finite public engine monitor groups, bounded unavailability details, engine metadata, and explicit GPU timestamp support state.
 - `profile_start`, `profile_status`, `profile_cancel`, and `profile_result` manage one job per runtime.
-- A profile lasts 100 ms–30 seconds, samples every 1–120 frames, accepts at most eight unique groups, and retains at most 2,048 samples and four MiB of raw evidence.
+- A profile lasts 100 ms–30 seconds, samples every 1–120 frames, accepts at most eight unique groups, and retains at most 2,048 samples within a four MiB cap measured over the complete wire-encoded terminal evidence.
 - Terminal evidence distinguishes complete, cancelled, and failed results; includes monotonic time/frame bounds, aggregates, optional bounded samples, engine/GPU metadata, and a canonical SHA-256.
 - Performance results are observations, not deterministic benchmark claims. Tests assert structure and workload direction rather than machine-specific absolute timing.
 

@@ -34,10 +34,12 @@ func _init() -> void:
 	assert(completed.data.evidence.complete)
 	assert(completed.data.evidence.observedSamples > 0)
 	assert(completed.data.evidence.retainedSamples == completed.data.evidence.rawSamples.size())
+	assert(profiler._wire_size(completed.data.evidence) <= RuntimeProfiler.MAX_EVIDENCE_BYTES)
 	assert(String(completed.data.evidence.sha256).length() == 64)
 	assert(profiler.result(String(first.data.jobToken)).data.evidence.sha256 == completed.data.evidence.sha256)
 	var precise_float: float = JSON.parse_string("0.12345678901234567")
 	assert(profiler._tag_floats(precise_float) == {"type": "Float64Le", "value": "5ff64637dd9abf3f"})
+	assert(profiler._wire_size({"value": 0.25}) > JSON.stringify({"value": 0.25}).to_utf8_buffer().size())
 
 	var cancellation := profiler.start({"durationMs": 30000, "intervalFrames": 1, "groups": ["frame"], "retainRaw": false})
 	assert(cancellation.ok)

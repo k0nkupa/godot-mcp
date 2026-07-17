@@ -147,10 +147,12 @@ func start(input: Dictionary) -> Dictionary:
 		"invalidSamples": 0,
 		"droppedSamples": 0,
 		"terminalReason": "",
+		"gpuTimestampStartIndex": -1,
 	}
 	_register_engine_profiler()
 	_rendering_device = RenderingServer.get_rendering_device()
 	if _rendering_device != null:
+		_job.gpuTimestampStartIndex = _rendering_device.get_captured_timestamps_count()
 		_rendering_device.capture_timestamp("godot_mcp_profile_start")
 	return {"ok": true, "data": _status_receipt()}
 
@@ -247,7 +249,7 @@ func _record_aggregates(values: Dictionary, observed_count: int) -> void:
 		_series[key] = series
 
 func _retain_raw(sample: Dictionary, observed_count: int) -> void:
-	var encoded_bytes := JSON.stringify(sample).to_utf8_buffer().size()
+	var encoded_bytes := _wire_size(sample)
 	if encoded_bytes > MAX_EVIDENCE_BYTES:
 		_job.droppedSamples = int(_job.droppedSamples) + 1
 		return
@@ -256,7 +258,7 @@ func _retain_raw(sample: Dictionary, observed_count: int) -> void:
 		_job.droppedSamples = int(_job.droppedSamples) + 1
 		return
 	if slot < _raw_samples.size():
-		var old_bytes := JSON.stringify(_raw_samples[slot]).to_utf8_buffer().size()
+		var old_bytes := _wire_size(_raw_samples[slot])
 		if _raw_bytes - old_bytes + encoded_bytes > MAX_EVIDENCE_BYTES:
 			_job.droppedSamples = int(_job.droppedSamples) + 1
 			return
@@ -302,11 +304,22 @@ func _finalize(state: String, complete: bool, reason: String) -> void:
 		"aggregates": aggregates,
 		"rawSamples": _raw_samples.duplicate(true) if bool(_job.retainRaw) else [],
 		"engine": _engine_metadata(),
-		"gpuTimestamps": _gpu_timestamps(),
+		"gpuTimestamps": _gpu_timestamps(int(_job.gpuTimestampStartIndex)),
 	}
 	if not reason.is_empty():
 		evidence.terminalReason = reason.left(256)
+	evidence.sha256 = "0".repeat(64)
+	while _wire_size(evidence) > MAX_EVIDENCE_BYTES and not evidence.rawSamples.is_empty():
+		evidence.rawSamples.pop_back()
+		evidence.retainedSamples = evidence.rawSamples.size()
+		evidence.droppedSamples = int(evidence.droppedSamples) + 1
+	_raw_samples.assign(evidence.rawSamples)
+	_raw_bytes = 0
+	for sample: Dictionary in _raw_samples:
+		_raw_bytes += _wire_size(sample)
+	evidence.erase("sha256")
 	evidence.sha256 = _evidence_digest(evidence)
+	assert(_wire_size(evidence) <= MAX_EVIDENCE_BYTES)
 	_job.evidence = evidence
 	_rendering_device = null
 
@@ -404,14 +417,15 @@ func _unregister_engine_profiler() -> void:
 	_profiler_registered = false
 	_engine_profiler = null
 
-func _gpu_timestamps() -> Dictionary:
+func _gpu_timestamps(start_index := -1) -> Dictionary:
 	var device := _rendering_device if _rendering_device != null else RenderingServer.get_rendering_device()
 	if device == null:
 		return {"supported": false, "reason": "RenderingDevice is unavailable"}
-	var count := mini(device.get_captured_timestamps_count(), MAX_SAMPLES + 1)
+	var total := device.get_captured_timestamps_count()
+	var start := clampi(start_index, 0, total) if start_index >= 0 else maxi(0, total - (MAX_SAMPLES + 1))
+	var count := mini(total - start, MAX_SAMPLES + 1)
 	if count < 2:
 		return {"supported": false, "reason": "Captured GPU timestamps are unavailable"}
-	var start := maxi(0, device.get_captured_timestamps_count() - count)
 	var deltas: Array[float] = []
 	var previous := device.get_captured_timestamp_gpu_time(start)
 	for index in range(start + 1, start + count):
@@ -420,6 +434,9 @@ func _gpu_timestamps() -> Dictionary:
 			deltas.append(float(current - previous))
 		previous = current
 	return {"supported": true, "deltasUsec": deltas}
+
+func _wire_size(value: Variant) -> int:
+	return CanonicalJson.encode(SessionCrypto._canonical_signing_params(value)).to_utf8_buffer().size()
 
 func _engine_metadata() -> Dictionary:
 	var renderer := RenderingServer.get_video_adapter_name()

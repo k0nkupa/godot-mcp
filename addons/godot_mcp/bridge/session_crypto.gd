@@ -63,10 +63,25 @@ static func _sign_message(envelope: Dictionary, key: PackedByteArray) -> String:
 	return hmac_sha256(key, signing_text(envelope)).hex_encode()
 
 static func sign_envelope(envelope: Dictionary, key: PackedByteArray) -> Dictionary:
+	if _contains_reserved_float_wire(envelope.get("params")):
+		return {}
 	var signed := envelope.duplicate(true)
 	signed.params = _canonical_signing_params(envelope.params)
 	signed.mac = _sign_message(signed, key)
 	return signed
+
+static func _contains_reserved_float_wire(value: Variant) -> bool:
+	if typeof(value) == TYPE_ARRAY:
+		for entry in value:
+			if _contains_reserved_float_wire(entry): return true
+		return false
+	if typeof(value) != TYPE_DICTIONARY:
+		return false
+	if value.size() == 1 and value.has(FLOAT_WIRE_KEY):
+		return true
+	for entry in value.values():
+		if _contains_reserved_float_wire(entry): return true
+	return false
 
 static func constant_time_equal(left: String, right: String) -> bool:
 	var left_bytes := left.to_utf8_buffer()

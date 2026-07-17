@@ -22,6 +22,8 @@ func _init() -> void:
 	assert(not RuntimeDebugger.dap_port_is_valid(80))
 	assert(RuntimeDebugger.listener_ports_are_distinct(6007, 6006))
 	assert(not RuntimeDebugger.listener_ports_are_distinct(6007, 6007))
+	assert(RuntimeDebugger.binding_is_unambiguous([7], 7))
+	assert(not RuntimeDebugger.binding_is_unambiguous([7, 8], 7))
 	var hello := {"runId": "run", "generation": 1, "projectId": "project", "sessionId": "session", "launchNonce": "nonce", "pid": 42, "proof": "client-proof"}
 	assert(RuntimeHarness.hello_signing_text(hello) == RuntimeDebugger.hello_signing_text(hello))
 	assert(RuntimeHarness.server_proof_signing_text(hello) == RuntimeDebugger.server_proof_signing_text(hello))

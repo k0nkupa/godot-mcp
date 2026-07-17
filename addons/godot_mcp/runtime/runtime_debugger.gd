@@ -12,6 +12,7 @@ var _bound_session_id := -1
 var _ready_info: Dictionary = {}
 var _pending: Dictionary = {}
 var _send_sequence := 0
+var _active_sessions: Dictionary = {}
 
 func _has_capture(capture: String) -> bool:
 	return capture == "godot_mcp_runtime"
@@ -36,7 +37,13 @@ func _capture(message: String, data: Array, debugger_session_id: int) -> bool:
 
 func _setup_session(debugger_session_id: int) -> void:
 	var session := get_session(debugger_session_id)
+	session.started.connect(func() -> void:
+		_active_sessions[debugger_session_id] = true
+		if _bound_session_id >= 0 and debugger_session_id != _bound_session_id:
+			clear()
+	)
 	session.stopped.connect(func() -> void:
+		_active_sessions.erase(debugger_session_id)
 		if debugger_session_id == _bound_session_id:
 			clear()
 	)
@@ -44,6 +51,8 @@ func _setup_session(debugger_session_id: int) -> void:
 func prepare(descriptor: Dictionary, debug_port: int, dap_port: int, editor_pid: int) -> Dictionary:
 	if _bound_session_id >= 0:
 		return _error("CONFLICT", "A runtime is already prepared or attached")
+	if not _active_sessions.is_empty():
+		return _error("CONFLICT", "Another debugger session is already active")
 	if not _prepared.is_empty():
 		var expired := _now_ms() > int(_prepared.get("expiresAtUnixMs", 0))
 		var replacement_session := String(_prepared.get("sessionId", "")) != String(descriptor.get("sessionId", ""))
@@ -76,6 +85,9 @@ static func dap_port_is_valid(port: int) -> bool:
 static func listener_ports_are_distinct(debug_port: int, dap_port: int) -> bool:
 	return debug_port != dap_port
 
+static func binding_is_unambiguous(active_session_ids: Array, bound_session_id: int) -> bool:
+	return bound_session_id >= 0 and active_session_ids.size() == 1 and int(active_session_ids[0]) == bound_session_id
+
 func execute(command: Dictionary) -> Dictionary:
 	var operation := String(command.get("arguments", {}).get("operation", ""))
 	var deadline := int(command.get("deadlineUnixMs", 0))
@@ -85,6 +97,12 @@ func execute(command: Dictionary) -> Dictionary:
 		if _ready_info.is_empty():
 			return _error("TIMEOUT", "Runtime did not authenticate before the deadline", true)
 		return {"ok": true, "data": _ready_info.duplicate(true)}
+	if operation == "debug_binding_status":
+		return {"ok": true, "data": {
+			"debuggerSessionId": _bound_session_id,
+			"activeSessionCount": _active_sessions.size(),
+			"unambiguous": binding_is_unambiguous(_active_sessions.keys(), _bound_session_id),
+		}}
 	if _bound_session_id < 0:
 		return _error("NOT_ATTACHED", "No authenticated runtime is attached", true)
 	if not _matches_handle(command.get("arguments", {}).get("handle", {})):
@@ -132,6 +150,9 @@ func _accept_hello(payload: Dictionary, debugger_session_id: int) -> void:
 		or String(payload.launchNonce) != String(_prepared.launchNonce)
 	):
 		return
+	_active_sessions[debugger_session_id] = true
+	if not binding_is_unambiguous(_active_sessions.keys(), debugger_session_id):
+		return
 	var secret := SessionCrypto.base64url_decode(String(_prepared.secret))
 	var expected := SessionCrypto.hmac_sha256(secret, hello_signing_text(payload)).hex_encode()
 	if not SessionCrypto.constant_time_equal(String(payload.proof), expected):
@@ -156,6 +177,7 @@ func _accept_ready(payload: Dictionary, debugger_session_id: int) -> void:
 		"handle": {"runId": String(payload.runId), "generation": int(payload.generation)},
 		"pid": int(payload.get("pid", 0)),
 		"scenePath": String(_prepared.scenePath),
+		"debuggerSessionId": debugger_session_id,
 	}
 	runtime_ready.emit(_ready_info.duplicate(true))
 

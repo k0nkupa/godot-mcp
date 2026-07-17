@@ -65,7 +65,7 @@ test("hits a real Godot DAP breakpoint and reads bounded stack and watch data", 
       scope: "locals",
       offset: 0,
       limit: 100,
-    })).rejects.toMatchObject({ code: "STALE_HANDLE" });
+    })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
     await fixture.runtime.execute({ operation: "stop", handle: launched.handle });
   } catch (error) {
     throw new Error(`Phase: ${phase}\n${String(error)}\n${fixture.diagnostics()}`);

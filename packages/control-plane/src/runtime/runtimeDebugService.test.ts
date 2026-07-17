@@ -20,6 +20,7 @@ class FakeDap implements RuntimeDapClient {
   stopSequence = 1;
   transientVariableFailures = 0;
   variablePageSize = 0;
+  failBreakpointPath: string | null = null;
 
   async request(command: DapCommand, argumentsValue: Record<string, unknown>): Promise<Record<string, unknown>> {
     this.calls.push({ command, arguments: argumentsValue });
@@ -50,6 +51,9 @@ class FakeDap implements RuntimeDapClient {
       return { body: { variables: [] } };
     }
     if (command === "setBreakpoints") {
+      if (argumentsValue.source && (argumentsValue.source as { path?: string }).path === this.failBreakpointPath) {
+        throw new DapClientError("TRANSPORT_ERROR", "setBreakpoints failed");
+      }
       const breakpoints = Array.isArray(argumentsValue.breakpoints) ? argumentsValue.breakpoints : [];
       return { body: { breakpoints: breakpoints.map((entry, index) => ({ id: index + 1, verified: true, line: (entry as { line: number }).line })) } };
     }
@@ -68,6 +72,10 @@ class FakeDap implements RuntimeDapClient {
     return { connected: !this.closed, stopped: this.stopped, stopSequence: this.stopSequence };
   }
 
+  markRunning(): void {
+    this.stopped = false;
+  }
+
   async close(): Promise<void> {
     this.closed = true;
   }
@@ -77,6 +85,7 @@ async function debugFixture() {
   const root = await mkdtemp(join(tmpdir(), "godot-mcp-debug-service-"));
   cleanups.push(async () => rm(root, { recursive: true, force: true }));
   await writeFile(join(root, "debug_fixture.gd"), "extends Node\nfunc inner():\n\tpass\n", "utf8");
+  await writeFile(join(root, "debug_fixture_two.gd"), "extends Node\nfunc other():\n\tpass\n", "utf8");
   const addonDirectory = join(root, "addons/godot_mcp");
   await mkdir(addonDirectory, { recursive: true });
   const protectedScript = join(addonDirectory, "protected.gd");
@@ -90,6 +99,7 @@ async function debugFixture() {
   };
   const dap = new FakeDap();
   const calls: string[] = [];
+  const binding = { debuggerSessionId: 7, activeSessionCount: 1, unambiguous: true };
   const verifiedPorts: number[] = [];
   const service = new RuntimeService({
     project,
@@ -109,13 +119,15 @@ async function debugFixture() {
     },
     command: async (operation) => {
       calls.push(operation);
-      return operation === "await_ready" ? { pid: 42 } : { ok: true };
+      if (operation === "await_ready") return { pid: 42, debuggerSessionId: 7 };
+      if (operation === "debug_binding_status") return { ...binding };
+      return { ok: true };
     },
     connectDap: async (input) => { calls.push(`dap.connect:${input.port}`); return dap; },
     cleanup: async () => { calls.push("runtime.cleanup"); },
   });
   const launched = await service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000 });
-  return { calls, dap, launched, project, service, verifiedPorts };
+  return { binding, calls, dap, launched, project, service, verifiedPorts };
 }
 
 describe("Phase 7 RuntimeService debugging", () => {
@@ -228,6 +240,13 @@ describe("Phase 7 RuntimeService debugging", () => {
     await expect(service.execute({ operation: "debug_status", handle: launched.handle })).resolves.toMatchObject({ connected: false, stopped: true });
   });
 
+  it("fails closed when the authenticated runtime is not the only active debugger session", async () => {
+    const { binding, launched, service } = await debugFixture();
+    binding.activeSessionCount = 2;
+    binding.unambiguous = false;
+    await expect(service.execute({ operation: "debug_status", handle: launched.handle })).rejects.toMatchObject({ code: "AUTHENTICATION_FAILED" });
+  });
+
   it("enforces pause and continue state preconditions before changing tokens", async () => {
     const { dap, launched, service } = await debugFixture();
     await expect(service.execute({ operation: "debug_pause", handle: launched.handle })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
@@ -263,6 +282,29 @@ describe("Phase 7 RuntimeService debugging", () => {
     await service.close();
     const clears = dap.calls.filter((entry) => entry.command === "setBreakpoints" && Array.isArray(entry.arguments.breakpoints) && entry.arguments.breakpoints.length === 0);
     expect(clears).toHaveLength(1);
+  });
+
+  it("rolls back already-applied sources when breakpoint replacement fails", async () => {
+    const { dap, launched, project, service } = await debugFixture();
+    await service.execute({
+      operation: "debug_breakpoints_set",
+      handle: launched.handle,
+      breakpoints: [{ sourcePath: "res://debug_fixture.gd", line: 2 }],
+    });
+    dap.failBreakpointPath = join(project.rootRealPath, "debug_fixture_two.gd");
+    await expect(service.execute({
+      operation: "debug_breakpoints_set",
+      handle: launched.handle,
+      breakpoints: [
+        { sourcePath: "res://debug_fixture.gd", line: 3 },
+        { sourcePath: "res://debug_fixture_two.gd", line: 2 },
+      ],
+    })).rejects.toMatchObject({ code: "TRANSPORT_ERROR" });
+    const sourceOneCalls = dap.calls.filter((entry) =>
+      entry.command === "setBreakpoints"
+      && (entry.arguments.source as { path?: string }).path === join(project.rootRealPath, "debug_fixture.gd"));
+    expect(sourceOneCalls.at(-1)?.arguments.breakpoints).toEqual([{ line: 2 }]);
+    await expect(service.execute({ operation: "debug_status", handle: launched.handle })).resolves.toMatchObject({ breakpointCount: 1 });
   });
 
   it("rejects a breakpoint whose resolved path aliases the protected addon", async () => {

@@ -37,18 +37,21 @@ function isFloatWireValue(value: unknown): value is Record<typeof FLOAT_WIRE_KEY
     /^[a-f0-9]{16}$/.test(String((value as Record<string, unknown>)[FLOAT_WIRE_KEY]));
 }
 
-function encodeFloatParams(value: unknown): unknown {
+function encodeFloatParams(value: unknown, allowWireValues = false): unknown {
   if (typeof value === "number") {
     if (Number.isFinite(value) && !Number.isInteger(value)) {
       return { [FLOAT_WIRE_KEY]: canonicalFloat64Le(value) };
     }
     return value;
   }
-  if (Array.isArray(value)) return value.map(encodeFloatParams);
+  if (Array.isArray(value)) return value.map((entry) => encodeFloatParams(entry, allowWireValues));
   if (value !== null && typeof value === "object") {
-    if (isFloatWireValue(value)) return value;
+    if (isFloatWireValue(value)) {
+      if (!allowWireValues) throw new TypeError("Bridge parameters contain a reserved float wire value");
+      return value;
+    }
     return Object.fromEntries(
-      Object.entries(value).map(([key, entry]) => [key, encodeFloatParams(entry)]),
+      Object.entries(value).map(([key, entry]) => [key, encodeFloatParams(entry, allowWireValues)]),
     );
   }
   return value;
@@ -75,19 +78,23 @@ export function deriveSessionKey(
     .digest();
 }
 
-export function envelopeSigningText(envelope: UnsignedBridgeEnvelope): string {
+function signingText(envelope: UnsignedBridgeEnvelope, allowWireValues: boolean): string {
   return [
     envelope.sessionId,
     String(envelope.sequence),
     String(envelope.deadlineUnixMs),
     envelope.method,
-    canonicalJson(encodeFloatParams(envelope.params)),
+    canonicalJson(encodeFloatParams(envelope.params, allowWireValues)),
   ].join("\n");
+}
+
+export function envelopeSigningText(envelope: UnsignedBridgeEnvelope): string {
+  return signingText(envelope, false);
 }
 
 export function signEnvelope(key: Uint8Array, envelope: UnsignedBridgeEnvelope): BridgeEnvelope {
   const wireEnvelope = { ...envelope, params: encodeFloatParams(envelope.params) };
-  const mac = createHmac("sha256", key).update(envelopeSigningText(wireEnvelope), "utf8").digest("hex");
+  const mac = createHmac("sha256", key).update(signingText(wireEnvelope, true), "utf8").digest("hex");
   return BridgeEnvelopeSchema.parse({ ...wireEnvelope, mac });
 }
 
@@ -103,7 +110,7 @@ export function verifyEnvelope(
     throw authenticationFailed("Signed envelope is malformed");
   }
   const expected = createHmac("sha256", key)
-    .update(envelopeSigningText(envelope), "utf8")
+    .update(signingText(envelope, true), "utf8")
     .digest();
   const received = Buffer.from(envelope.mac, "hex");
   if (received.length !== expected.length || !timingSafeEqual(received, expected)) {

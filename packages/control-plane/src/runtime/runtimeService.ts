@@ -67,6 +67,7 @@ export interface RuntimeDapClient {
   request(command: DapCommand, argumentsValue: Record<string, unknown>, timeoutMs?: number): Promise<Record<string, unknown>>;
   nextStop(afterSequence: number, timeoutMs: number): Promise<DapStopEvent>;
   snapshot(): { connected: boolean; stopped: boolean; stopSequence: number };
+  markRunning(): void;
   close(): Promise<void>;
 }
 
@@ -108,8 +109,9 @@ export class RuntimeService {
   private operationTail: Promise<void> = Promise.resolve();
   private dap: RuntimeDapClient | null = null;
   private dapGeneration = 0;
+  private debuggerSessionId: number | null = null;
   private readonly debugTokens = new DebugTokenStore();
-  private readonly breakpointSources = new Map<string, number>();
+  private readonly breakpointSources = new Map<string, number[]>();
   private opaqueProfileId: string | null = null;
 
   constructor(private readonly dependencies: RuntimeServiceDependencies) {}
@@ -212,12 +214,18 @@ export class RuntimeService {
       ) {
         throw runtimeError("AUTHENTICATION_FAILED", "Authenticated runtime PID does not match the owned process");
       }
+      const readySessionId = Number((ready as { debuggerSessionId?: unknown }).debuggerSessionId);
+      if (this.dependencies.requireDapMetadata && (!Number.isInteger(readySessionId) || readySessionId < 0)) {
+        throw runtimeError("AUTHENTICATION_FAILED", "Authenticated runtime omitted its debugger session identity");
+      }
+      this.debuggerSessionId = Number.isInteger(readySessionId) && readySessionId >= 0 ? readySessionId : null;
       await descriptor.consume?.();
       this.assertLaunchCurrent(epoch);
       if (this.processStopped) {
         throw runtimeError("GODOT_RUNTIME_ERROR", "Owned runtime exited before launch completed");
       }
       if (prepared.dapPort !== undefined) {
+        await this.assertDapBinding();
         const verifyListener = this.dependencies.verifyEditorListener ?? this.dependencies.verifyDebuggerListener ?? assertLoopbackListenerOwnedByProcess;
         await verifyListener(prepared.editorPid!, prepared.dapPort);
         this.assertLaunchCurrent(epoch);
@@ -326,6 +334,7 @@ export class RuntimeService {
         supportsVariableType: true,
       }, 5_000);
       await dap.request("attach", { project: this.dependencies.project.rootRealPath }, 5_000);
+      await this.assertDapBinding();
     } catch (error) {
       await dap.close().catch(() => undefined);
       throw error;
@@ -337,9 +346,10 @@ export class RuntimeService {
   }
 
   private async executeDebug(input: RuntimeDebugOperationInput): Promise<unknown> {
+    await this.assertDapBinding();
     if (input.operation === "debug_status") {
       const snapshot = this.dap?.snapshot() ?? { connected: false, stopped: false, stopSequence: 0 };
-      const breakpointCount = [...this.breakpointSources.values()].reduce((total, count) => total + count, 0);
+      const breakpointCount = [...this.breakpointSources.values()].reduce((total, lines) => total + lines.length, 0);
       return { ...snapshot, breakpointCount };
     }
     const dap = this.requireDap();
@@ -356,6 +366,7 @@ export class RuntimeService {
       case "debug_continue":
         if (!dap.snapshot().stopped) throw runtimeError("PRECONDITION_FAILED", "Godot debugger must be stopped before continuing");
         await dap.request("continue", { threadId: 1 });
+        dap.markRunning();
         this.debugTokens.clear();
         return dap.snapshot();
       case "debug_step_over":
@@ -394,6 +405,15 @@ export class RuntimeService {
     return this.dap;
   }
 
+  private async assertDapBinding(): Promise<void> {
+    if (this.debuggerSessionId === null || !this.handle) return;
+    const status = await this.dependencies.command("debug_binding_status", { handle: this.handle });
+    if (!isRecord(status) || status.unambiguous !== true || status.activeSessionCount !== 1 || status.debuggerSessionId !== this.debuggerSessionId) {
+      this.debugTokens.clear();
+      throw runtimeError("AUTHENTICATION_FAILED", "Godot DAP target is not the uniquely authenticated runtime session");
+    }
+  }
+
   private bindDebugStop(stopSequence?: number): void {
     const dap = this.requireDap();
     const snapshot = dap.snapshot();
@@ -413,6 +433,7 @@ export class RuntimeService {
     const snapshot = dap.snapshot();
     if (!snapshot.stopped) throw runtimeError("PRECONDITION_FAILED", "Godot debugger must be stopped before stepping");
     await dap.request(command, { threadId: 1 });
+    dap.markRunning();
     this.debugTokens.clear();
     const stopped = await dap.nextStop(snapshot.stopSequence, 10_000);
     this.bindDebugStop(stopped.sequence);
@@ -436,27 +457,52 @@ export class RuntimeService {
       entries.push(breakpoint);
       grouped.set(absolutePath, entries);
     }
-    const sources = new Set([...this.breakpointSources.keys(), ...grouped.keys()]);
+    const previous = new Map([...this.breakpointSources].map(([path, lines]) => [path, [...lines]]));
+    const sources = new Set([...previous.keys(), ...grouped.keys()]);
     const results: unknown[] = [];
-    for (const absolutePath of sources) {
-      const entries = grouped.get(absolutePath) ?? [];
-      const response = await dap.request("setBreakpoints", {
-        source: { name: absolutePath.split(sep).at(-1), path: absolutePath },
-        breakpoints: entries.map((entry) => ({ line: entry.line })),
-      });
-      const returned = bodyArray(response, "breakpoints");
-      for (const [index, entry] of entries.entries()) {
-        const raw = isRecord(returned[index]) ? returned[index] : {};
-        results.push({
-          sourcePath: entry.sourcePath,
-          requestedLine: entry.line,
-          verified: raw.verified === true,
-          resolvedLine: integerOr(raw.line, entry.line),
-          ...(typeof raw.message === "string" ? { message: raw.message.slice(0, 512) } : {}),
+    const applied: string[] = [];
+    try {
+      for (const absolutePath of sources) {
+        const entries = grouped.get(absolutePath) ?? [];
+        const response = await dap.request("setBreakpoints", {
+          source: { name: absolutePath.split(sep).at(-1), path: absolutePath },
+          breakpoints: entries.map((entry) => ({ line: entry.line })),
         });
+        applied.push(absolutePath);
+        const returned = bodyArray(response, "breakpoints");
+        for (const [index, entry] of entries.entries()) {
+          const raw = isRecord(returned[index]) ? returned[index] : {};
+          results.push({
+            sourcePath: entry.sourcePath,
+            requestedLine: entry.line,
+            verified: raw.verified === true,
+            resolvedLine: integerOr(raw.line, entry.line),
+            ...(typeof raw.message === "string" ? { message: raw.message.slice(0, 512) } : {}),
+          });
+        }
       }
-      if (entries.length === 0) this.breakpointSources.delete(absolutePath);
-      else this.breakpointSources.set(absolutePath, entries.length);
+    } catch (error) {
+      let rollbackFailed = false;
+      for (const absolutePath of applied.reverse()) {
+        try {
+          const lines = previous.get(absolutePath) ?? [];
+          await dap.request("setBreakpoints", {
+            source: { name: absolutePath.split(sep).at(-1), path: absolutePath },
+            breakpoints: lines.map((line) => ({ line })),
+          });
+        } catch {
+          rollbackFailed = true;
+        }
+      }
+      if (rollbackFailed) {
+        await this.cleanupDap().catch(() => undefined);
+        throw runtimeError("TRANSPORT_ERROR", "Breakpoint replacement failed and could not be rolled back", true);
+      }
+      throw error;
+    }
+    this.breakpointSources.clear();
+    for (const [absolutePath, entries] of grouped) {
+      if (entries.length > 0) this.breakpointSources.set(absolutePath, entries.map((entry) => entry.line));
     }
     return { breakpoints: results };
   }
@@ -707,6 +753,7 @@ export class RuntimeService {
     if (this.cleanupPromise) return this.cleanupPromise;
     const activeCleanup = (async () => {
       this.opaqueProfileId = null;
+      this.debuggerSessionId = null;
       let cleanupError: unknown;
       try {
         await this.cleanupDap();

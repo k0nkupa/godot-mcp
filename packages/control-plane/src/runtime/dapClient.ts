@@ -120,6 +120,11 @@ export class DapClient {
     return { connected: this.connected, stopped: this.stopped, stopSequence: this.stopSequence };
   }
 
+  markRunning(): void {
+    this.stopped = false;
+    this.stopEvents.length = 0;
+  }
+
   async close(): Promise<void> {
     if (!this.connected) return;
     this.connected = false;
@@ -170,6 +175,7 @@ export class DapClient {
   }
 
   private onMessage(message: Record<string, unknown>): void {
+    if (!Number.isInteger(message.seq) || Number(message.seq) < 1) throw new DapProtocolError("DAP message omitted a valid sequence");
     if (message.type === "response") {
       const requestSequence = message.request_seq;
       if (!Number.isInteger(requestSequence)) throw new DapProtocolError("DAP response omitted request_seq");
@@ -185,7 +191,6 @@ export class DapClient {
       return;
     }
     if (message.type !== "event" || typeof message.event !== "string") throw new DapProtocolError("DAP message type is unsupported");
-    if (!Number.isInteger(message.seq) || Number(message.seq) < 1) throw new DapProtocolError("DAP event omitted a valid sequence");
     const body = isRecord(message.body) ? message.body : {};
     if (message.event === "stopped") {
       if (!isRecord(message.body) || typeof message.body.reason !== "string" || message.body.reason.length < 1 || message.body.reason.length > 128) {

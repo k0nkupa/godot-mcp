@@ -213,7 +213,10 @@ func _send_signed(method: String, params: Variant, timeout_ms: int) -> Error:
 		"method": method,
 		"params": params,
 	}
-	return _socket.send_text(JSON.stringify(SessionCrypto.sign_envelope(envelope, _session_key)))
+	var signed := SessionCrypto.sign_envelope(envelope, _session_key)
+	if signed.is_empty():
+		return ERR_INVALID_DATA
+	return _socket.send_text(JSON.stringify(signed))
 
 func is_attached() -> bool:
 	return _paired and _socket != null and _socket.get_ready_state() == WebSocketPeer.STATE_OPEN

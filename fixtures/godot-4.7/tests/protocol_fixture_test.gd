@@ -34,6 +34,7 @@ func _init() -> void:
 	for encoded in ["8c4b2f44612a403f", "5ef64637dd9abf3f", "59f3f8c21f6ea501", "83f19de8d893b654"]:
 		var decoded: float = SessionCrypto._decode_float_params({"$godotMcpFloat64Le": encoded})
 		assert(SessionCrypto.float64_le_hex(decoded) == encoded)
+	assert(SessionCrypto.sign_envelope({"sessionId": "s", "sequence": 1, "deadlineUnixMs": 2, "method": "m", "params": {"$godotMcpFloat64Le": "000000000000d03f"}}, PackedByteArray([1])).is_empty())
 	var fixture: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://protocol-fixtures/session-crypto-v1.json"))
 	fixture.envelope = _restore_safe_json_integers(fixture.envelope)
 	var key: PackedByteArray = SessionCrypto.derive_key(fixture.token, fixture.sessionNonce, fixture.serverNonce)

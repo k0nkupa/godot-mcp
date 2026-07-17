@@ -53,6 +53,10 @@ describe("session crypto", () => {
     ).toThrowError(expect.objectContaining({ code: "AUTHENTICATION_FAILED" }));
   });
 
+  it("rejects caller dictionaries that collide with the reserved float wire shape", () => {
+    expect(() => signEnvelope(key, envelope({ params: { value: { $godotMcpFloat64Le: "000000000000d03f" } } }))).toThrow(/reserved float wire/i);
+  });
+
   it("rejects tampering, expiry, and deadlines over 60 seconds away", () => {
     const signed = signEnvelope(key, envelope());
     expect(verifyEnvelope(key, signed, { now: () => 1_000 })).toEqual(signed);
