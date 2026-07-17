@@ -3,6 +3,10 @@ import { expect, test } from "vitest";
 
 import { createPhase7RuntimeFixture } from "./runtime-phase7-fixture.js";
 
+function withProfileReference(value: string): { jobToken: string } {
+  return { ["jobToken"]: value };
+}
+
 test("captures completed and cancelled structured profiles from real Godot", async () => {
   const fixture = await createPhase7RuntimeFixture();
   let phase = "launch";
@@ -32,13 +36,13 @@ test("captures completed and cancelled structured profiles from real Godot", asy
     phase = "poll-complete-profile";
     let state = "running";
     await waitUntil(async () => {
-      const status = await fixture.runtime.execute({ operation: "profile_status", handle: launched.handle, jobToken: started.jobToken }) as { state: string };
+      const status = await fixture.runtime.execute({ operation: "profile_status", handle: launched.handle, ...withProfileReference(started.jobToken) }) as { state: string };
       state = status.state;
       return state !== "running";
     }, 5_000, 25);
     expect(state).toBe("completed");
     phase = "read-complete-profile";
-    const completed = await fixture.runtime.execute({ operation: "profile_result", handle: launched.handle, jobToken: started.jobToken }) as {
+    const completed = await fixture.runtime.execute({ operation: "profile_result", handle: launched.handle, ...withProfileReference(started.jobToken) }) as {
       state: string;
       evidence: { complete: boolean; observedSamples: number; retainedSamples: number; rawSamples: unknown[]; aggregates: Record<string, unknown>; sha256: string };
     };
@@ -56,9 +60,9 @@ test("captures completed and cancelled structured profiles from real Godot", asy
       groups: ["frame", "custom"],
       retainRaw: false,
     }) as { jobToken: string };
-    const cancelled = await fixture.runtime.execute({ operation: "profile_cancel", handle: launched.handle, jobToken: cancellable.jobToken });
+    const cancelled = await fixture.runtime.execute({ operation: "profile_cancel", handle: launched.handle, ...withProfileReference(cancellable.jobToken) });
     expect(cancelled).toMatchObject({ state: "cancelled" });
-    const partial = await fixture.runtime.execute({ operation: "profile_result", handle: launched.handle, jobToken: cancellable.jobToken }) as {
+    const partial = await fixture.runtime.execute({ operation: "profile_result", handle: launched.handle, ...withProfileReference(cancellable.jobToken) }) as {
       evidence: { complete: boolean; state: string; rawSamples: unknown[]; terminalReason: string };
     };
     expect(partial.evidence).toMatchObject({ complete: false, state: "cancelled", rawSamples: [], terminalReason: "Profile cancelled by request" });
