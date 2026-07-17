@@ -35,7 +35,7 @@ Audit records contain debugger operation metadata and performance operation/coun
 GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-7
 ```
 
-The 16-stage macOS gate pins Godot `4.7.stable.official.5b4e0cb0f`; checks generated protocol drift; runs build, lint, typecheck, focused Phase 7 tests, disposable import, Godot profiler/harness units with script-error scanning and mandatory success markers, a shared-port native-DAP inertness probe, authenticated debugger/profiler integrations, hostile inputs, published stdio, and the serialized full suite; then proves cleanup and clean committed/working diffs. Phase 0–1 through Phase 6 gates remain required regressions.
+The 16-stage macOS gate pins Godot `4.7.stable.official.5b4e0cb0f`; checks generated protocol drift; runs build, lint, typecheck, focused Phase 7 tests, disposable import, Godot profiler/harness units with script-error scanning and mandatory success markers, a shared-port native-DAP inertness probe, authenticated debugger/profiler integrations, hostile inputs, published stdio through a non-headless secure editor, and the serialized full suite; then proves cleanup and clean committed/working diffs. The native transition unit also proves profile status remains reachable without a bound scene. Phase 0–1 through Phase 6 gates remain required regressions.
 
 ## Exclusions
 

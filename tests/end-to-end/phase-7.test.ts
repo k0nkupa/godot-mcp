@@ -40,7 +40,7 @@ test.skipIf(process.platform !== "darwin")(
       expect((await runCli(["init", "--project", project.root])).exitCode).toBe(0);
       debugServerPort = await reserveLoopbackPort();
       dapPort = debugServerPort;
-      editor = await launchEditor(project.root, { headless: true, debugServerPort, dapPort });
+      editor = await launchEditor(project.root, { headless: false, debugServerPort, dapPort });
       editorPid = editor.pid;
       client = await launchMcpClient([
         "connect", "--project", project.root,

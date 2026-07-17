@@ -97,7 +97,7 @@ Resolution traverses only the bounded captured variable tree. It never evaluates
 - one to eight monitor groups;
 - optional bounded raw retention.
 
-The job retains at most 2,048 samples and 4 MiB of canonical evidence. `profile_status`, idempotent `profile_cancel`, and terminal-only `profile_result` use opaque run-bound job tokens.
+The job retains at most 2,048 samples and 4 MiB of canonical evidence. `profile_status`, idempotent `profile_cancel`, and terminal-only `profile_result` use opaque run-bound job tokens. An active profiler is scene-independent: scene invalidation may block new snapshots or jobs, but status, cancel, and result remain routable through the retained profiler until terminal state or runtime cleanup.
 
 Evidence contains timing/frame bounds, sample counts, min/max/mean/p50/p95/p99 aggregates, optional stable raw samples, engine/renderer identity, GPU timestamp capability, terminal metadata, and SHA-256 over the shared canonical JSON wire representation. Non-finite floats use the bridge's canonical tagged-float representation; malformed or reserved float-tag shapes are rejected.
 
@@ -131,7 +131,7 @@ Repeated cleanup is safe; failures are accumulated only after all actions are at
 
 ## 9. Certification
 
-`GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-7` runs 16 ordered stages covering protocol drift, build/lint/typecheck, focused protocol/runtime/debugger tests, disposable import, GDScript units, a shared-port native-DAP inertness probe, real authenticated breakpoint/stack/variable/watch/control integration, profiler integration, hostile inputs, published stdio E2E, serialized regressions, cleanup, and clean committed/working diffs.
+`GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-7` runs 16 ordered stages covering protocol drift, build/lint/typecheck, focused protocol/runtime/debugger tests, disposable import, GDScript units, a shared-port native-DAP inertness probe, real authenticated breakpoint/stack/variable/watch/control integration, profiler integration, hostile inputs, a published stdio E2E through the shipped non-headless secure-editor startup path, serialized regressions, cleanup, and clean committed/working diffs.
 
 After that gate passes, the Phase 0–1 and Phase 2–6 gates run as regressions. Autoreview must then exit clean before Phase 8 begins.
 

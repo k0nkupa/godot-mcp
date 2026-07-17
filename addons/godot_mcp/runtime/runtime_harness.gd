@@ -191,13 +191,38 @@ func _handle_command(command: Dictionary) -> void:
 	var deadline := int(command.get("deadlineUnixMs", 0))
 	var operation := String(command.get("operation", ""))
 	var outcome: Dictionary
+	var readiness_error := _readiness_error(operation)
 	if sequence <= _receive_sequence:
 		outcome = _error("AUTHENTICATION_FAILED", "Runtime command sequence was replayed")
 	elif deadline < _now_ms():
 		outcome = _error("TIMEOUT", "Runtime command deadline expired", true)
 	elif not operation_is_allowed(operation):
 		outcome = _error("INVALID_REQUEST", "Runtime operation is not allowed")
-	elif operation != "stop" and (
+	elif not readiness_error.is_empty():
+		outcome = readiness_error
+	else:
+		_receive_sequence = sequence
+		var scene_revision := _scene_revision
+		_pending_commands[request_id] = scene_revision
+		outcome = await _execute_operation(operation, command.get("arguments", {}), deadline)
+		if not _pending_commands.has(request_id):
+			return
+		if operation_requires_scene(operation) and scene_revision != _scene_revision:
+			outcome = _error("TARGET_NOT_FOUND", "Runtime scene changed during the operation", true)
+		_pending_commands.erase(request_id)
+	EngineDebugger.send_message("godot_mcp_runtime:result", [{
+		"requestId": request_id,
+		"outcome": outcome,
+	}])
+	if operation == "stop" and bool(outcome.get("ok", false)):
+		call_deferred("_cooperative_stop")
+
+func _readiness_error(operation: String) -> Dictionary:
+	if operation == "stop":
+		return {}
+	if profile_management_operation(operation):
+		return {} if _runtime_profiler != null else _error("TARGET_NOT_FOUND", "Runtime profiler is unavailable", true)
+	if (
 		_query == null
 		or _control == null
 		or _runtime_capture == null
@@ -207,23 +232,14 @@ func _handle_command(command: Dictionary) -> void:
 		or not is_instance_valid(_game_scene)
 		or _game_scene.get_tree() == null
 	):
-		outcome = _error("TARGET_NOT_FOUND", "Runtime scene is changing", true)
-	else:
-		_receive_sequence = sequence
-		var scene_revision := _scene_revision
-		_pending_commands[request_id] = scene_revision
-		outcome = await _execute_operation(operation, command.get("arguments", {}), deadline)
-		if not _pending_commands.has(request_id):
-			return
-		if operation != "stop" and scene_revision != _scene_revision:
-			outcome = _error("TARGET_NOT_FOUND", "Runtime scene changed during the operation", true)
-		_pending_commands.erase(request_id)
-	EngineDebugger.send_message("godot_mcp_runtime:result", [{
-		"requestId": request_id,
-		"outcome": outcome,
-	}])
-	if operation == "stop" and bool(outcome.get("ok", false)):
-		call_deferred("_cooperative_stop")
+		return _error("TARGET_NOT_FOUND", "Runtime scene is changing", true)
+	return {}
+
+static func profile_management_operation(operation: String) -> bool:
+	return operation in ["profile_status", "profile_cancel", "profile_result"]
+
+static func operation_requires_scene(operation: String) -> bool:
+	return operation != "stop" and not profile_management_operation(operation)
 
 func _cancel_stale_commands() -> void:
 	for request_id: String in _pending_commands.keys():

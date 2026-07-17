@@ -88,6 +88,10 @@ func _init() -> void:
 	assert(transition_profile.ok)
 	transition_harness._invalidate_game_scene(transition_scene)
 	assert(transition_harness._runtime_profiler == transition_profiler)
+	assert(transition_harness._readiness_error("profile_status").is_empty())
+	assert(not transition_harness._readiness_error("profile_start").is_empty())
+	var transition_status := await transition_harness._execute_operation("profile_status", {"jobToken": transition_profile.data.jobToken}, Time.get_ticks_msec() + 1000)
+	assert(transition_status.ok and transition_status.data.state == "running")
 	assert(transition_profiler.status(String(transition_profile.data.jobToken)).ok)
 	transition_profiler.clear()
 	transition_harness._runtime_profiler = null
