@@ -34,6 +34,38 @@ func prepare_steps(step_values: Array) -> Dictionary:
 	if preimage_bytes > MAX_PREIMAGE_BYTES: return _error("PAYLOAD_TOO_LARGE", "Editor mutation rollback preimages exceed 4 MiB")
 	return {"ok": true}
 
+func prepare_external(prepared_step: Dictionary) -> Dictionary:
+	if String(prepared_step.get("_authoringKind", "")) not in ["source", "custom_resource"]:
+		return _error("INVALID_REQUEST", "Prepared authoring step has an unknown origin")
+	var path := String(prepared_step.get("path", ""))
+	if not _safe_path(path): return _error("PATH_DENIED", "Prepared authoring path is outside the project")
+	var before_state := _capture(path)
+	if bool(prepared_step.get("expectedExists", false)) != bool(before_state.exists):
+		return _error("PRECONDITION_FAILED", "Prepared authoring target existence changed")
+	if before_state.exists and String(prepared_step.get("expectedSha256", "")) != String(before_state.sha256):
+		return _error("PRECONDITION_FAILED", "Prepared authoring target changed")
+	var bytes: PackedByteArray = prepared_step.get("desiredBytes", PackedByteArray())
+	var transaction_step := {
+		"operation": String(prepared_step.get("operation", "authoring_file")),
+		"paths": [path], "before": {path: before_state}, "after": {path: _state(true, bytes)},
+	}
+	prepared.append(transaction_step)
+	var limits := _check_limits()
+	if not limits.ok: prepared.pop_back()
+	return limits
+
+func _check_limits() -> Dictionary:
+	var touched := {}
+	var preimage_bytes := 0
+	for step in prepared:
+		for path in step.paths:
+			touched[path] = true
+			var state: Dictionary = step.before[path]
+			if state.exists: preimage_bytes += state.bytes.size()
+	if touched.size() > MAX_FILES: return _error("PAYLOAD_TOO_LARGE", "Editor mutation may touch at most 8 project files")
+	if preimage_bytes > MAX_PREIMAGE_BYTES: return _error("PAYLOAD_TOO_LARGE", "Editor mutation rollback preimages exceed 4 MiB")
+	return {"ok": true}
+
 func apply_all(forward: bool) -> void:
 	failure = ""
 	partial_effects = false
