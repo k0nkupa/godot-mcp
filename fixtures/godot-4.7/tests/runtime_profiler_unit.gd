@@ -74,9 +74,16 @@ func _init() -> void:
 	assert(profiler.snapshot(["rendering"]).data.gpuTimestamps.has("supported"))
 	assert(RuntimeProfiler.gpu_microseconds_delta(1500) == 1500.0)
 	assert(RuntimeProfiler.extract_profile_gpu_deltas(
-		["unrelated", "godot_mcp_profile_start_7", "godot_mcp_profile_end_7"],
-		[10, 100, 140],
+		["godot_mcp_profile_6_start_7", "godot_mcp_profile_6_end_7", "godot_mcp_profile_8_start_7", "godot_mcp_profile_8_end_7"],
+		[10, 20, 100, 140],
+		8,
 	) == [40.0])
+	Performance.add_custom_monitor("$godotMcpFloat64Le", _custom_monitor_value)
+	var reserved_custom: Dictionary = profiler.snapshot(["custom"])
+	assert(reserved_custom.ok)
+	assert(not reserved_custom.data.groups.custom.has("$godotMcpFloat64Le"))
+	assert(reserved_custom.data.unavailable.any(func(message: String) -> bool: return message.contains("reserved")))
+	Performance.remove_custom_monitor("$godotMcpFloat64Le")
 	Performance.remove_custom_monitor("Phase7/Stable")
 	profiler.clear()
 	profiler.clear()

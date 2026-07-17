@@ -26,6 +26,8 @@ func _init() -> void:
 	assert(RuntimeDebugger.continue_transition_complete(false, 4, 4))
 	assert(RuntimeDebugger.continue_transition_complete(true, 5, 4))
 	assert(not RuntimeDebugger.continue_transition_complete(true, 4, 4))
+	assert(RuntimeDebugger.reason_after_continued("step") == "step")
+	assert(RuntimeDebugger.reason_after_continued("pause") == "unknown")
 	assert(RuntimeDebugger.breakpoint_key("res://player.gd", 12) == "res://player.gd:12")
 	assert(RuntimeDebugger.breakpoints_to_disable([10, 11, 12], [11]) == [10, 12])
 	assert(RuntimeDebugger.should_enable_breakpoint(false))

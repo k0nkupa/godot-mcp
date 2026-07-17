@@ -67,7 +67,7 @@ func _setup_session(debugger_session_id: int) -> void:
 	)
 	session.continued.connect(func() -> void:
 		if debugger_session_id == _bound_session_id:
-			_expected_stop_reason = "unknown"
+			_expected_stop_reason = reason_after_continued(_expected_stop_reason)
 			var already_cleared := _debug_data_cleared_for_transition
 			_debug_data_cleared_for_transition = false
 			if requires_external_continue_clear(already_cleared):
@@ -76,6 +76,9 @@ func _setup_session(debugger_session_id: int) -> void:
 
 static func requires_external_continue_clear(already_cleared: bool) -> bool:
 	return not already_cleared
+
+static func reason_after_continued(pending_reason: String) -> String:
+	return "step" if pending_reason == "step" else "unknown"
 
 func _forward_external_continue_clear(debugger_session_id: int) -> void:
 	if debugger_session_id != _bound_session_id or _ready_info.is_empty():

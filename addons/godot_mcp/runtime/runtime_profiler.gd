@@ -85,6 +85,7 @@ var _profiler_registered := false
 var _rendering_device: RenderingDevice
 var _gpu_deltas: Array[float] = []
 var _gpu_seen_samples: Dictionary = {}
+var _gpu_job_id := 0
 
 func snapshot(groups: Array) -> Dictionary:
 	var valid := _validate_groups(groups, 9)
@@ -134,6 +135,7 @@ func start(input: Dictionary) -> Dictionary:
 	_tick_values.clear()
 	_gpu_deltas.clear()
 	_gpu_seen_samples.clear()
+	_gpu_job_id += 1
 	var now := Time.get_ticks_usec()
 	_job = {
 		"jobToken": _opaque_token(),
@@ -380,6 +382,9 @@ func _custom_monitors(unavailable: Array[String]) -> Dictionary:
 	names.sort_custom(func(a: Variant, b: Variant) -> bool: return String(a) < String(b))
 	for name_value: Variant in names.slice(0, 128):
 		var name := String(name_value)
+		if name == SessionCrypto.FLOAT_WIRE_KEY:
+			unavailable.append("Custom monitor name is reserved by the bridge float wire contract")
+			continue
 		if name.to_utf8_buffer().size() > 128:
 			unavailable.append("Custom monitor name exceeds 128 bytes")
 			continue
@@ -458,18 +463,19 @@ func _gpu_timestamps() -> Dictionary:
 
 func _capture_profile_gpu_marker(kind: String, sample_id: int) -> void:
 	if _rendering_device != null:
-		_rendering_device.capture_timestamp("godot_mcp_profile_%s_%d" % [kind, sample_id])
+		_rendering_device.capture_timestamp("godot_mcp_profile_%d_%s_%d" % [_gpu_job_id, kind, sample_id])
 
 func _collect_profile_gpu_deltas() -> void:
 	if _rendering_device == null or _gpu_deltas.size() >= MAX_SAMPLES:
 		return
-	var count := mini(_rendering_device.get_captured_timestamps_count(), 4096)
+	var total := _rendering_device.get_captured_timestamps_count()
+	var start := maxi(0, total - 4096)
 	var names: Array[String] = []
 	var times: Array[int] = []
-	for index in count:
+	for index in range(start, total):
 		names.append(_rendering_device.get_captured_timestamp_name(index))
 		times.append(_rendering_device.get_captured_timestamp_gpu_time(index))
-	for pair: Dictionary in extract_profile_gpu_pairs(names, times):
+	for pair: Dictionary in extract_profile_gpu_pairs(names, times, _gpu_job_id):
 		var sample_id := int(pair.sampleId)
 		if not _gpu_seen_samples.has(sample_id) and _gpu_deltas.size() < MAX_SAMPLES:
 			_gpu_seen_samples[sample_id] = true
@@ -481,23 +487,25 @@ func _profile_gpu_timestamps() -> Dictionary:
 		return {"supported": false, "reason": "Paired per-frame GPU timestamps are unavailable"}
 	return {"supported": true, "deltasUsec": _gpu_deltas.duplicate()}
 
-static func extract_profile_gpu_pairs(names: Array, times: Array) -> Array[Dictionary]:
+static func extract_profile_gpu_pairs(names: Array, times: Array, job_id: int) -> Array[Dictionary]:
 	var starts := {}
 	var pairs: Array[Dictionary] = []
 	var count := mini(names.size(), times.size())
+	var start_prefix := "godot_mcp_profile_%d_start_" % job_id
+	var end_prefix := "godot_mcp_profile_%d_end_" % job_id
 	for index in count:
 		var name := String(names[index])
-		if name.begins_with("godot_mcp_profile_start_"):
-			starts[int(name.trim_prefix("godot_mcp_profile_start_"))] = int(times[index])
-		elif name.begins_with("godot_mcp_profile_end_"):
-			var sample_id := int(name.trim_prefix("godot_mcp_profile_end_"))
+		if name.begins_with(start_prefix):
+			starts[int(name.trim_prefix(start_prefix))] = int(times[index])
+		elif name.begins_with(end_prefix):
+			var sample_id := int(name.trim_prefix(end_prefix))
 			if starts.has(sample_id) and int(times[index]) >= int(starts[sample_id]):
 				pairs.append({"sampleId": sample_id, "deltaUsec": gpu_microseconds_delta(int(times[index]) - int(starts[sample_id]))})
 	return pairs
 
-static func extract_profile_gpu_deltas(names: Array, times: Array) -> Array[float]:
+static func extract_profile_gpu_deltas(names: Array, times: Array, job_id: int) -> Array[float]:
 	var deltas: Array[float] = []
-	for pair: Dictionary in extract_profile_gpu_pairs(names, times):
+	for pair: Dictionary in extract_profile_gpu_pairs(names, times, job_id):
 		deltas.append(float(pair.deltaUsec))
 	return deltas
 
