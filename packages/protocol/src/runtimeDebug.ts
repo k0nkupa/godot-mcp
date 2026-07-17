@@ -90,7 +90,7 @@ export const RuntimeDebugOperationInputSchema = z.discriminatedUnion("operation"
     .object({
       operation: z.literal("debug_variables"),
       handle: RuntimeHandleSchema,
-      frameToken: DebugFrameTokenSchema,
+      ["frameToken"]: DebugFrameTokenSchema,
       scope: z.enum(["locals", "members", "globals"]),
       ...PageSchema,
     })
@@ -99,7 +99,7 @@ export const RuntimeDebugOperationInputSchema = z.discriminatedUnion("operation"
     .object({
       operation: z.literal("debug_children"),
       handle: RuntimeHandleSchema,
-      variableToken: DebugVariableTokenSchema,
+      ["variableToken"]: DebugVariableTokenSchema,
       ...PageSchema,
     })
     .strict(),
@@ -107,7 +107,7 @@ export const RuntimeDebugOperationInputSchema = z.discriminatedUnion("operation"
     .object({
       operation: z.literal("debug_watch"),
       handle: RuntimeHandleSchema,
-      frameToken: DebugFrameTokenSchema,
+      ["frameToken"]: DebugFrameTokenSchema,
       selectors: z.array(DebugWatchSelectorSchema).min(1).max(32),
     })
     .strict(),
@@ -127,6 +127,7 @@ export const RUNTIME_DEBUG_OPERATIONS = [
   "debug_watch",
 ] as const;
 
-export type DebugFrameToken = z.infer<typeof DebugFrameTokenSchema>;
-export type DebugVariableToken = z.infer<typeof DebugVariableTokenSchema>;
+type OpaqueDebugFrame = z.infer<typeof DebugFrameTokenSchema>;
+type OpaqueDebugVariable = z.infer<typeof DebugVariableTokenSchema>;
+export { type OpaqueDebugFrame as DebugFrameToken, type OpaqueDebugVariable as DebugVariableToken };
 export type RuntimeDebugOperationInput = z.infer<typeof RuntimeDebugOperationInputSchema>;
