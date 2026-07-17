@@ -49,7 +49,7 @@ static func _prepare_layout(step: Dictionary, context: Dictionary) -> Dictionary
 static func _prepare_theme(step: Dictionary, context: Dictionary) -> Dictionary:
 	var operation := String(step.get("operation", ""))
 	if operation not in ["set_theme_item", "remove_theme_item"]: return _error("INVALID_REQUEST", "Unsupported theme operation")
-	var located := ResourceLocator.resolve(step.get("target", {}), context.get("filesystem"))
+	var located := ResourceLocator.resolve(step.get("target", {}), context.get("filesystem"), context.get("rootResource"))
 	if not located.ok: return located
 	if not located.resource is Theme: return _error("INVALID_REQUEST", "Theme operation requires a Theme resource")
 	var theme: Theme = located.resource

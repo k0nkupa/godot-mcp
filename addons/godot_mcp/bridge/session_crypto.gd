@@ -30,8 +30,23 @@ static func signing_text(envelope: Dictionary) -> String:
 		str(int(envelope.sequence)),
 		str(int(envelope.deadlineUnixMs)),
 		envelope.method,
-		CanonicalJson.encode(envelope.params),
+		CanonicalJson.encode(_canonical_signing_params(envelope.params)),
 	]
+
+static func _canonical_signing_params(value: Variant) -> Variant:
+	if typeof(value) == TYPE_FLOAT and not is_nan(value) and not is_inf(value) and floor(value) != value:
+		return {"type": "Float", "value": str(value)}
+	if typeof(value) == TYPE_ARRAY:
+		var result: Array = []
+		for entry in value:
+			result.append(_canonical_signing_params(entry))
+		return result
+	if typeof(value) == TYPE_DICTIONARY:
+		var result: Dictionary = {}
+		for key in value:
+			result[key] = _canonical_signing_params(value[key])
+		return result
+	return value
 
 static func sign(envelope: Dictionary, key: PackedByteArray) -> String:
 	return _sign_message(envelope, key)

@@ -10,7 +10,7 @@ static func prepare(step_value: Dictionary, context: Dictionary) -> Dictionary:
 	var step := step_value.duplicate(true)
 	var operation := String(step.get("operation", ""))
 	if operation == "configure_animation_tree": return _prepare_tree(step, context)
-	var located := ResourceLocator.resolve(step.get("target", {}), context.get("filesystem"))
+	var located := ResourceLocator.resolve(step.get("target", {}), context.get("filesystem"), context.get("rootResource"))
 	if not located.ok: return located
 	if operation in ["upsert_animation", "remove_animation"]: return _prepare_library(step, located)
 	if operation in ["upsert_animation_track", "remove_animation_track", "upsert_animation_key", "remove_animation_key"]: return _prepare_animation(step, located, context)

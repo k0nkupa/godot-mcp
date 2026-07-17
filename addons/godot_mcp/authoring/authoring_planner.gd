@@ -52,10 +52,10 @@ func preview_step(step: Dictionary) -> Dictionary:
 		"warnings": import_check.get("warnings", []),
 	}
 
-func prepare_step(step: Dictionary, root: Node, action_id: String = "") -> Dictionary:
+func prepare_step(step: Dictionary, root: Node, action_id: String = "", root_resource: Resource = null) -> Dictionary:
 	var operation := String(step.operation)
 	var filesystem: Variant = _editor.get_resource_filesystem() if _editor != null and _editor.has_method("get_resource_filesystem") else null
-	var context := {"root": root, "filesystem": filesystem, "classRegistry": _class_registry()}
+	var context := {"root": root, "rootResource": root_resource, "filesystem": filesystem, "classRegistry": _class_registry()}
 	var prepared: Dictionary
 	var adapter := ""
 	if operation in SOURCE_OPERATIONS:
@@ -69,7 +69,7 @@ func prepare_step(step: Dictionary, root: Node, action_id: String = "") -> Dicti
 	elif operation in TILE_OPERATIONS:
 		prepared = TileAuthoring.prepare(step, context); adapter = "tile"
 	else:
-		prepared = ResourcePropertyAdapter.prepare(step, filesystem); adapter = "resource"
+		prepared = ResourcePropertyAdapter.prepare(step, filesystem, root_resource); adapter = "resource"
 	if not prepared.ok: return prepared
 	var wrapper := {"ok": true, "history": "scene" if operation in SCENE_OPERATIONS else "global", "adapter": adapter, "step": prepared.get("step", {}), "identity": prepared.get("identity", {})}
 	if adapter == "file": wrapper.prepared = prepared.prepared
@@ -78,6 +78,59 @@ func prepare_step(step: Dictionary, root: Node, action_id: String = "") -> Dicti
 		if not serialized.ok: return serialized
 		wrapper.adapter = "file"; wrapper.prepared = serialized.prepared
 	return wrapper
+
+func prepare_global_steps(steps: Array, action_id: String) -> Dictionary:
+	var roots := {}
+	var applied: Array[Dictionary] = []
+	var direct: Array[Dictionary] = []
+	var operations := {}
+	for source_step in steps:
+		var operation := String(source_step.get("operation", ""))
+		var path := String(source_step.get("target", {}).get("resourcePath", ""))
+		var root_resource: Resource = roots.get(path)
+		var wrapper := prepare_step(source_step, null, "", root_resource)
+		if not wrapper.ok:
+			_revert_applied(applied)
+			return wrapper
+		if String(wrapper.adapter) == "file":
+			direct.append(wrapper.prepared)
+			continue
+		var adapter_step: Dictionary = wrapper.step
+		var resolved_root: Resource = adapter_step.get("_root", adapter_step.get("_theme", adapter_step.get("_library", adapter_step.get("_animation"))))
+		if path.is_empty() or resolved_root == null:
+			_revert_applied(applied)
+			return _error("GODOT_RUNTIME_ERROR", "Global authoring resource root is unavailable")
+		if not roots.has(path): roots[path] = resolved_root
+		_apply_adapter(String(wrapper.adapter), adapter_step, true)
+		applied.append(wrapper)
+		operations[path] = operation
+	var serialized: Array[Dictionary] = []
+	for path in roots:
+		var result := _serialize_applied_resource(roots[path], String(path), String(operations[path]), action_id)
+		if not result.ok:
+			_revert_applied(applied)
+			return result
+		serialized.append(result.prepared)
+	_revert_applied(applied)
+	direct.append_array(serialized)
+	return {"ok": true, "prepared": direct}
+
+func _revert_applied(applied: Array[Dictionary]) -> void:
+	for index in range(applied.size() - 1, -1, -1):
+		var wrapper := applied[index]
+		_apply_adapter(String(wrapper.adapter), wrapper.step, false)
+
+func _serialize_applied_resource(root_resource: Resource, path: String, operation: String, action_id: String) -> Dictionary:
+	var before := FileAccess.get_file_as_bytes(path)
+	var temporary := "%s.godot-mcp-%s.tmp.%s" % [path.get_basename(), action_id, path.get_extension()]
+	var save_error := ResourceSaver.save(root_resource, temporary)
+	if save_error != OK:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(temporary))
+		return _error("GODOT_RUNTIME_ERROR", "Could not serialize authored resource")
+	var desired := FileAccess.get_file_as_bytes(temporary)
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(temporary))
+	if desired.is_empty(): return _error("GODOT_RUNTIME_ERROR", "Serialized authored resource is empty")
+	return {"ok": true, "prepared": {"_authoringKind": "resource_serialized", "operation": operation, "path": path, "expectedExists": true, "expectedSha256": _sha256_bytes(before), "desiredBytes": desired}}
 
 func _serialize_resource(wrapper: Dictionary, source_step: Dictionary, action_id: String) -> Dictionary:
 	var adapter_step: Dictionary = wrapper.step

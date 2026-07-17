@@ -6,9 +6,9 @@ const ResourceLocator = preload("res://addons/godot_mcp/authoring/resource_locat
 const VariantDecoder = preload("res://addons/godot_mcp/mutation/editor_variant_decoder.gd")
 const VariantEncoder = preload("res://addons/godot_mcp/observation/variant_encoder.gd")
 
-static func prepare(step_value: Dictionary, editor_filesystem: Variant) -> Dictionary:
+static func prepare(step_value: Dictionary, editor_filesystem: Variant, root_override: Resource = null) -> Dictionary:
 	var step := step_value.duplicate(true)
-	var located := ResourceLocator.resolve(step.get("target", {}), editor_filesystem)
+	var located := ResourceLocator.resolve(step.get("target", {}), editor_filesystem, root_override)
 	if not located.ok: return located
 	var resource: Resource = located.resource
 	var operation := String(step.get("operation", ""))

@@ -87,12 +87,13 @@ func _apply_files(arguments: Dictionary, preview: Dictionary, action_id: String)
 		phase_five_steps.append(step)
 	var prepared_result: Dictionary = transaction.prepare_steps(phase_five_steps)
 	if not prepared_result.ok: return prepared_result
+	var authoring_steps: Array = []
 	for step in arguments.steps:
-		if not _authoring.handles(String(step.get("operation", ""))): continue
-		var authoring_result: Dictionary = _authoring.prepare_step(step, null, action_id)
-		if not authoring_result.ok: return authoring_result
-		if String(authoring_result.adapter) != "file": return _error("INVALID_REQUEST", "Global authoring operation did not prepare a project file")
-		prepared_result = transaction.prepare_external(authoring_result.prepared)
+		if _authoring.handles(String(step.get("operation", ""))): authoring_steps.append(step)
+	var authoring_result: Dictionary = _authoring.prepare_global_steps(authoring_steps, action_id)
+	if not authoring_result.ok: return authoring_result
+	for prepared_authoring in authoring_result.prepared:
+		prepared_result = transaction.prepare_external(prepared_authoring)
 		if not prepared_result.ok: return prepared_result
 	var history: UndoRedo
 	if _undo_redo is EditorUndoRedoManager:

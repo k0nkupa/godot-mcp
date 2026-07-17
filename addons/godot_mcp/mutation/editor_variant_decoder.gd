@@ -210,7 +210,12 @@ static func _valid_node_path(path: String) -> bool:
 	return not path.is_empty() and not path.begins_with("/") and ":" not in path and not _contains_nul(path) and ".." not in path.split("/")
 
 static func _valid_resource_path(path: String) -> bool:
-	return path.begins_with("res://") and (path.ends_with(".tres") or path.ends_with(".res")) and ".." not in path.trim_prefix("res://").split("/") and not _contains_nul(path)
+	if not path.begins_with("res://") or _contains_nul(path):
+		return false
+	var relative := path.trim_prefix("res://")
+	if relative.is_empty() or ".." in relative.split("/"):
+		return false
+	return relative.get_slice("/", 0) not in ["addons", ".git", ".godot"]
 
 static func _contains_nul(value: String) -> bool:
 	for index in value.length():

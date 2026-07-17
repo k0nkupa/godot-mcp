@@ -5,13 +5,13 @@ extends RefCounted
 const CanonicalJson = preload("res://addons/godot_mcp/bridge/canonical_json.gd")
 const VariantEncoder = preload("res://addons/godot_mcp/observation/variant_encoder.gd")
 
-static func resolve(locator: Dictionary, editor_filesystem: Variant) -> Dictionary:
+static func resolve(locator: Dictionary, editor_filesystem: Variant, root_override: Resource = null) -> Dictionary:
 	var path := String(locator.get("resourcePath", ""))
 	if not _valid_path(path): return _error("PATH_DENIED", "Resource path is outside the project authoring surface")
 	if editor_filesystem != null and editor_filesystem.has_method("get_file_type") and String(editor_filesystem.get_file_type(path)).is_empty():
 		return _error("TARGET_NOT_FOUND", "Resource is not indexed by the editor")
 	if not ResourceLoader.exists(path): return _error("TARGET_NOT_FOUND", "Resource was not found")
-	var root := ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE)
+	var root := root_override if root_override != null else ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE)
 	if root == null or root is Script: return _error("PATH_DENIED", "Resource target is not authorable")
 	var current: Resource = root
 	var property_path: Array = locator.get("propertyPath", [])

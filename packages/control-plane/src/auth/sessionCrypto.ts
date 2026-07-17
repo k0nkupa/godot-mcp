@@ -26,6 +26,22 @@ function authenticationFailed(message: string): GodotMcpException {
   });
 }
 
+function canonicalSigningParams(value: unknown): unknown {
+  if (typeof value === "number") {
+    if (Number.isFinite(value) && !Number.isInteger(value)) {
+      return { type: "Float", value: String(value) };
+    }
+    return value;
+  }
+  if (Array.isArray(value)) return value.map(canonicalSigningParams);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, canonicalSigningParams(entry)]),
+    );
+  }
+  return value;
+}
+
 export function deriveSessionKey(
   token: string,
   sessionNonce: string,
@@ -44,7 +60,7 @@ export function envelopeSigningText(envelope: UnsignedBridgeEnvelope): string {
     String(envelope.sequence),
     String(envelope.deadlineUnixMs),
     envelope.method,
-    canonicalJson(envelope.params),
+    canonicalJson(canonicalSigningParams(envelope.params)),
   ].join("\n");
 }
 

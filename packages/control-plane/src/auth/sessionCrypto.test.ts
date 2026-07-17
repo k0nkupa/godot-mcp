@@ -25,6 +25,13 @@ function envelope(overrides: Partial<UnsignedBridgeEnvelope> = {}): UnsignedBrid
 }
 
 describe("session crypto", () => {
+  it("signs finite float parameters through explicit canonical tags", () => {
+    const key = Buffer.alloc(32, 7);
+    const signed = signEnvelope(key, envelope({ params: { roughness: 0.25, nested: [1.5, 2] } }));
+    expect(() => verifyEnvelope(key, signed, { now: () => 1_000 })).not.toThrow();
+    expect(signed.params).toEqual({ roughness: 0.25, nested: [1.5, 2] });
+  });
+
   it("rejects a repeated signed sequence", () => {
     const verifier = new EnvelopeVerifier(key, { now: () => 1_000 });
     verifier.verify(signEnvelope(key, envelope({ sequence: 1, deadlineUnixMs: 2_000 })));
