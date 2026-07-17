@@ -107,7 +107,7 @@ export class RuntimeService {
   private dapGeneration = 0;
   private readonly debugTokens = new DebugTokenStore();
   private readonly breakpointSources = new Set<string>();
-  private profileJobToken: string | null = null;
+  private opaqueProfileId: string | null = null;
 
   constructor(private readonly dependencies: RuntimeServiceDependencies) {}
 
@@ -282,10 +282,10 @@ export class RuntimeService {
     }
     if (input.operation === "profile_start") {
       const receipt = ProfileJobReceiptSchema.parse(await this.dependencies.command(input.operation, { ...input }));
-      this.profileJobToken = receipt.jobToken;
+      this.opaqueProfileId = receipt.jobToken;
       return receipt;
     }
-    if (this.profileJobToken === null || input.jobToken !== this.profileJobToken) {
+    if (this.opaqueProfileId === null || input.jobToken !== this.opaqueProfileId) {
       throw runtimeError("STALE_HANDLE", "Profile job token is stale or unknown");
     }
     if (input.operation === "profile_result") {
@@ -685,7 +685,7 @@ export class RuntimeService {
   private async cleanup(): Promise<void> {
     if (this.cleanupPromise) return this.cleanupPromise;
     const activeCleanup = (async () => {
-      this.profileJobToken = null;
+      this.opaqueProfileId = null;
       let cleanupError: unknown;
       try {
         await this.cleanupDap();
