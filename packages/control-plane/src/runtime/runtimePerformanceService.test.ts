@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { RuntimeService } from "./runtimeService.js";
 
-const handleToken = `pjt_${"c".repeat(43)}`;
+const opaqueProfileId = `pjt_${"c".repeat(43)}`;
 const cleanups: Array<() => Promise<void>> = [];
 
 afterEach(async () => {
@@ -22,7 +22,7 @@ const monitorSnapshot = {
 function evidence(state: "completed" | "cancelled" | "failed" = "completed") {
   return {
     schemaVersion: 1 as const,
-    jobToken: handleToken,
+    jobToken: opaqueProfileId,
     state,
     complete: state === "completed",
     startedMonotonicUsec: 1,
@@ -62,7 +62,7 @@ async function launchedService(overrides: Record<string, unknown> = {}) {
       if (operation in overrides) return overrides[operation];
       if (operation === "monitor_snapshot") return monitorSnapshot;
       if (operation === "profile_start" || operation === "profile_status" || operation === "profile_cancel") {
-        return { jobToken: handleToken, state: operation === "profile_cancel" ? "cancelled" : "running", progress: 0.5, observedSamples: 1, retainedSamples: 0 };
+        return { jobToken: opaqueProfileId, state: operation === "profile_cancel" ? "cancelled" : "running", progress: 0.5, observedSamples: 1, retainedSamples: 0 };
       }
       if (operation === "profile_result") return { state: "completed", evidence: evidence() };
       return {};
@@ -78,14 +78,15 @@ describe("Phase 7 RuntimeService performance routing", () => {
     const { handle, service } = await launchedService();
     await expect(service.execute({ operation: "monitor_snapshot", handle, groups: ["frame"] })).resolves.toEqual(monitorSnapshot);
     const started = await service.execute({ operation: "profile_start", handle, durationMs: 100, intervalFrames: 1, groups: ["frame"], retainRaw: false });
-    expect(started).toMatchObject({ jobToken: handleToken, state: "running" });
-    await expect(service.execute({ operation: "profile_result", handle, jobToken: handleToken })).resolves.toMatchObject({ state: "completed", evidence: { sha256: "a".repeat(64) } });
+    expect(started).toMatchObject({ jobToken: opaqueProfileId, state: "running" });
+    await expect(service.execute({ operation: "profile_result", handle, jobToken: opaqueProfileId })).resolves.toMatchObject({ state: "completed", evidence: { sha256: "a".repeat(64) } });
   });
 
   it("rejects stale profile job tokens without forwarding them", async () => {
     const { calls, handle, service } = await launchedService();
     await service.execute({ operation: "profile_start", handle, durationMs: 100, intervalFrames: 1, groups: ["frame"], retainRaw: false });
-    await expect(service.execute({ operation: "profile_status", handle, jobToken: `pjt_${"z".repeat(43)}` })).rejects.toMatchObject({ code: "STALE_HANDLE" });
+    const unknownProfileId = `pjt_${"z".repeat(43)}`;
+    await expect(service.execute({ operation: "profile_status", handle, jobToken: unknownProfileId })).rejects.toMatchObject({ code: "STALE_HANDLE" });
     expect(calls.filter((operation) => operation === "profile_status")).toHaveLength(0);
   });
 
