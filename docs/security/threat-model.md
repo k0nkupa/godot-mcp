@@ -56,8 +56,9 @@ Future project operations must stay inside approved `res://` roots and deny `.gi
 
 | Abuse case | Control |
 |---|---|
-| Unauthenticated loopback DAP client | The certified CLI launch assigns native DAP and the authenticated editor debugger one port; the debugger binds first so DAP never listens, the addon stops the inactive DAP plugin, and runtime preparation refuses any launch lacking the marker/shared-port proof and editor-PID listener verification |
+| Unauthenticated loopback DAP client | The certified CLI launch assigns native DAP and the authenticated editor debugger one port; the debugger binds first so DAP never listens, and a ten-second owner-only project/port attestation in the private runtime directory proves this launcher-established startup state. The addon consumes the attestation, stops the inactive DAP plugin, and runtime preparation refuses copied user arguments or missing editor-PID listener verification. |
 | Wrong-run attachment or listener replacement | Runtime handle, generation, editor PID, debugger port, authenticated descriptor/hello, owned child PID, and unique editor debugger session are bound before debugger state exists |
+| Ambiguous debugger session while the owned child is paused | A second session fails closed by terminating the control-plane-certified child; certified PID and editor watchdog responsibility are retained until stop is observed |
 | Arbitrary debugger execution | A fixed internal adapter maps only disconnect, breakpoints, threads, stack/scopes/variables, pause, continue, next, and step-in; no raw socket, passthrough, launch, terminate, evaluate, set-variable, or method call exists |
 | Source or addon escape | Breakpoints require canonical project-local `.gd` paths; traversal, symlinks, non-scripts, and `res://addons/godot_mcp` are rejected after real-path containment checks |
 | Stale-token disclosure | Frame and variable IDs are never exposed; 256-bit opaque tokens bind run, generation, authenticated debugger generation, and stop sequence and are cleared on continue, step, reconnect, stop, crash, disconnect, and close |

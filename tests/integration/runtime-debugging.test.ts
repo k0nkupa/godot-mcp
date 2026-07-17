@@ -1,7 +1,9 @@
+import { spawn, type ChildProcess } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { connect } from "node:net";
 import { join } from "node:path";
 
+import { findGodotBinary } from "@godot-mcp/testkit";
 import { expect, test } from "vitest";
 
 import { createPhase7RuntimeFixture } from "./runtime-phase7-fixture.js";
@@ -93,6 +95,42 @@ test("stops an owned runtime when its owner dies while the debugger is paused", 
     await waitUntil(() => !fixture.runtimeAlive(), 8_000);
     expect(fixture.runtimeAlive(), fixture.diagnostics()).toBe(false);
   } finally {
+    await fixture.close();
+  }
+}, 60_000);
+
+test("rejects spoofed secure-launch user arguments without matching engine endpoints", async () => {
+  const fixture = await createPhase7RuntimeFixture({ spoofSecureUserArguments: true });
+  try {
+    await expect(fixture.runtime.launch({ scenePath: "res://debug/debug_fixture.tscn", startupTimeoutMs: 5_000 }))
+      .rejects.toMatchObject({ code: "AUTHENTICATION_FAILED" });
+    expect(fixture.runtimeAlive(), fixture.diagnostics()).toBe(false);
+  } finally {
+    await fixture.close();
+  }
+}, 60_000);
+
+test("terminates the certified paused runtime when another debugger session appears", async () => {
+  const fixture = await createPhase7RuntimeFixture();
+  let untrustedDebugger: ChildProcess | undefined;
+  try {
+    const launched = await fixture.runtime.launch({ scenePath: "res://debug/debug_fixture.tscn", startupTimeoutMs: 15_000 });
+    await fixture.runtime.execute({ operation: "debug_pause", handle: launched.handle });
+    expect(fixture.runtimeAlive()).toBe(true);
+    untrustedDebugger = spawn(await findGodotBinary(), [
+      "--headless",
+      "--path", fixture.projectRoot,
+      "--remote-debug", `tcp://127.0.0.1:${fixture.dapPort}`,
+      "res://debug/debug_fixture.tscn",
+    ], { stdio: ["ignore", "pipe", "pipe"] });
+    await new Promise<void>((resolvePromise, reject) => {
+      untrustedDebugger!.once("spawn", resolvePromise);
+      untrustedDebugger!.once("error", reject);
+    });
+    await waitUntil(() => !fixture.runtimeAlive(), 8_000);
+    expect(fixture.runtimeAlive(), fixture.diagnostics()).toBe(false);
+  } finally {
+    if (untrustedDebugger?.exitCode === null) untrustedDebugger.kill("SIGKILL");
     await fixture.close();
   }
 }, 60_000);

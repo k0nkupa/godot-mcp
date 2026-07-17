@@ -30,7 +30,11 @@ export interface Phase7RuntimeFixture {
   close(): Promise<void>;
 }
 
-export async function createPhase7RuntimeFixture(): Promise<Phase7RuntimeFixture> {
+export interface Phase7RuntimeFixtureOptions {
+  spoofSecureUserArguments?: boolean;
+}
+
+export async function createPhase7RuntimeFixture(options: Phase7RuntimeFixtureOptions = {}): Promise<Phase7RuntimeFixture> {
   const project = await copyFixture();
   const previousRuntimeDirectory = process.env.XDG_RUNTIME_DIR;
   process.env.XDG_RUNTIME_DIR = join(project.root, "runtime-dir");
@@ -56,7 +60,16 @@ export async function createPhase7RuntimeFixture(): Promise<Phase7RuntimeFixture
     });
     const debugServerPort = await reserveLoopbackPort();
     const dapPort = debugServerPort;
-    editor = await launchEditor(project.root, { headless: true, debugServerPort, dapPort });
+    editor = options.spoofSecureUserArguments
+      ? await launchEditor(project.root, {
+          headless: true,
+          userArguments: [
+            `--godot-mcp-debug-port=${debugServerPort}`,
+            `--godot-mcp-dap-port=${dapPort}`,
+            "--godot-mcp-secure-editor-launch=1",
+          ],
+        })
+      : await launchEditor(project.root, { headless: true, debugServerPort, dapPort });
     const session = await bridge.waitForAttachment(15_000);
     let bridgeState = "attached";
     session.onRejected((code) => { bridgeState = `rejected:${code}`; });

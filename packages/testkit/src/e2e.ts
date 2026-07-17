@@ -1,6 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { createServer } from "node:net";
-import { writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -92,6 +94,7 @@ export interface LaunchEditorOptions {
   headless?: boolean;
   debugServerPort?: number;
   dapPort?: number;
+  userArguments?: readonly string[];
 }
 
 export async function reserveLoopbackPort(): Promise<number> {
@@ -139,6 +142,9 @@ export async function launchEditor(
   if (dapPort !== undefined && dapPort !== options.debugServerPort) {
     throw new Error("Secure editor launch requires DAP and authenticated debugger to share one port");
   }
+  const attestation = options.debugServerPort === undefined
+    ? undefined
+    : await createEditorLaunchAttestation(project, options.debugServerPort);
   const godot = await findGodotBinary();
   if (options.scene) {
     const selectedMainEditor = options.scene.includes("3d") ? 1 : 0;
@@ -162,7 +168,11 @@ export async function launchEditor(
       ...(options.debugServerPort === undefined ? [] : [`--godot-mcp-debug-port=${options.debugServerPort}`]),
       ...(dapPort === undefined ? [] : [`--godot-mcp-dap-port=${dapPort}`]),
       ...(dapPort === undefined ? [] : ["--godot-mcp-secure-editor-launch=1"]),
+      ...(attestation === undefined ? [] : [`--godot-mcp-editor-attestation=${attestation.path}`]),
     ]),
+    ...((options.debugServerPort === undefined && dapPort === undefined && options.userArguments?.length)
+      ? ["--", ...options.userArguments]
+      : []),
   ], {
     env: process.env,
     stdio: ["ignore", "pipe", "pipe"],
@@ -176,7 +186,12 @@ export async function launchEditor(
   child.stderr.on("data", (chunk: string) => {
     output += chunk;
   });
-  await waitForSpawn(child);
+  try {
+    await waitForSpawn(child);
+  } catch (error) {
+    await attestation?.cleanup();
+    throw error;
+  }
   let closePromise: Promise<void> | undefined;
   return {
     pid: child.pid ?? -1,
@@ -187,7 +202,10 @@ export async function launchEditor(
     },
     close(): Promise<void> {
       closePromise ??= (async () => {
-        if (child.exitCode !== null) return;
+        if (child.exitCode !== null) {
+          await attestation?.cleanup();
+          return;
+        }
         child.kill("SIGTERM");
         const closed = await Promise.race([
           waitForClose(child).then(() => true),
@@ -200,10 +218,30 @@ export async function launchEditor(
             new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 1_000)),
           ]);
         }
+        await attestation?.cleanup();
       })();
       return closePromise;
     },
   };
+}
+
+async function createEditorLaunchAttestation(project: string, sharedPort: number): Promise<{ path: string; cleanup(): Promise<void> }> {
+  const base = process.env.XDG_RUNTIME_DIR || process.env.TMPDIR || tmpdir();
+  const directory = join(base, "godot-mcp");
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const identity = JSON.parse(await readFile(join(project, ".godot-mcp.json"), "utf8")) as { projectId?: string };
+  if (!identity.projectId) throw new Error("Fixture project identity is unavailable for secure editor launch");
+  const path = join(directory, `editor-launch-${randomUUID()}.json`);
+  const createdAtUnixMs = Date.now();
+  await writeFile(path, `${JSON.stringify({
+    schemaVersion: 1,
+    projectId: identity.projectId,
+    debugPort: sharedPort,
+    dapPort: sharedPort,
+    createdAtUnixMs,
+    expiresAtUnixMs: createdAtUnixMs + 10_000,
+  })}\n`, { flag: "wx", mode: 0o600 });
+  return { path, cleanup: async () => { await rm(path, { force: true }); } };
 }
 
 export async function launchMcpClient(args: readonly string[]): Promise<McpClientProcess> {

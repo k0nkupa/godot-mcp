@@ -50,7 +50,14 @@ func _setup_session(debugger_session_id: int) -> void:
 	session.started.connect(func() -> void:
 		_active_sessions[debugger_session_id] = true
 		if _bound_session_id >= 0 and debugger_session_id != _bound_session_id:
-			clear("ambiguous_session")
+			if ambiguity_requires_owned_termination(_bound_session_id, debugger_session_id, _certified_owner_pid):
+				# Do not erase the certified PID or watchdog state before the
+				# authenticated child has actually been stopped. An unrelated
+				# debugger session must fail closed even while that child is paused.
+				if OS.kill(_certified_owner_pid) != OK:
+					push_error("Godot MCP could not terminate the certified runtime after debugger ambiguity")
+			else:
+				clear("ambiguous_session")
 	)
 	session.stopped.connect(func() -> void:
 		_active_sessions.erase(debugger_session_id)
@@ -134,6 +141,31 @@ func prepare(descriptor: Dictionary, debug_port: int, editor_pid: int, dap_disab
 static func debug_port_is_valid(port: int) -> bool:
 	return port >= 1 and port <= 65535
 
+static func launch_attestation_matches(attestation: Dictionary, path: String, runtime_directory: String, project_id: String, debug_port: int, dap_port: int, now_unix_ms: int) -> bool:
+	if path.is_empty() or runtime_directory.is_empty() or project_id.is_empty() or not path.is_absolute_path():
+		return false
+	var normalized_path := path.simplify_path()
+	var filename := normalized_path.get_file()
+	if normalized_path.get_base_dir() != runtime_directory.simplify_path() or not filename.begins_with("editor-launch-") or filename.get_extension() != "json":
+		return false
+	for field in ["schemaVersion", "projectId", "debugPort", "dapPort", "createdAtUnixMs", "expiresAtUnixMs"]:
+		if not attestation.has(field):
+			return false
+	var created_at := int(attestation.createdAtUnixMs)
+	var expires_at := int(attestation.expiresAtUnixMs)
+	return (
+		int(attestation.schemaVersion) == 1
+		and String(attestation.projectId) == project_id
+		and int(attestation.debugPort) == debug_port
+		and int(attestation.dapPort) == dap_port
+		and debug_port_is_valid(debug_port)
+		and dap_port == debug_port
+		and created_at <= now_unix_ms
+		and expires_at >= now_unix_ms
+		and expires_at > created_at
+		and expires_at - created_at <= 10000
+	)
+
 func owner_lease_expired(now_unix_ms: int) -> bool:
 	if _bound_session_id < 0 or _prepared.is_empty() or _certified_owner_pid < 1:
 		return false
@@ -156,6 +188,9 @@ func terminate_owned_runtime(reason: String) -> bool:
 
 static func binding_is_unambiguous(active_session_ids: Array, bound_session_id: int) -> bool:
 	return bound_session_id >= 0 and active_session_ids.size() == 1 and int(active_session_ids[0]) == bound_session_id
+
+static func ambiguity_requires_owned_termination(bound_session_id: int, new_session_id: int, certified_owner_pid: int) -> bool:
+	return bound_session_id >= 0 and new_session_id != bound_session_id and certified_owner_pid > 0
 
 func execute(command: Dictionary) -> Dictionary:
 	var operation := String(command.get("arguments", {}).get("operation", ""))

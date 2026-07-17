@@ -5,7 +5,7 @@ import { relative, resolve } from "node:path";
 const root = resolve(import.meta.dirname, "..");
 const fixture = resolve(root, "fixtures/godot-4.7");
 const recordPath = process.argv[2] ?? process.env.GODOT_MCP_PHASE7_CLEANUP_RECORD;
-const residuePattern = /(?:^|\/)(?:\.consuming-)?runtime-[^/]+\.(?:json|lease)$|godot-mcp-phase7|phase-7-profile|profile-evidence/i;
+const residuePattern = /(?:^|\/)(?:(?:\.consuming-)?runtime-[^/]+\.(?:json|lease)|editor-launch-[^/]+\.json)$|godot-mcp-phase7|phase-7-profile|profile-evidence/i;
 const offenders = [];
 
 async function exists(path) {
@@ -57,4 +57,4 @@ if (offenders.length > 0) {
   process.stderr.write(`Phase 7 cleanup verification failed:\n${offenders.sort().join("\n")}\n`);
   process.exit(1);
 }
-process.stdout.write("Phase 7 fixture, runtime, DAP, descriptor, lease, and profile cleanup verified\n");
+process.stdout.write("Phase 7 fixture, runtime, DAP, launch attestation, descriptor, lease, and profile cleanup verified\n");

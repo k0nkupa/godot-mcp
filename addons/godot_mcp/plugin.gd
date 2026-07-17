@@ -19,6 +19,7 @@ var runtime_debugger: EditorDebuggerPlugin
 var editor_mutation: RefCounted
 var dap_guard: TCPServer
 var dap_disabled := false
+var secure_launch_attested := false
 var _next_runtime_owner_check_ms := 0
 
 func _enter_tree() -> void:
@@ -134,8 +135,8 @@ func _disable_unauthenticated_dap_server() -> void:
 	# DAP to the same port before this plugin loads. Godot starts the authenticated
 	# debugger first, so native DAP never acquires a listener. Runtime debugging
 	# remains disabled for ordinary launches that cannot prove this startup state.
-	var secure_shared_port := _secure_editor_launch_requested() and _runtime_dap_port() == _runtime_debug_port()
-	dap_disabled = not servers.is_empty() and secure_shared_port
+	secure_launch_attested = _consume_secure_launch_attestation()
+	dap_disabled = not servers.is_empty() and secure_launch_attested
 	if dap_disabled:
 		return
 	# Best-effort containment for observe-only ordinary launches. This closes the
@@ -146,13 +147,37 @@ func _disable_unauthenticated_dap_server() -> void:
 	dap_guard.listen(_runtime_dap_port(), "127.0.0.1")
 
 func _dap_server_is_disabled() -> bool:
-	return dap_disabled and _secure_editor_launch_requested() and _runtime_dap_port() == _runtime_debug_port()
+	return dap_disabled and secure_launch_attested
 
-func _secure_editor_launch_requested() -> bool:
+func _consume_secure_launch_attestation() -> bool:
+	var path := _secure_launch_attestation_path()
+	if path.is_empty() or not FileAccess.file_exists(path):
+		return false
+	var permissions := FileAccess.get_unix_permissions(path)
+	var document := JSON.parse_string(FileAccess.get_file_as_string(path))
+	DirAccess.remove_absolute(path)
+	if permissions < 0 or (permissions & 63) != 0 or typeof(document) != TYPE_DICTIONARY:
+		return false
+	var identity := DescriptorReader.read_project_identity()
+	return RuntimeDebugger.launch_attestation_matches(
+		document,
+		path,
+		DescriptorReader.runtime_directory(),
+		String(identity.get("projectId", "")),
+		_runtime_debug_port(),
+		_runtime_dap_port(),
+		int(Time.get_unix_time_from_system() * 1000.0),
+	)
+
+func _secure_launch_attestation_path() -> String:
+	var result := ""
 	for argument in OS.get_cmdline_user_args():
-		if String(argument) == "--godot-mcp-secure-editor-launch=1":
-			return true
-	return false
+		var value := String(argument)
+		if value.begins_with("--godot-mcp-editor-attestation="):
+			if not result.is_empty():
+				return ""
+			result = value.trim_prefix("--godot-mcp-editor-attestation=")
+	return result
 
 func _collect_dap_servers(node: Node, output: Array[Node]) -> void:
 	for child: Node in node.get_children():
@@ -174,6 +199,7 @@ func _exit_tree() -> void:
 		dap_guard.stop()
 	dap_guard = null
 	dap_disabled = false
+	secure_launch_attested = false
 	if runtime_debugger != null:
 		runtime_debugger.clear()
 		remove_debugger_plugin(runtime_debugger)

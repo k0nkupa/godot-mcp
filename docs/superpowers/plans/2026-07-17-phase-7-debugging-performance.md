@@ -72,12 +72,13 @@ pnpm exec vitest run packages/control-plane/src/runtime/debugTokenStore.test.ts 
 
 - Launch Godot 4.7 with the authenticated debugger and native `DebugAdapterServer` assigned one port so DAP never obtains a startup listener.
 - Invoke its idempotent exit-tree stop path without freeing the editor-owned node.
-- Require a secure-launch marker plus identical debugger/DAP ports; ordinary launches remain ineligible for runtime debugging.
+- Require a one-use, ten-second, owner-only project/port launch attestation plus identical debugger/DAP ports; copied user arguments and ordinary launches remain ineligible for runtime debugging.
 - Refuse `runtime.prepare` unless the guard is active.
 - Return `{ debugPort, editorPid, debugTransport: "authenticated-editor-session" }`.
 - Prove editor ownership of the debugger listener before launching the runtime.
 - Require the authenticated owned PID and one unambiguous `EditorDebuggerSession` before constructing debugger state.
 - Certify the independently verified child PID back to the editor and enforce owner-lease expiry from the editor process so debugger stops cannot suspend owner-death cleanup.
+- If another debugger session appears after certification, terminate the certified child without first erasing its PID/watchdog responsibility.
 
 Validation:
 
