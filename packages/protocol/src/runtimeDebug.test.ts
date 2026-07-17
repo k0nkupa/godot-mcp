@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DebugFrameTokenSchema,
+  DebugStopResultSchema,
   DebugVariableTokenSchema,
   RuntimeDebugOperationInputSchema,
 } from "./runtimeDebug.js";
@@ -69,5 +70,11 @@ describe("Phase 7 runtime debugging schemas", () => {
     expect(DebugVariableTokenSchema.parse(opaqueVariableId)).toBe(opaqueVariableId);
     expect(() => DebugFrameTokenSchema.parse(opaqueVariableId)).toThrow();
     expect(() => DebugVariableTokenSchema.parse("dvt_short")).toThrow();
+  });
+
+  it("accepts only bounded projected debugger stop results", () => {
+    expect(DebugStopResultSchema.parse({ sequence: 1, reason: "breakpoint" })).toEqual({ sequence: 1, reason: "breakpoint" });
+    expect(() => DebugStopResultSchema.parse({ sequence: 1, reason: "breakpoint", body: { threadId: 1 } })).toThrow();
+    expect(() => DebugStopResultSchema.parse({ sequence: 1, reason: "adapter-controlled" })).toThrow();
   });
 });

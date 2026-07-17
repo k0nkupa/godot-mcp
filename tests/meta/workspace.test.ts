@@ -80,6 +80,7 @@ describe("workspace package contract", () => {
     expect(gate).toContain("tests/security/runtime-debugging-hostile.test.ts");
     expect(gate).toContain("tests/end-to-end/phase-7.test.ts");
     expect(gate).toContain("scripts/verify-phase-7-cleanup.mjs");
+    expect(gate).toContain('readOutput("git", ["status", "--porcelain=v1", "--untracked-files=all"]');
     const agents = await readFile("AGENTS.md", "utf8");
     expect(agents).toContain("docs/superpowers/plans/2026-07-17-phase-7-debugging-performance.md");
     expect(agents).toContain("docs/testing/phase-7.md");

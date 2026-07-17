@@ -188,10 +188,32 @@ describe("Phase 7 RuntimeService debugging", () => {
       scope: "locals",
       offset: 0,
       limit: 100,
-    })).rejects.toMatchObject({ code: "STALE_HANDLE" });
+    })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
     const stopped = await service.execute({ operation: "debug_wait", handle: launched.handle, afterSequence: 1, timeoutMs: 1_000 });
-    expect(stopped).toMatchObject({ sequence: 2, reason: "breakpoint" });
+    expect(stopped).toEqual({ sequence: 2, reason: "breakpoint" });
     await service.close();
+  });
+
+  it("invalidates tokens across externally observed continue and stop transitions", async () => {
+    const { dap, launched, service } = await debugFixture();
+    const first = await service.execute({ operation: "debug_stack", handle: launched.handle, offset: 0, limit: 64 }) as { frames: Array<{ frameToken: string }> };
+    const opaqueFrame = first.frames[0]!.frameToken;
+    dap.stopped = false;
+    await expect(service.execute({
+      operation: "debug_variables", handle: launched.handle, frameToken: opaqueFrame, scope: "locals", offset: 0, limit: 100,
+    })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    dap.stopped = true;
+    dap.stopSequence += 1;
+    await expect(service.execute({
+      operation: "debug_variables", handle: launched.handle, frameToken: opaqueFrame, scope: "locals", offset: 0, limit: 100,
+    })).rejects.toMatchObject({ code: "STALE_HANDLE" });
+  });
+
+  it("reuses frame references across repeated stack reads at one stop", async () => {
+    const { launched, service } = await debugFixture();
+    const first = await service.execute({ operation: "debug_stack", handle: launched.handle, offset: 0, limit: 64 }) as { frames: Array<{ frameToken: string }> };
+    const second = await service.execute({ operation: "debug_stack", handle: launched.handle, offset: 0, limit: 64 }) as { frames: Array<{ frameToken: string }> };
+    expect(second.frames.map((frame) => frame.frameToken)).toEqual(first.frames.map((frame) => frame.frameToken));
   });
 
   it("reports disconnected debugger status without requiring an active DAP transport", async () => {

@@ -24,6 +24,7 @@ export class DebugTokenStoreError extends Error {
 export class DebugTokenStore {
   private identity: DebugTokenIdentity | null = null;
   private readonly frames = new Map<string, number>();
+  private readonly frameReferences = new Map<number, string>();
   private readonly variables = new Map<string, VariableRecord>();
   private readonly maxFrames: number;
   private readonly maxVariables: number;
@@ -45,10 +46,13 @@ export class DebugTokenStore {
   issueFrame(frameId: number): string {
     this.assertBound();
     if (!Number.isInteger(frameId) || frameId < 0) throw new DebugTokenStoreError("DAP frame identity is invalid");
+    const existing = this.frameReferences.get(frameId);
+    if (existing) return existing;
     if (this.frames.size >= this.maxFrames) throw new DebugTokenStoreError("Debugger frame token limit exceeded");
-    const token = this.createToken("dft", this.frames, this.variables);
-    this.frames.set(token, frameId);
-    return token;
+    const opaqueId = this.createToken("dft", this.frames, this.variables);
+    this.frames.set(opaqueId, frameId);
+    this.frameReferences.set(frameId, opaqueId);
+    return opaqueId;
   }
 
   issueVariable(variablesReference: number, depth: number): string {
@@ -89,6 +93,7 @@ export class DebugTokenStore {
 
   private clearRecords(): void {
     this.frames.clear();
+    this.frameReferences.clear();
     this.variables.clear();
     this.variableEntries = 0;
   }

@@ -21,6 +21,7 @@ describe("stop-bound debugger tokens", () => {
     expect(variableToken).not.toBe("99");
     expect(store.resolveFrame(frameToken)).toBe(7);
     expect(store.resolveVariable(variableToken)).toEqual({ variablesReference: 99, depth: 1 });
+    expect(store.issueFrame(7)).toBe(frameToken);
   });
 
   it("invalidates every token when stop, DAP, run, or generation identity changes", () => {

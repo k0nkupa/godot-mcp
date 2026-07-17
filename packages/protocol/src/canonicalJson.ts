@@ -59,3 +59,18 @@ function normalize(value: unknown, ancestors: Set<object>): CanonicalValue {
 export function canonicalJson(value: unknown): string {
   return JSON.stringify(normalize(value, new Set<object>()));
 }
+
+export function canonicalFloat64Le(value: number): string {
+  if (!Number.isFinite(value)) throw new TypeError("Float64 canonical encoding requires a finite number");
+  const bytes = new Uint8Array(8);
+  new DataView(bytes.buffer).setFloat64(0, value, true);
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export function decodeFloat64Le(value: string): number {
+  if (!/^[a-f0-9]{16}$/.test(value)) throw new TypeError("Float64 canonical encoding must be 16 lowercase hex characters");
+  const bytes = Uint8Array.from(value.match(/../g)!.map((pair) => Number.parseInt(pair, 16)));
+  const decoded = new DataView(bytes.buffer).getFloat64(0, true);
+  if (!Number.isFinite(decoded)) throw new TypeError("Float64 canonical encoding must decode to a finite number");
+  return decoded;
+}

@@ -2,7 +2,9 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
 import {
   BridgeEnvelopeSchema,
+  canonicalFloat64Le,
   canonicalJson,
+  decodeFloat64Le,
   type BridgeEnvelope,
 } from "@godot-mcp/protocol";
 
@@ -26,18 +28,37 @@ function authenticationFailed(message: string): GodotMcpException {
   });
 }
 
-function canonicalSigningParams(value: unknown): unknown {
+const FLOAT_WIRE_KEY = "$godotMcpFloat64Le";
+
+function isFloatWireValue(value: unknown): value is Record<typeof FLOAT_WIRE_KEY, string> {
+  return value !== null && typeof value === "object" && !Array.isArray(value) &&
+    Object.keys(value).length === 1 &&
+    typeof (value as Record<string, unknown>)[FLOAT_WIRE_KEY] === "string" &&
+    /^[a-f0-9]{16}$/.test(String((value as Record<string, unknown>)[FLOAT_WIRE_KEY]));
+}
+
+function encodeFloatParams(value: unknown): unknown {
   if (typeof value === "number") {
     if (Number.isFinite(value) && !Number.isInteger(value)) {
-      return { type: "FloatJson", value: JSON.stringify(value) };
+      return { [FLOAT_WIRE_KEY]: canonicalFloat64Le(value) };
     }
     return value;
   }
-  if (Array.isArray(value)) return value.map(canonicalSigningParams);
+  if (Array.isArray(value)) return value.map(encodeFloatParams);
   if (value !== null && typeof value === "object") {
+    if (isFloatWireValue(value)) return value;
     return Object.fromEntries(
-      Object.entries(value).map(([key, entry]) => [key, canonicalSigningParams(entry)]),
+      Object.entries(value).map(([key, entry]) => [key, encodeFloatParams(entry)]),
     );
+  }
+  return value;
+}
+
+function decodeFloatParams(value: unknown): unknown {
+  if (isFloatWireValue(value)) return decodeFloat64Le(value[FLOAT_WIRE_KEY]);
+  if (Array.isArray(value)) return value.map(decodeFloatParams);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, decodeFloatParams(entry)]));
   }
   return value;
 }
@@ -60,13 +81,14 @@ export function envelopeSigningText(envelope: UnsignedBridgeEnvelope): string {
     String(envelope.sequence),
     String(envelope.deadlineUnixMs),
     envelope.method,
-    canonicalJson(canonicalSigningParams(envelope.params)),
+    canonicalJson(encodeFloatParams(envelope.params)),
   ].join("\n");
 }
 
 export function signEnvelope(key: Uint8Array, envelope: UnsignedBridgeEnvelope): BridgeEnvelope {
-  const mac = createHmac("sha256", key).update(envelopeSigningText(envelope), "utf8").digest("hex");
-  return BridgeEnvelopeSchema.parse({ ...envelope, mac });
+  const wireEnvelope = { ...envelope, params: encodeFloatParams(envelope.params) };
+  const mac = createHmac("sha256", key).update(envelopeSigningText(wireEnvelope), "utf8").digest("hex");
+  return BridgeEnvelopeSchema.parse({ ...wireEnvelope, mac });
 }
 
 export function verifyEnvelope(
@@ -93,7 +115,7 @@ export function verifyEnvelope(
   if (envelope.deadlineUnixMs < now || envelope.deadlineUnixMs - now > maxFutureMs) {
     throw authenticationFailed("Signed envelope deadline is invalid");
   }
-  return envelope;
+  return BridgeEnvelopeSchema.parse({ ...envelope, params: decodeFloatParams(envelope.params) });
 }
 
 export class EnvelopeVerifier {

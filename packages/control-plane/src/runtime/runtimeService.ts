@@ -5,6 +5,7 @@ import type {
   InputOperationInput,
   InputOperationResult,
   ProjectIdentity,
+  DebugStopResult,
   RuntimeCaptureFrameMetadata,
   RuntimeCaptureInput,
   RuntimeDebugOperationInput,
@@ -12,7 +13,7 @@ import type {
   RuntimeOperationInput,
   RuntimePerformanceOperationInput,
 } from "@godot-mcp/protocol";
-import { InputOperationResultSchema, MonitorSnapshotSchema, ProfileJobReceiptSchema, ProfileResultSchema } from "@godot-mcp/protocol";
+import { DebugStopResultSchema, InputOperationResultSchema, MonitorSnapshotSchema, ProfileJobReceiptSchema, ProfileResultSchema } from "@godot-mcp/protocol";
 
 import { GodotMcpException } from "../errors.js";
 import { resolveProjectPath } from "../project/pathPolicy.js";
@@ -341,7 +342,7 @@ export class RuntimeService {
       case "debug_wait": {
         const stopped = await dap.nextStop(input.afterSequence, input.timeoutMs);
         this.bindDebugStop(stopped.sequence);
-        return stopped;
+        return projectDebugStop(stopped);
       }
       case "debug_pause":
         if (dap.snapshot().stopped) throw runtimeError("PRECONDITION_FAILED", "Godot debugger is already stopped");
@@ -361,15 +362,18 @@ export class RuntimeService {
       case "debug_stack":
         return this.debugStack(dap, input.offset, input.limit);
       case "debug_variables": {
+        this.bindDebugStop();
         const frameId = this.debugTokens.resolveFrame(input.frameToken);
         const reference = await this.scopeReference(dap, frameId, input.scope);
         return this.readVariables(dap, reference, 1, input.offset, input.limit);
       }
       case "debug_children": {
+        this.bindDebugStop();
         const record = this.debugTokens.resolveVariable(input.variableToken);
         return this.readVariables(dap, record.variablesReference, record.depth + 1, input.offset, input.limit);
       }
       case "debug_watch": {
+        this.bindDebugStop();
         const frameId = this.debugTokens.resolveFrame(input.frameToken);
         const watches = [];
         for (const selector of input.selectors) watches.push(await this.resolveWatch(dap, frameId, selector));
@@ -400,14 +404,14 @@ export class RuntimeService {
     });
   }
 
-  private async stepDebugger(dap: RuntimeDapClient, command: "next" | "stepIn"): Promise<DapStopEvent> {
+  private async stepDebugger(dap: RuntimeDapClient, command: "next" | "stepIn"): Promise<DebugStopResult> {
     const snapshot = dap.snapshot();
     if (!snapshot.stopped) throw runtimeError("PRECONDITION_FAILED", "Godot debugger must be stopped before stepping");
     await dap.request(command, { threadId: 1 });
     this.debugTokens.clear();
     const stopped = await dap.nextStop(snapshot.stopSequence, 10_000);
     this.bindDebugStop(stopped.sequence);
-    return stopped;
+    return projectDebugStop(stopped);
   }
 
   private async setDebugBreakpoints(
@@ -807,6 +811,20 @@ function truncateUtf8(text: string, maxBytes: number): { text: string; truncated
     bytes += characterBytes;
   }
   return { text: result, truncated: true };
+}
+
+function projectDebugStop(event: DapStopEvent): DebugStopResult {
+  const rawReason = event.reason.toLowerCase();
+  const reason = rawReason.includes("breakpoint")
+    ? "breakpoint"
+    : rawReason.includes("exception")
+      ? "exception"
+      : rawReason.includes("step")
+        ? "step"
+        : rawReason.includes("pause")
+          ? "pause"
+          : "unknown";
+  return DebugStopResultSchema.parse({ sequence: event.sequence, reason });
 }
 
 function normalizeDebugError(error: unknown): Error {

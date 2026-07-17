@@ -4,6 +4,7 @@ extends RefCounted
 
 const CanonicalJson = preload("res://addons/godot_mcp/bridge/canonical_json.gd")
 const MAX_SAFE_INTEGER := 9007199254740991
+const FLOAT_WIRE_KEY := "$godotMcpFloat64Le"
 
 static func base64url_decode(value: String) -> PackedByteArray:
 	var normalized := value.replace("-", "+").replace("_", "/")
@@ -35,9 +36,7 @@ static func signing_text(envelope: Dictionary) -> String:
 
 static func _canonical_signing_params(value: Variant) -> Variant:
 	if typeof(value) == TYPE_FLOAT and not is_nan(value) and not is_inf(value) and floor(value) != value:
-		# Use the decimal that Godot actually writes to the transport. str(value)
-		# can use a different precision and invalidate an otherwise valid MAC.
-		return {"type": "FloatJson", "value": JSON.stringify(value)}
+		return {"$godotMcpFloat64Le": float64_le_hex(value)}
 	if typeof(value) == TYPE_ARRAY:
 		var result: Array = []
 		for entry in value:
@@ -50,6 +49,13 @@ static func _canonical_signing_params(value: Variant) -> Variant:
 		return result
 	return value
 
+static func float64_le_hex(value: float) -> String:
+	assert(is_finite(value))
+	var bytes := PackedByteArray()
+	bytes.resize(8)
+	bytes.encode_double(0, value)
+	return bytes.hex_encode()
+
 static func sign(envelope: Dictionary, key: PackedByteArray) -> String:
 	return _sign_message(envelope, key)
 
@@ -58,7 +64,8 @@ static func _sign_message(envelope: Dictionary, key: PackedByteArray) -> String:
 
 static func sign_envelope(envelope: Dictionary, key: PackedByteArray) -> Dictionary:
 	var signed := envelope.duplicate(true)
-	signed.mac = _sign_message(envelope, key)
+	signed.params = _canonical_signing_params(envelope.params)
+	signed.mac = _sign_message(signed, key)
 	return signed
 
 static func constant_time_equal(left: String, right: String) -> bool:
@@ -88,11 +95,42 @@ static func verify_envelope(
 		return false
 	if int(envelope.sequence) <= last_sequence:
 		return false
+	if not _valid_float_wire_params(envelope.params):
+		return false
 	var now_ms := int(Time.get_unix_time_from_system() * 1000.0)
 	var deadline_ms := int(envelope.deadlineUnixMs)
 	if deadline_ms < now_ms or deadline_ms - now_ms > 60000:
 		return false
-	return constant_time_equal(String(envelope.mac), _sign_message(envelope, key))
+	if not constant_time_equal(String(envelope.mac), _sign_message(envelope, key)):
+		return false
+	envelope.params = _decode_float_params(envelope.params)
+	return true
+
+static func _valid_float_wire_params(value: Variant) -> bool:
+	if typeof(value) == TYPE_ARRAY:
+		for entry in value:
+			if not _valid_float_wire_params(entry): return false
+		return true
+	if typeof(value) != TYPE_DICTIONARY:
+		return true
+	if value.size() == 1 and value.has(FLOAT_WIRE_KEY):
+		var encoded: Variant = value[FLOAT_WIRE_KEY]
+		return typeof(encoded) == TYPE_STRING and encoded.length() == 16 and String(encoded).is_valid_hex_number(false)
+	for entry in value.values():
+		if not _valid_float_wire_params(entry): return false
+	return true
+
+static func _decode_float_params(value: Variant) -> Variant:
+	if typeof(value) == TYPE_ARRAY:
+		return value.map(func(entry: Variant) -> Variant: return _decode_float_params(entry))
+	if typeof(value) != TYPE_DICTIONARY:
+		return value
+	if value.size() == 1 and value.has(FLOAT_WIRE_KEY):
+		return String(value[FLOAT_WIRE_KEY]).hex_decode().decode_double(0)
+	var decoded := {}
+	for key in value:
+		decoded[key] = _decode_float_params(value[key])
+	return decoded
 
 static func _is_safe_protocol_integer(value: Variant) -> bool:
 	if typeof(value) == TYPE_INT:

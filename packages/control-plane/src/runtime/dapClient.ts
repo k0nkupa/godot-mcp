@@ -185,8 +185,13 @@ export class DapClient {
       return;
     }
     if (message.type !== "event" || typeof message.event !== "string") throw new DapProtocolError("DAP message type is unsupported");
+    if (!Number.isInteger(message.seq) || Number(message.seq) < 1) throw new DapProtocolError("DAP event omitted a valid sequence");
     const body = isRecord(message.body) ? message.body : {};
     if (message.event === "stopped") {
+      if (!isRecord(message.body) || typeof message.body.reason !== "string" || message.body.reason.length < 1 || message.body.reason.length > 128) {
+        throw new DapProtocolError("DAP stopped event is malformed");
+      }
+      if (this.stopEvents.length >= 512) throw new DapProtocolError("DAP stopped-event queue overflowed");
       this.stopped = true;
       const event: DapStopEvent = { sequence: ++this.stopSequence, reason: boundedMessage(body.reason, "unknown"), body: { ...body } };
       let delivered = false;
@@ -199,7 +204,6 @@ export class DapClient {
       }
       if (!delivered) {
         this.stopEvents.push(event);
-        if (this.stopEvents.length > 512) this.stopEvents.shift();
       }
       return;
     }

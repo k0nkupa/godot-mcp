@@ -98,7 +98,9 @@ try {
   await run("13/16 runtime and fixture cleanup", process.execPath, ["scripts/verify-phase-7-cleanup.mjs", cleanupRecord]);
   await run("14/16 committed branch diff check", "git", ["diff", "--check", `${process.env.GODOT_MCP_DIFF_BASE ?? "main"}...HEAD`]);
   await run("15/16 committed fixture diff check", "git", ["diff", "--exit-code", "HEAD", "--", "fixtures/godot-4.7"]);
-  await run("16/16 working tree diff check", "git", ["diff", "--check"]);
+  process.stdout.write("\n[phase-7] 16/16 working tree status check\n");
+  const workingTreeStatus = await readOutput("git", ["status", "--porcelain=v1", "--untracked-files=all"]);
+  if (workingTreeStatus) throw new Error(`16/16 working tree status check failed:\n${workingTreeStatus}`);
   passed = true;
   process.stdout.write("\n[phase-7] PASS (16/16 stages)\n");
 } finally {

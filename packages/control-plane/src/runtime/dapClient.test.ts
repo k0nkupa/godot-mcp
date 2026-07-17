@@ -138,4 +138,33 @@ describe("closed-world Godot DAP client", () => {
     await expect(pendingStop).rejects.toMatchObject({ code: "TRANSPORT_ERROR" });
     await client.close();
   });
+
+  it.each([
+    { seq: 91, type: "event", event: "stopped" },
+    { type: "event", event: "stopped", body: { reason: "breakpoint" } },
+  ])("fails closed on malformed stopped events %#", async (malformed) => {
+    const { port } = await fakeDapServer((message, socket) => {
+      socket.write(encodeDapMessage(response(message)));
+      setTimeout(() => socket.write(encodeDapMessage(malformed)), 1);
+    });
+    const client = await DapClient.connect({ host: "127.0.0.1", port });
+    cleanups.push(() => client.close());
+    await client.request("attach", { project: "/tmp/project" }, 1_000);
+    await waitFor(() => !client.snapshot().connected);
+    await expect(client.nextStop(0, 1_000)).rejects.toMatchObject({ code: "TRANSPORT_ERROR" });
+  });
+
+  it("fails closed instead of dropping an undelivered stop on queue overflow", async () => {
+    const { port } = await fakeDapServer((message, socket) => {
+      socket.write(encodeDapMessage(response(message)));
+      for (let index = 0; index < 513; index += 1) {
+        socket.write(encodeDapMessage({ seq: 1_000 + index, type: "event", event: "stopped", body: { reason: "breakpoint" } }));
+      }
+    });
+    const client = await DapClient.connect({ host: "127.0.0.1", port });
+    cleanups.push(() => client.close());
+    await client.request("attach", { project: "/tmp/project" }, 1_000);
+    await waitFor(() => !client.snapshot().connected);
+    await expect(client.nextStop(0, 1_000)).rejects.toMatchObject({ code: "TRANSPORT_ERROR" });
+  });
 });

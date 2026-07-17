@@ -2,6 +2,7 @@ class_name GodotMcpRuntimeProfiler
 extends RefCounted
 
 const CanonicalJson = preload("res://addons/godot_mcp/bridge/canonical_json.gd")
+const SessionCrypto = preload("res://addons/godot_mcp/bridge/session_crypto.gd")
 const PROFILER_NAME := &"godot_mcp_phase7"
 const MAX_SAMPLES := 2048
 const MAX_EVIDENCE_BYTES := 4 * 1024 * 1024
@@ -446,7 +447,7 @@ func _evidence_digest(evidence: Dictionary) -> String:
 
 func _tag_floats(value: Variant) -> Variant:
 	if typeof(value) == TYPE_FLOAT:
-		return {"type": "FloatJson", "value": JSON.stringify(value)}
+		return {"type": "Float64Le", "value": SessionCrypto.float64_le_hex(value)}
 	if typeof(value) == TYPE_ARRAY:
 		var output: Array = []
 		for item: Variant in value:

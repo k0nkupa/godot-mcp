@@ -1,4 +1,4 @@
-export { canonicalJson } from "./canonicalJson.js";
+export { canonicalFloat64Le, canonicalJson, decodeFloat64Le } from "./canonicalJson.js";
 export {
   AUTHORING_OPERATIONS,
   EditorAuthoringStepSchema,
@@ -62,10 +62,12 @@ export {
 } from "./schemas.js";
 export {
   DebugFrameTokenSchema,
+  DebugStopResultSchema,
   DebugVariableTokenSchema,
   RUNTIME_DEBUG_OPERATIONS,
   RuntimeDebugOperationInputSchema,
   type DebugFrameToken,
+  type DebugStopResult,
   type DebugVariableToken,
   type RuntimeDebugOperationInput,
 } from "./runtimeDebug.js";

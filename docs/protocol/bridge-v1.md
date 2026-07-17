@@ -28,7 +28,7 @@ method
 canonicalJson(params)
 ```
 
-Canonical JSON sorts object keys, preserves array order, and allows null, booleans, strings, and safe integers. Finite non-integral parameters are replaced only for MAC calculation with `{ "type": "FloatJson", "value": JSON.stringify(value) }`, using the exact decimal written to transport; the public payload remains numeric. Godot’s JSON parser represents integral wire numbers as floats, so the addon renders finite integral values within JavaScript’s safe-integer range as integers for signing.
+Canonical JSON sorts object keys, preserves array order, and allows null, booleans, strings, and safe integers. Before signing and transport, each finite non-integral parameter is replaced on the wire with `{ "$godotMcpFloat64Le": "<16 lowercase hex characters>" }`, where the value is its exact IEEE-754 binary64 bit pattern encoded least-significant byte first. The receiver verifies the MAC over that tagged wire value before decoding it back to a numeric parameter for dispatch. This avoids both JavaScript/Godot decimal-format drift and loss of precision in Godot's JSON number parser. Integral wire numbers within JavaScript’s safe-integer range remain ordinary JSON numbers.
 
 Sequences must increase strictly for each direction. Deadlines must be unexpired and no more than 60 seconds in the future. A bad MAC, repeated sequence, wrong session ID, malformed envelope, or invalid deadline closes the session.
 

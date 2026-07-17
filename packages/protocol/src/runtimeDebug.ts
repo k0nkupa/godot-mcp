@@ -8,6 +8,13 @@ const opaqueToken = (prefix: "dft" | "dvt") =>
 export const DebugFrameTokenSchema = opaqueToken("dft");
 export const DebugVariableTokenSchema = opaqueToken("dvt");
 
+export const DebugStopResultSchema = z
+  .object({
+    sequence: z.number().int().min(1),
+    reason: z.enum(["breakpoint", "exception", "step", "pause", "unknown"]),
+  })
+  .strict();
+
 const DebugSourcePathSchema = z
   .string()
   .min(9)
@@ -130,4 +137,5 @@ export const RUNTIME_DEBUG_OPERATIONS = [
 type OpaqueDebugFrame = z.infer<typeof DebugFrameTokenSchema>;
 type OpaqueDebugVariable = z.infer<typeof DebugVariableTokenSchema>;
 export { type OpaqueDebugFrame as DebugFrameToken, type OpaqueDebugVariable as DebugVariableToken };
+export type DebugStopResult = z.infer<typeof DebugStopResultSchema>;
 export type RuntimeDebugOperationInput = z.infer<typeof RuntimeDebugOperationInputSchema>;
