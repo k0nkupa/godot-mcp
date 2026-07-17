@@ -101,13 +101,9 @@ func _init() -> void:
 	profiler._retain_raw({"frame": replacement_observed, "monotonicUsec": 2, "values": {"frame.fps": 59.0}}, replacement_observed)
 	assert(profiler._raw_samples.size() == RuntimeProfiler.MAX_SAMPLES)
 	assert(profiler._job.droppedSamples == 1)
-	assert(profiler.snapshot(["rendering"]).data.gpuTimestamps.has("supported"))
-	assert(RuntimeProfiler.gpu_microseconds_delta(1500) == 1500.0)
-	assert(RuntimeProfiler.extract_profile_gpu_deltas(
-		["godot_mcp_profile_6_start_7", "godot_mcp_profile_6_end_7", "godot_mcp_profile_8_start_7", "godot_mcp_profile_8_end_7"],
-		[10, 20, 100, 140],
-		8,
-	) == [40.0])
+	var gpu_timestamps: Dictionary = profiler.snapshot(["rendering"]).data.gpuTimestamps
+	assert(not gpu_timestamps.supported)
+	assert(String(gpu_timestamps.reason).contains("render-frame bracketing"))
 	Performance.add_custom_monitor("$godotMcpFloat64Le", _custom_monitor_value)
 	var reserved_custom: Dictionary = profiler.snapshot(["custom"])
 	assert(reserved_custom.ok)

@@ -1,4 +1,4 @@
-import { readFile, rm } from "node:fs/promises";
+import { access, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 import { startBridgeServer } from "@godot-mcp/bridge-client";
@@ -25,6 +25,7 @@ export interface Phase7RuntimeFixture {
   runtime: RuntimeService;
   editor: EditorProcess;
   expireOwnerLease(): Promise<void>;
+  attestationSentinelExists(): Promise<boolean>;
   runtimeAlive(): boolean;
   diagnostics(): string;
   close(): Promise<void>;
@@ -32,6 +33,7 @@ export interface Phase7RuntimeFixture {
 
 export interface Phase7RuntimeFixtureOptions {
   spoofSecureUserArguments?: boolean;
+  uncontainedAttestation?: boolean;
 }
 
 export async function createPhase7RuntimeFixture(options: Phase7RuntimeFixtureOptions = {}): Promise<Phase7RuntimeFixture> {
@@ -45,6 +47,7 @@ export async function createPhase7RuntimeFixture(options: Phase7RuntimeFixtureOp
   let runtimeDiagnostics: (() => string) | undefined;
   let bridge: Awaited<ReturnType<typeof startBridgeServer>> | undefined;
   let ownerLeasePath: string | undefined;
+  let attestationSentinelPath: string | undefined;
   try {
     const imported = await runGodot(["--headless", "--editor", "--path", project.root, "--import"]);
     if (imported.exitCode !== 0) throw new Error(`Fixture import failed: ${imported.stderr}`);
@@ -60,6 +63,10 @@ export async function createPhase7RuntimeFixture(options: Phase7RuntimeFixtureOp
     });
     const debugServerPort = await reserveLoopbackPort();
     const dapPort = debugServerPort;
+    if (options.uncontainedAttestation) {
+      attestationSentinelPath = join(dirname(project.root), "uncontained-launch-attestation.json");
+      await writeFile(attestationSentinelPath, "must-not-be-deleted\n", { mode: 0o600 });
+    }
     editor = options.spoofSecureUserArguments
       ? await launchEditor(project.root, {
           headless: true,
@@ -67,6 +74,7 @@ export async function createPhase7RuntimeFixture(options: Phase7RuntimeFixtureOp
             `--godot-mcp-debug-port=${debugServerPort}`,
             `--godot-mcp-dap-port=${dapPort}`,
             "--godot-mcp-secure-editor-launch=1",
+            ...(attestationSentinelPath ? [`--godot-mcp-editor-attestation=${attestationSentinelPath}`] : []),
           ],
         })
       : await launchEditor(project.root, { headless: true, debugServerPort, dapPort });
@@ -130,6 +138,7 @@ export async function createPhase7RuntimeFixture(options: Phase7RuntimeFixtureOp
         if (!ownerLeasePath) throw new Error("Runtime owner lease is unavailable");
         await rm(ownerLeasePath, { force: true });
       },
+      attestationSentinelExists: async () => attestationSentinelPath !== undefined && access(attestationSentinelPath).then(() => true, () => false),
       runtimeAlive: () => processExists(runtimePid),
       diagnostics: () => `Bridge: ${bridgeState}\nEditor (${processExists(editor?.pid) ? "alive" : "exited"}):\n${editor?.output ?? ""}\nRuntime (${processExists(runtimePid) ? "alive" : "exited"}):\n${runtimeDiagnostics?.() ?? runtimeOutput}`,
       close(): Promise<void> {
@@ -142,6 +151,7 @@ export async function createPhase7RuntimeFixture(options: Phase7RuntimeFixtureOp
             const diff = await project.diffFromOriginal();
             if (diff.length > 0) fixtureError = new Error(`Phase 7 fixture changed:\n${diff.join("\n")}`);
           } finally {
+            if (attestationSentinelPath) await rm(attestationSentinelPath, { force: true });
             await project.cleanup();
             if (previousRuntimeDirectory === undefined) delete process.env.XDG_RUNTIME_DIR;
             else process.env.XDG_RUNTIME_DIR = previousRuntimeDirectory;
@@ -155,6 +165,7 @@ export async function createPhase7RuntimeFixture(options: Phase7RuntimeFixtureOp
     await runtime?.close().catch(() => undefined);
     await bridge?.close().catch(() => undefined);
     await editor?.close().catch(() => undefined);
+    if (attestationSentinelPath) await rm(attestationSentinelPath, { force: true });
     await project.cleanup();
     if (previousRuntimeDirectory === undefined) delete process.env.XDG_RUNTIME_DIR;
     else process.env.XDG_RUNTIME_DIR = previousRuntimeDirectory;

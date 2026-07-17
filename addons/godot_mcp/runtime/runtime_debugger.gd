@@ -51,11 +51,10 @@ func _setup_session(debugger_session_id: int) -> void:
 		_active_sessions[debugger_session_id] = true
 		if _bound_session_id >= 0 and debugger_session_id != _bound_session_id:
 			if ambiguity_requires_owned_termination(_bound_session_id, debugger_session_id, _certified_owner_pid):
-				# Do not erase the certified PID or watchdog state before the
-				# authenticated child has actually been stopped. An unrelated
-				# debugger session must fail closed even while that child is paused.
-				if OS.kill(_certified_owner_pid) != OK:
-					push_error("Godot MCP could not terminate the certified runtime after debugger ambiguity")
+				# Revoking the private lease makes the authenticated child terminate
+				# itself from its watchdog thread, avoiding any host PID reuse race.
+				if not revoke_owned_runtime_lease("ambiguous_session"):
+					push_error("Godot MCP could not revoke the certified runtime lease after debugger ambiguity")
 			else:
 				clear("ambiguous_session")
 	)
@@ -142,11 +141,7 @@ static func debug_port_is_valid(port: int) -> bool:
 	return port >= 1 and port <= 65535
 
 static func launch_attestation_matches(attestation: Dictionary, path: String, runtime_directory: String, project_id: String, debug_port: int, dap_port: int, now_unix_ms: int) -> bool:
-	if path.is_empty() or runtime_directory.is_empty() or project_id.is_empty() or not path.is_absolute_path():
-		return false
-	var normalized_path := path.simplify_path()
-	var filename := normalized_path.get_file()
-	if normalized_path.get_base_dir() != runtime_directory.simplify_path() or not filename.begins_with("editor-launch-") or filename.get_extension() != "json":
+	if not launch_attestation_path_is_allowed(path, runtime_directory) or project_id.is_empty():
 		return false
 	for field in ["schemaVersion", "projectId", "debugPort", "dapPort", "createdAtUnixMs", "expiresAtUnixMs"]:
 		if not attestation.has(field):
@@ -166,6 +161,13 @@ static func launch_attestation_matches(attestation: Dictionary, path: String, ru
 		and expires_at - created_at <= 10000
 	)
 
+static func launch_attestation_path_is_allowed(path: String, runtime_directory: String) -> bool:
+	if path.is_empty() or runtime_directory.is_empty() or not path.is_absolute_path():
+		return false
+	var normalized_path := path.simplify_path()
+	var filename := normalized_path.get_file()
+	return normalized_path.get_base_dir() == runtime_directory.simplify_path() and filename.begins_with("editor-launch-") and filename.get_extension() == "json"
+
 func owner_lease_expired(now_unix_ms: int) -> bool:
 	if _bound_session_id < 0 or _prepared.is_empty() or _certified_owner_pid < 1:
 		return false
@@ -181,10 +183,16 @@ static func owner_lease_path_is_allowed(path: String, runtime_directory: String)
 static func owner_lease_is_fresh(modified_unix_s: int, now_unix_ms: int) -> bool:
 	return modified_unix_s > 0 and now_unix_ms - modified_unix_s * 1000 <= 3999
 
-func terminate_owned_runtime(reason: String) -> bool:
-	var owner_pid := _certified_owner_pid
-	clear(reason)
-	return owner_pid > 0 and OS.kill(owner_pid) == OK
+func revoke_owned_runtime_lease(reason: String) -> bool:
+	if _certified_owner_pid < 1 or _prepared.is_empty():
+		return false
+	var path := String(_prepared.get("ownerLeasePath", ""))
+	if not owner_lease_path_is_allowed(path, DescriptorReader.runtime_directory()):
+		return false
+	var removed := not FileAccess.file_exists(path) or DirAccess.remove_absolute(path) == OK
+	if not removed:
+		push_error("Godot MCP could not revoke the owned runtime lease: %s" % reason)
+	return removed
 
 static func binding_is_unambiguous(active_session_ids: Array, bound_session_id: int) -> bool:
 	return bound_session_id >= 0 and active_session_ids.size() == 1 and int(active_session_ids[0]) == bound_session_id

@@ -77,8 +77,8 @@ pnpm exec vitest run packages/control-plane/src/runtime/debugTokenStore.test.ts 
 - Return `{ debugPort, editorPid, debugTransport: "authenticated-editor-session" }`.
 - Prove editor ownership of the debugger listener before launching the runtime.
 - Require the authenticated owned PID and one unambiguous `EditorDebuggerSession` before constructing debugger state.
-- Certify the independently verified child PID back to the editor and enforce owner-lease expiry from the editor process so debugger stops cannot suspend owner-death cleanup.
-- If another debugger session appears after certification, terminate the certified child without first erasing its PID/watchdog responsibility.
+- Start an in-child watchdog thread before authentication so lease expiry remains enforceable while the main thread is debugger-stopped; the watchdog terminates only its own process.
+- If another debugger session appears after certification, revoke the authenticated child's private lease instead of issuing a raw PID kill.
 
 Validation:
 

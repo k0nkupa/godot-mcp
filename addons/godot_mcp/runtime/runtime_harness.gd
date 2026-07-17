@@ -25,6 +25,9 @@ var _runtime_debug_capture: RefCounted
 var _runtime_input: RefCounted
 var _runtime_profiler: RefCounted
 var _next_owner_check_ms := 0
+var _owner_watchdog_thread: Thread
+var _owner_watchdog_mutex := Mutex.new()
+var _owner_watchdog_stop := false
 var _scene_revision := 0
 var _pending_commands: Dictionary = {}
 
@@ -45,6 +48,9 @@ func _ready() -> void:
 		or not EngineDebugger.is_active()
 		or not owner_lease_path_is_allowed(String(_descriptor.ownerLeasePath), DescriptorReader.runtime_directory())
 	):
+		get_tree().quit(2)
+		return
+	if not _start_owner_watchdog(String(_descriptor.ownerLeasePath)):
 		get_tree().quit(2)
 		return
 	_secret = SessionCrypto.base64url_decode(String(_descriptor.secret))
@@ -75,6 +81,7 @@ func _process(_delta: float) -> void:
 		get_tree().quit(4)
 
 func _exit_tree() -> void:
+	_stop_owner_watchdog()
 	if EngineDebugger.has_capture("godot_mcp_runtime"):
 		EngineDebugger.unregister_message_capture("godot_mcp_runtime")
 	if _logger != null:
@@ -94,6 +101,36 @@ func _exit_tree() -> void:
 	_secret.fill(0)
 	_secret = PackedByteArray()
 	_descriptor.clear()
+
+func _start_owner_watchdog(owner_lease_path: String) -> bool:
+	_owner_watchdog_mutex.lock()
+	_owner_watchdog_stop = false
+	_owner_watchdog_mutex.unlock()
+	_owner_watchdog_thread = Thread.new()
+	return _owner_watchdog_thread.start(_owner_watchdog_loop.bind(owner_lease_path)) == OK
+
+func _stop_owner_watchdog() -> void:
+	_owner_watchdog_mutex.lock()
+	_owner_watchdog_stop = true
+	_owner_watchdog_mutex.unlock()
+	if _owner_watchdog_thread != null and _owner_watchdog_thread.is_started():
+		_owner_watchdog_thread.wait_to_finish()
+	_owner_watchdog_thread = null
+
+func _owner_watchdog_loop(owner_lease_path: String) -> void:
+	while true:
+		_owner_watchdog_mutex.lock()
+		var should_stop := _owner_watchdog_stop
+		_owner_watchdog_mutex.unlock()
+		if should_stop:
+			return
+		var modified_unix_s := FileAccess.get_modified_time(owner_lease_path)
+		var now_unix_ms := int(Time.get_unix_time_from_system() * 1000.0)
+		if not owner_lease_is_fresh(modified_unix_s, now_unix_ms):
+			# A process terminating itself cannot target a reused unrelated PID.
+			OS.kill(OS.get_process_id())
+			return
+		OS.delay_msec(250)
 
 func _capture(message: String, data: Array) -> bool:
 	if data.size() != 1 or typeof(data[0]) != TYPE_DICTIONARY:

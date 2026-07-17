@@ -82,10 +82,6 @@ var _raw_bytes := 0
 var _tick_values: Dictionary = {}
 var _engine_profiler: EngineProfiler
 var _profiler_registered := false
-var _rendering_device: RenderingDevice
-var _gpu_deltas: Array[float] = []
-var _gpu_seen_samples: Dictionary = {}
-var _gpu_job_id := 0
 
 func snapshot(groups: Array) -> Dictionary:
 	var valid := _validate_groups(groups, 9)
@@ -148,9 +144,6 @@ func start(input: Dictionary) -> Dictionary:
 	_raw_samples.clear()
 	_raw_bytes = 0
 	_tick_values.clear()
-	_gpu_deltas.clear()
-	_gpu_seen_samples.clear()
-	_gpu_job_id += 1
 	var now := Time.get_ticks_usec()
 	_job = {
 		"jobToken": _opaque_token(),
@@ -173,7 +166,6 @@ func start(input: Dictionary) -> Dictionary:
 		"terminalReason": "",
 	}
 	_register_engine_profiler()
-	_rendering_device = RenderingServer.get_rendering_device()
 	_sample_frame(true)
 	return {"ok": true, "data": _status_receipt()}
 
@@ -189,8 +181,6 @@ func _sample_frame(force: bool) -> void:
 	var frame := Engine.get_process_frames()
 	if not force and (frame - int(_job.startFrame)) % int(_job.intervalFrames) != 0:
 		return
-	var sample_id := int(_job.observedSamples) + 1
-	_capture_profile_gpu_marker("start", sample_id)
 	var sampled := _sample_groups(_job.groups)
 	var flattened := _flatten_values(sampled.groups, _tick_values)
 	if int(sampled.omittedMetricCount) > 0:
@@ -213,17 +203,14 @@ func _sample_frame(force: bool) -> void:
 		_job.invalidSamples = int(_job.invalidSamples) + 1
 		if bool(_job.retainRaw):
 			_job.droppedSamples = int(_job.droppedSamples) + 1
-		_capture_profile_gpu_marker("end", sample_id)
 		return
 	_record_aggregates(values, int(_job.observedSamples))
 	if bool(_job.retainRaw):
 		_retain_raw({"frame": frame, "monotonicUsec": Time.get_ticks_usec(), "values": values}, int(_job.observedSamples))
-	_capture_profile_gpu_marker("end", sample_id)
 
 func _advance_deadline() -> void:
 	if _job.is_empty() or String(_job.get("state", "")) != "running":
 		return
-	_collect_profile_gpu_deltas()
 	if Time.get_ticks_usec() - int(_job.startedMonotonicUsec) >= int(_job.requestedDurationMs) * 1000:
 		_finalize("completed", true, "")
 
@@ -258,9 +245,6 @@ func clear() -> void:
 	_raw_samples.clear()
 	_raw_bytes = 0
 	_tick_values.clear()
-	_gpu_deltas.clear()
-	_gpu_seen_samples.clear()
-	_rendering_device = null
 
 func record_engine_tick(frame_time: float, process_time: float, physics_time: float, physics_frame_time: float) -> void:
 	for entry: Array in [
@@ -375,7 +359,6 @@ func _finalize(state: String, complete: bool, reason: String) -> void:
 	evidence.sha256 = _evidence_digest(evidence)
 	assert(_wire_size(evidence) <= MAX_EVIDENCE_BYTES)
 	_job.evidence = evidence
-	_rendering_device = null
 
 func _status_receipt() -> Dictionary:
 	var elapsed := 0
@@ -520,73 +503,10 @@ func _unregister_engine_profiler() -> void:
 	_engine_profiler = null
 
 func _gpu_timestamps() -> Dictionary:
-	var device := _rendering_device if _rendering_device != null else RenderingServer.get_rendering_device()
-	if device == null:
-		return {"supported": false, "reason": "RenderingDevice is unavailable"}
-	var total := device.get_captured_timestamps_count()
-	var start := maxi(0, total - (MAX_SAMPLES + 1))
-	var count := mini(total - start, MAX_SAMPLES + 1)
-	if count < 2:
-		return {"supported": false, "reason": "Captured GPU timestamps are unavailable"}
-	var deltas: Array[float] = []
-	var previous := device.get_captured_timestamp_gpu_time(start)
-	for index in range(start + 1, start + count):
-		var current := device.get_captured_timestamp_gpu_time(index)
-		if current >= previous:
-			deltas.append(gpu_microseconds_delta(current - previous))
-		previous = current
-	return {"supported": true, "deltasUsec": deltas}
-
-func _capture_profile_gpu_marker(kind: String, sample_id: int) -> void:
-	if _rendering_device != null:
-		_rendering_device.capture_timestamp("godot_mcp_profile_%d_%s_%d" % [_gpu_job_id, kind, sample_id])
-
-func _collect_profile_gpu_deltas() -> void:
-	if _rendering_device == null or _gpu_deltas.size() >= MAX_SAMPLES:
-		return
-	var total := _rendering_device.get_captured_timestamps_count()
-	var start := maxi(0, total - 4096)
-	var names: Array[String] = []
-	var times: Array[int] = []
-	for index in range(start, total):
-		names.append(_rendering_device.get_captured_timestamp_name(index))
-		times.append(_rendering_device.get_captured_timestamp_gpu_time(index))
-	for pair: Dictionary in extract_profile_gpu_pairs(names, times, _gpu_job_id):
-		var sample_id := int(pair.sampleId)
-		if not _gpu_seen_samples.has(sample_id) and _gpu_deltas.size() < MAX_SAMPLES:
-			_gpu_seen_samples[sample_id] = true
-			_gpu_deltas.append(float(pair.deltaUsec))
+	return {"supported": false, "reason": "GPU frame timestamps require render-frame bracketing that this runtime does not expose"}
 
 func _profile_gpu_timestamps() -> Dictionary:
-	_collect_profile_gpu_deltas()
-	if _gpu_deltas.is_empty():
-		return {"supported": false, "reason": "Paired per-frame GPU timestamps are unavailable"}
-	return {"supported": true, "deltasUsec": _gpu_deltas.duplicate()}
-
-static func extract_profile_gpu_pairs(names: Array, times: Array, job_id: int) -> Array[Dictionary]:
-	var starts := {}
-	var pairs: Array[Dictionary] = []
-	var count := mini(names.size(), times.size())
-	var start_prefix := "godot_mcp_profile_%d_start_" % job_id
-	var end_prefix := "godot_mcp_profile_%d_end_" % job_id
-	for index in count:
-		var name := String(names[index])
-		if name.begins_with(start_prefix):
-			starts[int(name.trim_prefix(start_prefix))] = int(times[index])
-		elif name.begins_with(end_prefix):
-			var sample_id := int(name.trim_prefix(end_prefix))
-			if starts.has(sample_id) and int(times[index]) >= int(starts[sample_id]):
-				pairs.append({"sampleId": sample_id, "deltaUsec": gpu_microseconds_delta(int(times[index]) - int(starts[sample_id]))})
-	return pairs
-
-static func extract_profile_gpu_deltas(names: Array, times: Array, job_id: int) -> Array[float]:
-	var deltas: Array[float] = []
-	for pair: Dictionary in extract_profile_gpu_pairs(names, times, job_id):
-		deltas.append(float(pair.deltaUsec))
-	return deltas
-
-static func gpu_microseconds_delta(microseconds: int) -> float:
-	return float(maxi(0, microseconds))
+	return _gpu_timestamps()
 
 func _wire_size(value: Variant) -> int:
 	return CanonicalJson.encode(SessionCrypto._canonical_signing_params(value)).to_utf8_buffer().size()

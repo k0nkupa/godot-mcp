@@ -22,6 +22,8 @@ func _init() -> void:
 	assert(RuntimeDebugger.debug_port_is_valid(6007))
 	var launch_attestation := {"schemaVersion": 1, "projectId": "project", "debugPort": 6007, "dapPort": 6007, "createdAtUnixMs": 1000, "expiresAtUnixMs": 11000}
 	assert(RuntimeDebugger.launch_attestation_matches(launch_attestation, "/tmp/godot-mcp/editor-launch-123.json", "/tmp/godot-mcp", "project", 6007, 6007, 5000))
+	assert(RuntimeDebugger.launch_attestation_path_is_allowed("/tmp/godot-mcp/editor-launch-123.json", "/tmp/godot-mcp"))
+	assert(not RuntimeDebugger.launch_attestation_path_is_allowed("/tmp/else/editor-launch-123.json", "/tmp/godot-mcp"))
 	assert(not RuntimeDebugger.launch_attestation_matches(launch_attestation, "/tmp/else/editor-launch-123.json", "/tmp/godot-mcp", "project", 6007, 6007, 5000))
 	assert(not RuntimeDebugger.launch_attestation_matches(launch_attestation, "/tmp/godot-mcp/editor-launch-123.json", "/tmp/godot-mcp", "project", 6007, 6008, 5000))
 	assert(not RuntimeDebugger.launch_attestation_matches(launch_attestation, "/tmp/godot-mcp/editor-launch-123.json", "/tmp/godot-mcp", "project", 6007, 6007, 11001))

@@ -110,7 +110,7 @@ func _process(_delta: float) -> void:
 	if not runtime_debugger.owner_lease_expired(now_ms):
 		return
 	push_error("Godot MCP owner lease expired; stopping the editor-owned runtime")
-	runtime_debugger.terminate_owned_runtime("owner_lease_expired")
+	runtime_debugger.revoke_owned_runtime_lease("owner_lease_expired")
 	if get_editor_interface().is_playing_scene():
 		get_editor_interface().stop_playing_scene()
 
@@ -151,18 +151,26 @@ func _dap_server_is_disabled() -> bool:
 
 func _consume_secure_launch_attestation() -> bool:
 	var path := _secure_launch_attestation_path()
-	if path.is_empty() or not FileAccess.file_exists(path):
+	var runtime_directory := DescriptorReader.runtime_directory()
+	if not RuntimeDebugger.launch_attestation_path_is_allowed(path, runtime_directory) or not FileAccess.file_exists(path):
+		return false
+	var directory := DirAccess.open(path.get_base_dir())
+	if directory == null or directory.is_link(path.get_file()):
 		return false
 	var permissions := FileAccess.get_unix_permissions(path)
-	var document := JSON.parse_string(FileAccess.get_file_as_string(path))
+	var file := FileAccess.open(path, FileAccess.READ)
+	if permissions < 0 or (permissions & 63) != 0 or file == null or file.get_length() > 4096:
+		return false
+	var document := JSON.parse_string(file.get_as_text())
+	file = null
 	DirAccess.remove_absolute(path)
-	if permissions < 0 or (permissions & 63) != 0 or typeof(document) != TYPE_DICTIONARY:
+	if typeof(document) != TYPE_DICTIONARY:
 		return false
 	var identity := DescriptorReader.read_project_identity()
 	return RuntimeDebugger.launch_attestation_matches(
 		document,
 		path,
-		DescriptorReader.runtime_directory(),
+		runtime_directory,
 		String(identity.get("projectId", "")),
 		_runtime_debug_port(),
 		_runtime_dap_port(),

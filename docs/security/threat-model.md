@@ -49,7 +49,7 @@ Future project operations must stay inside approved `res://` roots and deny `.gi
 | Scene or node escape | Bounded `res://` scene paths, relative node paths, traversal and subname rejection, no caller-selected host paths |
 | Enumeration or memory pressure | Node return and traversal queue capped at 1,000/depth 32; 128 properties/signals; 32 group names of 128 characters; 500 logs; 30-second waits; one-to-120-frame steps |
 | Capture pressure or byte confusion | One-to-eight sequential PNGs, bounded source readback, 2048×2048 and 8 MiB per frame, existing signed chunk limits, metadata/digest verification |
-| Runtime/editor/server crash | Owned child exit watcher, descriptor-bound owner heartbeat, control-plane PID certification, an editor-side lease watchdog that remains live during debugger stops, harness lease removal, bounded startup pruning of expired/orphaned runtime files, and one idempotent cleanup path |
+| Runtime/editor/server crash | Owned child exit watcher, descriptor-bound owner heartbeat, control-plane PID certification, an in-child watchdog thread that remains live during debugger stops and self-terminates on lease expiry, harness lease removal, bounded startup pruning of expired/orphaned runtime files, and one idempotent cleanup path |
 | Secret or image leakage | Descriptor paths and secrets excluded from receipts; structured/audit output contains metadata/opaque URIs, not PNG base64 |
 
 ### Phase 7 debugging and profiling controls
@@ -58,7 +58,7 @@ Future project operations must stay inside approved `res://` roots and deny `.gi
 |---|---|
 | Unauthenticated loopback DAP client | The certified CLI launch assigns native DAP and the authenticated editor debugger one port; the debugger binds first so DAP never listens, and a ten-second owner-only project/port attestation in the private runtime directory proves this launcher-established startup state. The addon consumes the attestation, stops the inactive DAP plugin, and runtime preparation refuses copied user arguments or missing editor-PID listener verification. |
 | Wrong-run attachment or listener replacement | Runtime handle, generation, editor PID, debugger port, authenticated descriptor/hello, owned child PID, and unique editor debugger session are bound before debugger state exists |
-| Ambiguous debugger session while the owned child is paused | A second session fails closed by terminating the control-plane-certified child; certified PID and editor watchdog responsibility are retained until stop is observed |
+| Ambiguous debugger session while the owned child is paused | A second session fails closed by revoking the authenticated child's private lease; its independent watchdog thread terminates only its own process, avoiding raw PID reuse |
 | Arbitrary debugger execution | A fixed internal adapter maps only disconnect, breakpoints, threads, stack/scopes/variables, pause, continue, next, and step-in; no raw socket, passthrough, launch, terminate, evaluate, set-variable, or method call exists |
 | Source or addon escape | Breakpoints require canonical project-local `.gd` paths; traversal, symlinks, non-scripts, and `res://addons/godot_mcp` are rejected after real-path containment checks |
 | Stale-token disclosure | Frame and variable IDs are never exposed; 256-bit opaque tokens bind run, generation, authenticated debugger generation, and stop sequence and are cleared on continue, step, reconnect, stop, crash, disconnect, and close |
