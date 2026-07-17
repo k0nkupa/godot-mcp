@@ -112,5 +112,9 @@ export async function runGodot(
     throw new Error(`Godot 4.7.stable is required; detected ${detectedVersion || "unknown"}`);
   }
 
-  return spawnAndCollect(executable, args, { cwd: options.cwd, timeoutMs });
+  const result = await spawnAndCollect(executable, args, { cwd: options.cwd, timeoutMs });
+  if (/SCRIPT ERROR:|Failed to load script/.test(`${result.stdout}\n${result.stderr}`)) {
+    throw new Error(`Godot reported a script failure despite exit code ${result.exitCode}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
+  }
+  return result;
 }

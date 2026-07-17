@@ -21,6 +21,10 @@ func _restore_safe_json_integers(value: Variant) -> Variant:
 	return value
 
 func _init() -> void:
+	var float_value := 0.000493333333333333
+	assert(SessionCrypto._canonical_signing_params(float_value) == {
+		"type": "FloatJson", "value": JSON.stringify(float_value),
+	})
 	var fixture: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://protocol-fixtures/session-crypto-v1.json"))
 	fixture.envelope = _restore_safe_json_integers(fixture.envelope)
 	var key: PackedByteArray = SessionCrypto.derive_key(fixture.token, fixture.sessionNonce, fixture.serverNonce)

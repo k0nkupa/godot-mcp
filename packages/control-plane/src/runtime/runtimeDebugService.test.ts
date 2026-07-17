@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { DapCommand, DapStopEvent } from "./dapClient.js";
+import { DapClientError, type DapCommand, type DapStopEvent } from "./dapClient.js";
 import { RuntimeService, type RuntimeDapClient } from "./runtimeService.js";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -18,6 +18,7 @@ class FakeDap implements RuntimeDapClient {
   closed = false;
   stopped = true;
   stopSequence = 1;
+  transientVariableFailures = 0;
 
   async request(command: DapCommand, argumentsValue: Record<string, unknown>): Promise<Record<string, unknown>> {
     this.calls.push({ command, arguments: argumentsValue });
@@ -35,6 +36,10 @@ class FakeDap implements RuntimeDapClient {
       ] } };
     }
     if (command === "variables") {
+      if (this.transientVariableFailures > 0) {
+        this.transientVariableFailures -= 1;
+        throw new DapClientError("TRANSPORT_ERROR", "unknown");
+      }
       const reference = Number(argumentsValue.variablesReference);
       if (reference === 10) return { body: { variables: [{ name: "player", type: "Object", value: "Player:<Node#1>", variablesReference: 11 }] } };
       if (reference === 11) return { body: { variables: [{ name: "health", type: "int", value: "100", variablesReference: 0 }] } };
@@ -123,6 +128,15 @@ describe("Phase 7 RuntimeService debugging", () => {
     const watched = await service.execute({ operation: "debug_watch", handle: launched.handle, frameToken: stack.frames[0]!.frameToken, selectors: [{ scope: "locals", path: ["player", "health"] }] }) as { watches: unknown[] };
     expect(watched.watches).toEqual([expect.objectContaining({ status: "found", variable: expect.objectContaining({ name: "health", value: "100" }) })]);
     expect(dap.calls.map((entry) => entry.command)).not.toContain("evaluate");
+    await service.close();
+  });
+
+  it("retries Godot's transient unknown response while stack variables are loading", async () => {
+    const { dap, launched, service } = await debugFixture();
+    const stack = await service.execute({ operation: "debug_stack", handle: launched.handle, offset: 0, limit: 64 }) as { frames: Array<{ frameToken: string }> };
+    dap.transientVariableFailures = 2;
+    await expect(service.execute({ operation: "debug_variables", handle: launched.handle, frameToken: stack.frames[0]!.frameToken, scope: "locals", offset: 0, limit: 100 })).resolves.toMatchObject({ returned: 1 });
+    expect(dap.calls.filter((entry) => entry.command === "variables")).toHaveLength(3);
     await service.close();
   });
 

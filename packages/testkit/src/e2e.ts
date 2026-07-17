@@ -16,6 +16,8 @@ export interface CliRunResult {
 
 export interface EditorProcess {
   readonly pid: number;
+  readonly debugServerPort: number | null;
+  readonly dapPort: number | null;
   readonly output: string;
   close(): Promise<void>;
 }
@@ -89,6 +91,7 @@ export interface LaunchEditorOptions {
   scene?: string;
   headless?: boolean;
   debugServerPort?: number;
+  dapPort?: number;
 }
 
 export async function reserveLoopbackPort(): Promise<number> {
@@ -104,6 +107,28 @@ export async function reserveLoopbackPort(): Promise<number> {
   });
   if (port < 1) throw new Error("Failed to reserve a loopback debug port");
   return port;
+}
+
+export async function reserveLoopbackPortInRange(minimum: number, maximum: number): Promise<number> {
+  if (!Number.isInteger(minimum) || !Number.isInteger(maximum) || minimum < 1 || maximum > 65_535 || minimum > maximum) {
+    throw new Error("Loopback port range is invalid");
+  }
+  const span = maximum - minimum + 1;
+  const start = minimum + Math.floor(Math.random() * span);
+  for (let offset = 0; offset < Math.min(span, 1_024); offset += 1) {
+    const candidate = minimum + ((start - minimum + offset) % span);
+    const server = createServer();
+    const listening = await new Promise<boolean>((resolvePromise) => {
+      server.once("error", () => resolvePromise(false));
+      server.listen(candidate, "127.0.0.1", () => resolvePromise(true));
+    });
+    if (!listening) continue;
+    await new Promise<void>((resolvePromise, reject) => {
+      server.close((error) => error ? reject(error) : resolvePromise());
+    });
+    return candidate;
+  }
+  throw new Error(`No free loopback port found in ${minimum}..${maximum}`);
 }
 
 export async function launchEditor(
@@ -124,12 +149,15 @@ export async function launchEditor(
     ...(options.debugServerPort === undefined
       ? []
       : ["--debug-server", `tcp://127.0.0.1:${options.debugServerPort}`]),
+    ...(options.dapPort === undefined ? [] : ["--dap-port", String(options.dapPort)]),
     "--path",
     project,
     ...(options.scene ? [options.scene] : []),
-    ...(options.debugServerPort === undefined
-      ? []
-      : ["--", `--godot-mcp-debug-port=${options.debugServerPort}`]),
+    ...((options.debugServerPort === undefined && options.dapPort === undefined) ? [] : [
+      "--",
+      ...(options.debugServerPort === undefined ? [] : [`--godot-mcp-debug-port=${options.debugServerPort}`]),
+      ...(options.dapPort === undefined ? [] : [`--godot-mcp-dap-port=${options.dapPort}`]),
+    ]),
   ], {
     env: process.env,
     stdio: ["ignore", "pipe", "pipe"],
@@ -147,6 +175,8 @@ export async function launchEditor(
   let closePromise: Promise<void> | undefined;
   return {
     pid: child.pid ?? -1,
+    debugServerPort: options.debugServerPort ?? null,
+    dapPort: options.dapPort ?? null,
     get output(): string {
       return output;
     },

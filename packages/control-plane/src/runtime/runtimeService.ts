@@ -478,7 +478,7 @@ export class RuntimeService {
     limit: number,
   ): Promise<{ variables: unknown[]; offset: number; returned: number; total: number; truncated: boolean }> {
     if (depth > 8) throw runtimeError("PRECONDITION_FAILED", "Debugger variable depth limit exceeded");
-    const response = await dap.request("variables", { variablesReference, start: offset, count: limit });
+    const response = await this.requestVariables(dap, { variablesReference, start: offset, count: limit });
     const all = bodyArray(response, "variables");
     const selected = all.slice(0, limit);
     this.debugTokens.consumeVariableEntries(selected.length);
@@ -517,7 +517,7 @@ export class RuntimeService {
     let reference = await this.scopeReference(dap, frameId, selector.scope);
     let current: unknown;
     for (const [depthIndex, segment] of selector.path.entries()) {
-      const response = await dap.request("variables", { variablesReference: reference, start: 0, count: 256 });
+      const response = await this.requestVariables(dap, { variablesReference: reference, start: 0, count: 256 });
       const all = bodyArray(response, "variables");
       const bounded = all.slice(0, 256);
       current = bounded.find((entry) => isRecord(entry) && String(entry.name) === String(segment));
@@ -531,6 +531,18 @@ export class RuntimeService {
       reference = Number(current.variablesReference);
     }
     return { selector, status: "missing" };
+  }
+
+  private async requestVariables(dap: RuntimeDapClient, argumentsValue: Record<string, unknown>): Promise<Record<string, unknown>> {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      try {
+        return await dap.request("variables", argumentsValue);
+      } catch (error) {
+        if (!(error instanceof DapClientError) || error.message !== "unknown" || attempt === 39) throw error;
+        await new Promise<void>((resolve) => setTimeout(resolve, 25));
+      }
+    }
+    throw runtimeError("TIMEOUT", "Godot DAP variables did not become available", true);
   }
 
   private projectSourcePath(absolutePath: string): string | undefined {

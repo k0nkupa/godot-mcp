@@ -35,7 +35,9 @@ static func signing_text(envelope: Dictionary) -> String:
 
 static func _canonical_signing_params(value: Variant) -> Variant:
 	if typeof(value) == TYPE_FLOAT and not is_nan(value) and not is_inf(value) and floor(value) != value:
-		return {"type": "Float", "value": str(value)}
+		# Use the decimal that Godot actually writes to the transport. str(value)
+		# can use a different precision and invalidate an otherwise valid MAC.
+		return {"type": "FloatJson", "value": JSON.stringify(value)}
 	if typeof(value) == TYPE_ARRAY:
 		var result: Array = []
 		for entry in value:

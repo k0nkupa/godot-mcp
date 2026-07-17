@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   EnvelopeVerifier,
   deriveSessionKey,
+  envelopeSigningText,
   signEnvelope,
   verifyEnvelope,
   type UnsignedBridgeEnvelope,
@@ -30,6 +31,9 @@ describe("session crypto", () => {
     const signed = signEnvelope(key, envelope({ params: { roughness: 0.25, nested: [1.5, 2] } }));
     expect(() => verifyEnvelope(key, signed, { now: () => 1_000 })).not.toThrow();
     expect(signed.params).toEqual({ roughness: 0.25, nested: [1.5, 2] });
+    expect(envelopeSigningText(envelope({ params: { progress: 0.000493333333333333 } }))).toContain(
+      '"progress":{"type":"FloatJson","value":"0.000493333333333333"}',
+    );
   });
 
   it("rejects a repeated signed sequence", () => {

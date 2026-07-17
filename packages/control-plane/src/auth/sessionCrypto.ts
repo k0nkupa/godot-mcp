@@ -29,7 +29,7 @@ function authenticationFailed(message: string): GodotMcpException {
 function canonicalSigningParams(value: unknown): unknown {
   if (typeof value === "number") {
     if (Number.isFinite(value) && !Number.isInteger(value)) {
-      return { type: "Float", value: String(value) };
+      return { type: "FloatJson", value: JSON.stringify(value) };
     }
     return value;
   }

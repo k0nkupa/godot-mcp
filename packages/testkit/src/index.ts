@@ -5,6 +5,7 @@ export {
   launchEditor,
   launchMcpClient,
   reserveLoopbackPort,
+  reserveLoopbackPortInRange,
   runCli,
   type CliRunResult,
   type EditorProcess,
