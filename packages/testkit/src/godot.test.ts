@@ -11,7 +11,23 @@ describe("Godot script result detection", () => {
     expect(hasUnexpectedGodotScriptFailure(
       "Godot Engine\nPHASE6_SOURCE_UNIT_OK\n",
       "SCRIPT ERROR: Parse Error: Expected closing parenthesis\n",
-      { successMarker: "PHASE6_SOURCE_UNIT_OK", failureLine: /^SCRIPT ERROR: Parse Error: Expected closing parenthesis$/ },
+      {
+        successMarker: "PHASE6_SOURCE_UNIT_OK",
+        failureLine: /^SCRIPT ERROR: Parse Error: Expected closing parenthesis$/,
+        companionFailureLine: /^(?:ERROR: )?Failed to load script .+ with error Parse error\.$/,
+      },
+    )).toBe(false);
+  });
+
+  it("allows Godot's companion load diagnostic after an expected parser failure", () => {
+    expect(hasUnexpectedGodotScriptFailure(
+      "Godot Engine\nPHASE6_SOURCE_UNIT_OK\n",
+      "SCRIPT ERROR: Parse Error: Expected closing parenthesis\nERROR: Failed to load script res://authoring/broken.gd with error Parse error.\n",
+      {
+        successMarker: "PHASE6_SOURCE_UNIT_OK",
+        failureLine: /^SCRIPT ERROR: Parse Error: Expected closing parenthesis$/,
+        companionFailureLine: /^(?:ERROR: )?Failed to load script .+ with error Parse error\.$/,
+      },
     )).toBe(false);
   });
 

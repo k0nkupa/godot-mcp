@@ -91,9 +91,21 @@ func snapshot(groups: Array) -> Dictionary:
 	var valid := _validate_groups(groups, 9)
 	if not valid.ok:
 		return valid
+	var sampled := _sample_groups(valid.groups)
+	return {"ok": true, "data": {
+		"schemaVersion": 1,
+		"frame": Engine.get_process_frames(),
+		"monotonicUsec": Time.get_ticks_usec(),
+		"engine": _engine_metadata(),
+		"groups": sampled.groups,
+		"unavailable": sampled.unavailable,
+		"gpuTimestamps": _gpu_timestamps(),
+	}}
+
+func _sample_groups(groups: Array) -> Dictionary:
 	var unavailable: Array[String] = []
 	var output_groups: Dictionary = {}
-	for group: String in valid.groups:
+	for group: String in groups:
 		if group == "custom":
 			output_groups[group] = _custom_monitors(unavailable)
 		else:
@@ -105,15 +117,7 @@ func snapshot(groups: Array) -> Dictionary:
 				else:
 					unavailable.append("%s.%s is not finite" % [group, String(monitor[0])])
 			output_groups[group] = values
-	return {"ok": true, "data": {
-		"schemaVersion": 1,
-		"frame": Engine.get_process_frames(),
-		"monotonicUsec": Time.get_ticks_usec(),
-		"engine": _engine_metadata(),
-		"groups": output_groups,
-		"unavailable": unavailable.slice(0, 128),
-		"gpuTimestamps": _gpu_timestamps(),
-	}}
+	return {"groups": output_groups, "unavailable": unavailable.slice(0, 128)}
 
 func start(input: Dictionary) -> Dictionary:
 	if not _job.is_empty() and String(_job.get("state", "")) == "running":
@@ -176,12 +180,8 @@ func _sample_frame(force: bool) -> void:
 		return
 	var sample_id := int(_job.observedSamples) + 1
 	_capture_profile_gpu_marker("start", sample_id)
-	var sampled := snapshot(_job.groups)
-	if not sampled.ok:
-		_capture_profile_gpu_marker("end", sample_id)
-		_finalize("failed", false, String(sampled.get("message", "Profile sampling failed")))
-		return
-	var flattened := _flatten_values(sampled.data.groups, _tick_values)
+	var sampled := _sample_groups(_job.groups)
+	var flattened := _flatten_values(sampled.groups, _tick_values)
 	var values: Dictionary = flattened.values
 	if bool(flattened.truncated):
 		_job.metricTruncationAffectedSamples = int(_job.metricTruncationAffectedSamples) + 1

@@ -45,6 +45,7 @@ describe("hostile Phase 6 authoring boundaries", () => {
             expectedScriptFailure: {
               successMarker: "PHASE6_SOURCE_UNIT_OK",
               failureLine: /^SCRIPT ERROR: Parse Error: Expected closing "\)" after function parameters\.$/,
+              companionFailureLine: /^(?:ERROR: )?Failed to load script .+ with error Parse error\.$/,
             },
           } : {}),
         });

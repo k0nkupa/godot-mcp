@@ -12,6 +12,7 @@ export interface RunGodotOptions {
 export interface ExpectedGodotScriptFailure {
   successMarker: string;
   failureLine: RegExp;
+  companionFailureLine?: RegExp;
 }
 
 export interface RunGodotResult {
@@ -29,10 +30,18 @@ export function hasUnexpectedGodotScriptFailure(
   const failureLines = output.split(/\r?\n/).map((line) => line.trim()).filter((line) => /SCRIPT ERROR:|Failed to load script/.test(line));
   if (failureLines.length === 0) return false;
   if (!expected || !stdout.split(/\r?\n/).includes(expected.successMarker)) return true;
-  return failureLines.some((line) => {
+  let matchedExpectedFailure = false;
+  const hasUnexpectedFailure = failureLines.some((line) => {
     expected.failureLine.lastIndex = 0;
-    return !expected.failureLine.test(line);
+    if (expected.failureLine.test(line)) {
+      matchedExpectedFailure = true;
+      return false;
+    }
+    if (!expected.companionFailureLine) return true;
+    expected.companionFailureLine.lastIndex = 0;
+    return !expected.companionFailureLine.test(line);
   });
+  return hasUnexpectedFailure || !matchedExpectedFailure;
 }
 
 interface SpawnAndCollectOptions {
