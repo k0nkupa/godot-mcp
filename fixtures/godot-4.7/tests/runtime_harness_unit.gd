@@ -23,6 +23,11 @@ func _init() -> void:
 	assert(not RuntimeDebugger.binding_is_unambiguous([7, 8], 7))
 	assert(RuntimeDebugger.requires_external_continue_clear(false))
 	assert(not RuntimeDebugger.requires_external_continue_clear(true))
+	assert(RuntimeDebugger.continue_transition_complete(false, 4, 4))
+	assert(RuntimeDebugger.continue_transition_complete(true, 5, 4))
+	assert(not RuntimeDebugger.continue_transition_complete(true, 4, 4))
+	assert(RuntimeDebugger.breakpoint_key("res://player.gd", 12) == "res://player.gd:12")
+	assert(RuntimeDebugger.breakpoints_to_disable([10, 11, 12], [11]) == [10, 12])
 	var hello := {"runId": "run", "generation": 1, "projectId": "project", "sessionId": "session", "launchNonce": "nonce", "pid": 42, "proof": "client-proof"}
 	assert(RuntimeHarness.hello_signing_text(hello) == RuntimeDebugger.hello_signing_text(hello))
 	assert(RuntimeHarness.server_proof_signing_text(hello) == RuntimeDebugger.server_proof_signing_text(hello))

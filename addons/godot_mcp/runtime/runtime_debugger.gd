@@ -17,6 +17,7 @@ var _stop_sequence := 0
 var _stop_events: Array[Dictionary] = []
 var _expected_stop_reason := "unknown"
 var _breakpoints: Dictionary = {}
+var _preexisting_breakpoints: Dictionary = {}
 var _debug_data_cleared_for_transition := false
 
 const SCOPE_REFERENCE_BASE := 1000000
@@ -230,10 +231,12 @@ func _execute_debug_adapter(command: Dictionary, deadline: int) -> Dictionary:
 			var clear_result := await _forward_runtime(command, "debug_clear_data", {}, deadline)
 			if not clear_result.ok: return clear_result
 			_debug_data_cleared_for_transition = true
+			var continue_after := _stop_sequence
 			session.send_message("continue", [])
-			while session.is_breaked() and _now_ms() < deadline:
+			while not continue_transition_complete(session.is_breaked(), _stop_sequence, continue_after) and _now_ms() < deadline:
 				await Engine.get_main_loop().process_frame
-			if session.is_breaked(): return _error("TIMEOUT", "Godot debugger did not continue before the deadline", true)
+			if not continue_transition_complete(session.is_breaked(), _stop_sequence, continue_after):
+				return _error("TIMEOUT", "Godot debugger did not continue before the deadline", true)
 			return {"ok": true, "data": {"body": {"allThreadsContinued": true}}}
 		"next", "stepIn":
 			if not session.is_breaked(): return _error("PRECONDITION_FAILED", "Godot debugger must be stopped before stepping")
@@ -249,6 +252,9 @@ func _execute_debug_adapter(command: Dictionary, deadline: int) -> Dictionary:
 			return {"ok": true, "data": {"body": {}}}
 		_:
 			return _error("INVALID_REQUEST", "Authenticated debugger command is not allowed")
+
+static func continue_transition_complete(is_breaked: bool, stop_sequence: int, previous_stop_sequence: int) -> bool:
+	return not is_breaked or stop_sequence > previous_stop_sequence
 
 func _set_breakpoints(session: EditorDebuggerSession, arguments: Dictionary) -> Dictionary:
 	var source: Dictionary = arguments.get("source", {})
@@ -268,13 +274,41 @@ func _set_breakpoints(session: EditorDebuggerSession, arguments: Dictionary) -> 
 			"message": "Godot accepted the breakpoint, but its editor API cannot confirm an executable source line",
 		})
 	var previous: Array = _breakpoints.get(localized, [])
+	var preserved: Array = _preexisting_breakpoints.get(localized, [])
+	var active := _active_breakpoint_keys()
 	for line: int in previous:
-		session.set_breakpoint(localized, line, false)
+		if not lines.has(line) and not preserved.has(line):
+			session.set_breakpoint(localized, line, false)
+	var next_preserved: Array[int] = []
 	for line: int in lines:
-		session.set_breakpoint(localized, line, true)
-	if lines.is_empty(): _breakpoints.erase(localized)
-	else: _breakpoints[localized] = lines
+		if previous.has(line):
+			if preserved.has(line): next_preserved.append(line)
+		elif active.has(breakpoint_key(localized, line)):
+			next_preserved.append(line)
+		else:
+			session.set_breakpoint(localized, line, true)
+	if lines.is_empty():
+		_breakpoints.erase(localized)
+		_preexisting_breakpoints.erase(localized)
+	else:
+		_breakpoints[localized] = lines
+		_preexisting_breakpoints[localized] = next_preserved
 	return {"ok": true, "data": {"body": {"breakpoints": response}}}
+
+func _active_breakpoint_keys() -> Dictionary:
+	var active := {}
+	for entry: String in EditorInterface.get_script_editor().get_breakpoints():
+		active[entry] = true
+	return active
+
+static func breakpoint_key(path: String, line: int) -> String:
+	return "%s:%d" % [path, line]
+
+static func breakpoints_to_disable(owned: Array, preserved: Array) -> Array[int]:
+	var result: Array[int] = []
+	for line: int in owned:
+		if not preserved.has(line): result.append(line)
+	return result
 
 func _wait_for_stop(after_sequence: int, deadline: int) -> Dictionary:
 	while _now_ms() < deadline:
@@ -292,7 +326,7 @@ func clear(_reason := "requested") -> void:
 		var session := get_session(_bound_session_id)
 		if session != null:
 			for source: String in _breakpoints.keys():
-				for line: int in _breakpoints[source]:
+				for line: int in breakpoints_to_disable(_breakpoints[source], _preexisting_breakpoints.get(source, [])):
 					session.set_breakpoint(source, line, false)
 	if _prepared.has("secret"):
 		_prepared.secret = ""
@@ -305,6 +339,7 @@ func clear(_reason := "requested") -> void:
 	_stop_events.clear()
 	_expected_stop_reason = "unknown"
 	_breakpoints.clear()
+	_preexisting_breakpoints.clear()
 	_debug_data_cleared_for_transition = false
 
 func _accept_hello(payload: Dictionary, debugger_session_id: int) -> void:

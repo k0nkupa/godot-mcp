@@ -96,7 +96,7 @@ func children(reference: int, offset: int, limit: int) -> Dictionary:
 				elif typeof(key) == TYPE_INT or typeof(key) == TYPE_FLOAT:
 					entries.append(_variable(str(key), value[key], "number", key))
 				else:
-					entries.append(_variable(str(key), value[key], "unsupported"))
+					entries.append(_variable(_unsupported_key_name(key), value[key], "unsupported"))
 			index += 1
 	elif typeof(value) == TYPE_ARRAY:
 		for index in range(start, finish):
@@ -127,7 +127,7 @@ func _variable(name: String, value: Variant, selector_kind := "string", selector
 	var selector_metadata := {"selectorKind": selector_kind}
 	if selector_kind == "string" or selector_kind == "number":
 		selector_metadata.selectorValue = safe_name if selector_value == null else selector_value
-	if VariantEncoder.is_secret_name(safe_name):
+	if VariantEncoder.is_secret_name(name):
 		return {
 			"name": safe_name,
 			"type": type_string(typeof(value)),
@@ -148,6 +148,11 @@ func _variable(name: String, value: Variant, selector_kind := "string", selector
 		"valueTruncated": display.truncated,
 		"variablesReference": reference,
 	}.merged(selector_metadata)
+
+func _unsupported_key_name(key: Variant) -> String:
+	if key is Object:
+		return "<%s#%d>" % [key.get_class(), key.get_instance_id()]
+	return "<%s>" % type_string(typeof(key))
 
 func _display_value(value: Variant) -> String:
 	if value is Object:

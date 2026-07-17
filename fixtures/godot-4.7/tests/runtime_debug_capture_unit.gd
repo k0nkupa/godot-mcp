@@ -2,6 +2,13 @@ extends SceneTree
 
 const RuntimeDebugCapture = preload("res://addons/godot_mcp/runtime/runtime_debug_capture.gd")
 
+class SideEffectKey extends RefCounted:
+	var string_calls := 0
+
+	func _to_string() -> String:
+		string_calls += 1
+		return "unsafe-object-key"
+
 func _init() -> void:
 	var capture := RuntimeDebugCapture.new()
 	var packed := PackedByteArray()
@@ -27,5 +34,17 @@ func _init() -> void:
 		if child.selectorKind == "string" and child.selectorValue == "0":
 			saw_string = true
 	assert(saw_number and saw_string)
+
+	var long_secret_name := "x".repeat(140) + "_token"
+	var redacted: Dictionary = capture._variable(long_secret_name, "must-not-escape")
+	assert(redacted.value == "[redacted]")
+	assert(redacted.name.length() == 128)
+
+	var object_key := SideEffectKey.new()
+	var object_parent: Dictionary = capture._variable("objects", {object_key: "value"})
+	var object_children: Dictionary = capture.children(int(object_parent.variablesReference), 0, 10)
+	assert(object_children.ok and object_children.data.body.variables.size() == 1)
+	assert(object_key.string_calls == 0)
+	assert(String(object_children.data.body.variables[0].name).begins_with("<RefCounted#"))
 	print("PHASE7_DEBUG_CAPTURE_UNIT_OK")
 	quit(0)
