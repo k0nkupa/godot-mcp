@@ -1,0 +1,53 @@
+[gd_scene format=3 uid="uid://comu118dsx71g"]
+
+[ext_resource type="Texture2D" uid="uid://b2cc8wdvo8l2i" path="res://icon.svg" id="1_icon"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_fixture"]
+size = Vector2(32, 32)
+
+[sub_resource type="NavigationPolygon" id="NavigationPolygon_fixture"]
+
+[sub_resource type="TileSet" id="TileSet_fixture"]
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_fixture"]
+gravity = Vector3(0, 0, 0)
+
+[sub_resource type="BoxMesh" id="BoxMesh_fixture"]
+
+[sub_resource type="AnimationNodeBlendTree" id="AnimationNodeBlendTree_fixture"]
+
+[node name="AuthoringFixture" type="Node" unique_id=954657629]
+
+[node name="UI" type="Node" parent="." unique_id=959951752]
+
+[node name="Panel" type="Control" parent="UI" unique_id=703855249]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 160.0
+offset_bottom = 90.0
+
+[node name="Audio" type="AudioStreamPlayer" parent="." unique_id=1332916992]
+
+[node name="Body" type="StaticBody2D" parent="." unique_id=1166365545]
+
+[node name="Collision" type="CollisionShape2D" parent="Body" unique_id=1255233287]
+shape = SubResource("RectangleShape2D_fixture")
+
+[node name="Navigation" type="NavigationRegion2D" parent="." unique_id=284380790]
+navigation_polygon = SubResource("NavigationPolygon_fixture")
+
+[node name="Tiles" type="TileMapLayer" parent="." unique_id=928251254]
+tile_set = SubResource("TileSet_fixture")
+
+[node name="Particles" type="GPUParticles2D" parent="." unique_id=1653837998]
+process_material = SubResource("ParticleProcessMaterial_fixture")
+
+[node name="Mesh" type="MeshInstance3D" parent="." unique_id=1995559826]
+mesh = SubResource("BoxMesh_fixture")
+
+[node name="Sprite" type="Sprite2D" parent="." unique_id=1133867445]
+texture = ExtResource("1_icon")
+
+[node name="AnimationTree" type="AnimationTree" parent="." unique_id=1581551779]
+active = false
+tree_root = SubResource("AnimationNodeBlendTree_fixture")

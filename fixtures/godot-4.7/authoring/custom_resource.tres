@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="Phase6FixtureResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://authoring/custom_resource.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+label = "fixture"
+value = 6
