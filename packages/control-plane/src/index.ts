@@ -94,6 +94,18 @@ export {
   type RuntimeDescriptorMaterial,
 } from "./runtime/runtimeDescriptor.js";
 export {
+  DapClient,
+  DapClientError,
+  type DapCommand,
+  type DapStopEvent,
+} from "./runtime/dapClient.js";
+export {
+  DapFrameParser,
+  DapProtocolError,
+  MAX_DAP_BODY_BYTES,
+  encodeDapMessage,
+} from "./runtime/dapFraming.js";
+export {
   OwnedGodotProcess,
   godotRuntimeArguments,
   scrubRuntimeEnvironment,
