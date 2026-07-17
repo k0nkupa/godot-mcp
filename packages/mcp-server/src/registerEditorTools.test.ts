@@ -10,6 +10,7 @@ import { EvidenceStore, JsonlAuditSink, SessionService, type SessionGrants } fro
 import type { EditorMutationInput, EditorMutationResult } from "@godot-mcp/protocol";
 
 import { createGodotMcpServer } from "./createServer.js";
+import { summarizeEditorMutationForAudit } from "./registerEditorTools.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 const scenePath = "res://mutation/editor_mutation.tscn";
@@ -75,6 +76,16 @@ async function fixture(grants: SessionGrants) {
 }
 
 describe("editor MCP tool", () => {
+  it("hashes authored source in audit summaries without retaining content", () => {
+    const content = "extends Node\nvar secret_value := 6\n";
+    const summary = summarizeEditorMutationForAudit({
+      operation: "preview",
+      steps: [{ operation: "create_script", sourcePath: "res://authoring/generated.gd", content }],
+    });
+    expect(summary).toMatchObject({ sourcePaths: ["res://authoring/generated.gd"], sourceContentSha256: [expect.stringMatching(/^[a-f0-9]{64}$/)] });
+    expect(JSON.stringify(summary)).not.toContain(content);
+  });
+
   it.each([
     [{ tiers: ["observe"], packs: ["core"] }, false],
     [{ tiers: ["observe", "project_mutate"], packs: ["core"] }, false],

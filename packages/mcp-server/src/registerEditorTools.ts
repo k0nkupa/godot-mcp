@@ -31,10 +31,17 @@ export function summarizeEditorMutationForAudit(input: EditorMutationInput): Rec
   }
   const stepOperations: Record<string, number> = {};
   for (const step of input.steps) stepOperations[step.operation] = (stepOperations[step.operation] ?? 0) + 1;
+  const sourceSteps = input.steps.flatMap((step) => "sourcePath" in step && "content" in step
+    ? [{ sourcePath: String(step.sourcePath), content: String(step.content) }]
+    : []);
   return {
     operation: input.operation,
     stepCount: input.steps.length,
     stepOperations,
+    ...(sourceSteps.length === 0 ? {} : {
+      sourcePaths: sourceSteps.map((step) => step.sourcePath),
+      sourceContentSha256: sourceSteps.map((step) => createHash("sha256").update(step.content).digest("hex")),
+    }),
     ...(input.operation === "apply"
       ? {
           expectedPlanDigest: input.expectedPlanDigest,
@@ -53,8 +60,8 @@ const annotations = {
 
 export function registerEditorTools(server: McpServer, dependencies: EditorToolDependencies): void {
   server.registerTool("godot_editor", {
-    title: "Mutate Godot editor content",
-    description: "Preview, apply, undo, or redo one bounded transactional editor batch in an authenticated project.",
+    title: "Author and mutate Godot editor content",
+    description: "Preview, apply, undo, or redo one bounded transactional editor or authoring batch in an authenticated project.",
     inputSchema: EditorMutationInputSchema,
     outputSchema: ToolResultSchema,
     annotations,

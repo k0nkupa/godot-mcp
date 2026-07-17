@@ -7,6 +7,7 @@ const VariantDecoder = preload("res://addons/godot_mcp/mutation/editor_variant_d
 const VariantEncoder = preload("res://addons/godot_mcp/observation/variant_encoder.gd")
 const MutationTransaction = preload("res://addons/godot_mcp/mutation/editor_mutation_transaction.gd")
 const ProjectFileTransaction = preload("res://addons/godot_mcp/mutation/project_file_transaction.gd")
+const AuthoringPlanner = preload("res://addons/godot_mcp/authoring/authoring_planner.gd")
 const MAX_STEPS := 32
 const FILE_OPERATIONS := ["create_scene", "duplicate_scene", "move_scene", "delete_scene", "create_resource", "duplicate_resource", "move_resource", "delete_resource"]
 
@@ -15,12 +16,14 @@ var _undo_redo: Variant
 var _project_root: String
 var _session_generation: Callable
 var _actions := {}
+var _authoring: RefCounted
 
 func _init(editor: Variant, undo_redo: Variant, project_root: String, session_generation: Callable) -> void:
 	_editor = editor
 	_undo_redo = undo_redo
 	_project_root = project_root
 	_session_generation = session_generation
+	_authoring = AuthoringPlanner.new(editor, project_root)
 
 func execute(arguments: Dictionary) -> Dictionary:
 	match String(arguments.get("operation", "")):
@@ -34,6 +37,7 @@ func clear() -> void:
 	_editor = null
 	_undo_redo = null
 	_actions.clear()
+	_authoring = null
 
 func _apply(arguments: Dictionary) -> Dictionary:
 	var preview := _preview({"operation": "preview", "steps": arguments.get("steps", [])})
@@ -48,7 +52,12 @@ func _apply(arguments: Dictionary) -> Dictionary:
 	var transaction := MutationTransaction.new(root, _editor.get_resource_filesystem())
 	var prepared: Array[Dictionary] = []
 	for step in arguments.steps:
-		var result: Dictionary = transaction.prepare(step)
+		var result: Dictionary
+		if _authoring.handles(String(step.get("operation", ""))):
+			var authoring_result: Dictionary = _authoring.prepare_step(step, root, action_id)
+			result = transaction.prepare_authoring(authoring_result) if authoring_result.ok else authoring_result
+		else:
+			result = transaction.prepare(step)
 		if not result.ok: return result
 		prepared.append(result.step)
 	if _undo_redo is EditorUndoRedoManager:
@@ -72,8 +81,19 @@ func _apply(arguments: Dictionary) -> Dictionary:
 
 func _apply_files(arguments: Dictionary, preview: Dictionary, action_id: String) -> Dictionary:
 	var transaction := ProjectFileTransaction.new(_project_root, _editor.get_resource_filesystem(), action_id)
-	var prepared_result: Dictionary = transaction.prepare_steps(arguments.steps)
+	var phase_five_steps: Array = []
+	for step in arguments.steps:
+		if _authoring.handles(String(step.get("operation", ""))): continue
+		phase_five_steps.append(step)
+	var prepared_result: Dictionary = transaction.prepare_steps(phase_five_steps)
 	if not prepared_result.ok: return prepared_result
+	for step in arguments.steps:
+		if not _authoring.handles(String(step.get("operation", ""))): continue
+		var authoring_result: Dictionary = _authoring.prepare_step(step, null, action_id)
+		if not authoring_result.ok: return authoring_result
+		if String(authoring_result.adapter) != "file": return _error("INVALID_REQUEST", "Global authoring operation did not prepare a project file")
+		prepared_result = transaction.prepare_external(authoring_result.prepared)
+		if not prepared_result.ok: return prepared_result
 	var history: UndoRedo
 	if _undo_redo is EditorUndoRedoManager:
 		_undo_redo.create_action("Godot MCP %s" % action_id, UndoRedo.MERGE_DISABLE, null, true, false)
@@ -134,12 +154,15 @@ func _preview(arguments: Dictionary) -> Dictionary:
 			return _error("INVALID_REQUEST", "Editor mutation step must be an object")
 		var step: Dictionary = step_value
 		var operation := String(step.get("operation", ""))
-		var file_step := operation in FILE_OPERATIONS
+		var authoring_step: bool = _authoring.handles(operation)
+		var authoring_validation: Dictionary = _authoring.preview_step(step) if authoring_step else {}
+		if authoring_step and not authoring_validation.ok: return authoring_validation
+		var file_step: bool = operation in FILE_OPERATIONS or (authoring_step and String(authoring_validation.history) == "global")
 		var requested_history := "global" if file_step else "scene"
 		if history_kind.is_empty(): history_kind = requested_history
 		if history_kind != requested_history:
 			return _error("CONFLICT", "One mutation batch cannot mix scene and global undo histories")
-		var validated := _validate_file_step(step) if file_step else _validate_node_step(step)
+		var validated := authoring_validation if authoring_step else (_validate_file_step(step) if file_step else _validate_node_step(step))
 		if not validated.ok:
 			return validated
 		if requested_history == "scene":

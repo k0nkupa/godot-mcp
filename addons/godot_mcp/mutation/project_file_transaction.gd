@@ -35,7 +35,7 @@ func prepare_steps(step_values: Array) -> Dictionary:
 	return {"ok": true}
 
 func prepare_external(prepared_step: Dictionary) -> Dictionary:
-	if String(prepared_step.get("_authoringKind", "")) not in ["source", "custom_resource"]:
+	if String(prepared_step.get("_authoringKind", "")) not in ["source", "custom_resource", "resource_serialized"]:
 		return _error("INVALID_REQUEST", "Prepared authoring step has an unknown origin")
 	var path := String(prepared_step.get("path", ""))
 	if not _safe_path(path): return _error("PATH_DENIED", "Prepared authoring path is outside the project")

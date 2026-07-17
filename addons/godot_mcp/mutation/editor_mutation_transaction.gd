@@ -3,6 +3,7 @@ class_name GodotMcpEditorMutationTransaction
 extends RefCounted
 
 const VariantDecoder = preload("res://addons/godot_mcp/mutation/editor_variant_decoder.gd")
+const AuthoringPlanner = preload("res://addons/godot_mcp/authoring/authoring_planner.gd")
 
 var root: Node
 var editor_filesystem: Variant
@@ -59,9 +60,16 @@ func prepare(step_value: Dictionary) -> Dictionary:
 		return _error("INVALID_REQUEST", "Mutation operation is not implemented in the scene transaction")
 	return {"ok": true, "step": step}
 
+func prepare_authoring(wrapper: Dictionary) -> Dictionary:
+	if String(wrapper.get("history", "")) != "scene": return _error("INVALID_REQUEST", "Authoring step does not belong to scene history")
+	return {"ok": true, "step": {"operation": "_phase6_authoring", "_phase6": wrapper}}
+
 func apply_step(step: Dictionary, forward: bool) -> void:
 	if not failure.is_empty(): return
 	var operation := String(step.operation)
+	if operation == "_phase6_authoring":
+		AuthoringPlanner.apply_prepared_scene(step._phase6, forward)
+		return
 	var node: Node = step.get("_node")
 	if not is_instance_valid(node): return _fail("Mutation node became invalid")
 	match operation:
