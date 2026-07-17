@@ -20,7 +20,10 @@ function isProtectedPath(value: string): boolean {
 
 const ResPathSchema = z.string().min(7).max(512).refine(isCanonicalResPath, { message: "Path must be canonical and project-local" });
 const ScenePathSchema = ResPathSchema.refine((value) => value.endsWith(".tscn") || value.endsWith(".scn"), { message: "Scene path must name a Godot scene" });
-const ResourcePathSchema = ResPathSchema.refine((value) => !value.endsWith(".gd") && !value.endsWith(".gdshader"), { message: "Resource path must not name source code" });
+const ResourcePathSchema = ResPathSchema.refine(
+  (value) => !isProtectedPath(value) && !value.endsWith(".gd") && !value.endsWith(".gdshader"),
+  { message: "Resource path must name an authorable project resource" },
+);
 const SourcePathSchema = ResPathSchema.refine((value) => !isProtectedPath(value), { message: "Source path is protected" });
 const NodePathSchema = z.string().min(1).max(512).refine(
   (value) => !value.startsWith("/") && !value.includes(":") && !value.includes("\0") && !value.split("/").includes(".."),

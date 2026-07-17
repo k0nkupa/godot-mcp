@@ -6,7 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { startBridgeServer, type BridgeSession } from "@godot-mcp/bridge-client";
 import { initProject } from "@godot-mcp/cli";
 import { JsonlAuditSink, readProjectIdentity } from "@godot-mcp/control-plane";
-import type { EditorMutationResult, EditorMutationStep } from "@godot-mcp/protocol";
+import { EditorMutationResultSchema, type EditorMutationResult, type EditorMutationStep } from "@godot-mcp/protocol";
 import { copyFixture, findGodotBinary, runGodot, waitUntil } from "@godot-mcp/testkit";
 import { expect, test } from "vitest";
 
@@ -85,6 +85,8 @@ test("authors scene, resources, imported references, animation, and source throu
 
 async function apply(session: BridgeSession, steps: EditorMutationStep[]): Promise<string> {
   const preview = await session.request<EditorMutationResult>("editor.mutate", { operation: "preview", steps });
+  const parsedPreview = EditorMutationResultSchema.safeParse(preview.data);
+  if (!parsedPreview.success) throw new Error(JSON.stringify(parsedPreview.error.issues));
   expect(preview.data.state).toBe("previewed");
   const applied = await session.request<EditorMutationResult>("editor.mutate", {
     operation: "apply", idempotencyKey: randomUUID(), expectedPlanDigest: preview.data.planDigest, steps,

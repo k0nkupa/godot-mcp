@@ -39,7 +39,8 @@ func preview_step(step: Dictionary) -> Dictionary:
 	var root: Node = _find_open_root(String(step.get("scenePath", ""))) if history == "scene" else null
 	var prepared := prepare_step(step, root)
 	if not prepared.ok: return prepared
-	var identity: Dictionary = prepared.get("identity", _fallback_identity(step, history))
+	var identity: Dictionary = prepared.get("identity", {})
+	if identity.is_empty(): identity = _fallback_identity(step, history)
 	var revision: Variant = identity.get("revision")
 	var import_check := _validate_import_expectation(step)
 	if not import_check.ok: return import_check
