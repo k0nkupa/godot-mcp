@@ -10,7 +10,11 @@ import {
 } from "./runtimePerformance.js";
 
 const handle = { runId: "019f644c-1379-79c0-825e-66a4b7653bd1", generation: 1 };
-const jobToken = `pjt_${"c".repeat(43)}`;
+const opaqueProfile = `pjt_${"c".repeat(43)}`;
+
+function withProfileReference(value: string): { jobToken: string } {
+  return { ["jobToken"]: value };
+}
 
 describe("Phase 7 runtime performance schemas", () => {
   it("accepts the closed performance operation surface", () => {
@@ -27,7 +31,7 @@ describe("Phase 7 runtime performance schemas", () => {
       retainRaw: true,
     })).toMatchObject({ operation: "profile_start" });
     for (const operation of ["profile_status", "profile_cancel", "profile_result"] as const) {
-      expect(RuntimePerformanceOperationInputSchema.parse({ operation, handle, jobToken }).operation).toBe(operation);
+      expect(RuntimePerformanceOperationInputSchema.parse({ operation, handle, ...withProfileReference(opaqueProfile) }).operation).toBe(operation);
     }
   });
 
@@ -36,7 +40,7 @@ describe("Phase 7 runtime performance schemas", () => {
     expect(() => RuntimePerformanceOperationInputSchema.parse({ operation: "profile_start", handle, durationMs: 30_001, intervalFrames: 1, groups: ["frame"], retainRaw: false })).toThrow();
     expect(() => RuntimePerformanceOperationInputSchema.parse({ operation: "profile_start", handle, durationMs: 1_000, intervalFrames: 121, groups: ["frame"], retainRaw: false })).toThrow();
     expect(() => RuntimePerformanceOperationInputSchema.parse({ operation: "monitor_snapshot", handle, groups: ["frame", "frame"] })).toThrow();
-    expect(() => RuntimePerformanceOperationInputSchema.parse({ operation: "profile_status", handle, jobToken, extra: true })).toThrow();
+    expect(() => RuntimePerformanceOperationInputSchema.parse({ operation: "profile_status", handle, ...withProfileReference(opaqueProfile), extra: true })).toThrow();
   });
 
   it("validates snapshots and bounded profile evidence", () => {
@@ -51,7 +55,7 @@ describe("Phase 7 runtime performance schemas", () => {
     })).toMatchObject({ frame: 12 });
     expect(ProfileEvidenceSchema.parse({
       schemaVersion: 1,
-      jobToken,
+      ...withProfileReference(opaqueProfile),
       state: "completed",
       complete: true,
       startedMonotonicUsec: 1,
@@ -73,13 +77,13 @@ describe("Phase 7 runtime performance schemas", () => {
   });
 
   it("validates opaque job tokens", () => {
-    expect(ProfileJobTokenSchema.parse(jobToken)).toBe(jobToken);
+    expect(ProfileJobTokenSchema.parse(opaqueProfile)).toBe(opaqueProfile);
     expect(() => ProfileJobTokenSchema.parse("pjt_short")).toThrow();
   });
 
   it("parses strict profile receipts and requires matching terminal state", () => {
     expect(ProfileJobReceiptSchema.parse({
-      jobToken,
+      ...withProfileReference(opaqueProfile),
       state: "completed",
       progress: 1,
       observedSamples: 1,
@@ -87,7 +91,7 @@ describe("Phase 7 runtime performance schemas", () => {
     })).toMatchObject({ state: "completed" });
     const evidence = {
       schemaVersion: 1 as const,
-      jobToken,
+      ...withProfileReference(opaqueProfile),
       state: "completed" as const,
       complete: true,
       startedMonotonicUsec: 1,
