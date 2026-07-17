@@ -56,6 +56,10 @@ it("registers runtime tools only for the explicit runtime grants", async () => {
   expect(tools.find((tool) => tool.name === "godot_runtime_capture")?.annotations).toMatchObject({ readOnlyHint: false });
   const launch = await client.callTool({ name: "godot_runtime", arguments: { operation: "launch", scenePath: "res://runtime/runtime_fixture.tscn" } });
   expect(launch.structuredContent).toMatchObject({ ok: true, data: { handle, root: { pid: 42 } } });
+  const debug = await client.callTool({ name: "godot_runtime", arguments: { operation: "debug_status", handle } });
+  expect(debug.structuredContent).toMatchObject({ ok: true, data: { operation: "debug_status" } });
+  const monitor = await client.callTool({ name: "godot_runtime", arguments: { operation: "monitor_snapshot", handle, groups: ["frame"] } });
+  expect(monitor.structuredContent).toMatchObject({ ok: true, data: { operation: "monitor_snapshot" } });
 });
 
 it("returns ordered runtime images without putting bytes in structured or audit output", async () => {

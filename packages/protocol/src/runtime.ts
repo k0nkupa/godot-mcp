@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+import { RuntimeDebugOperationInputSchema } from "./runtimeDebug.js";
+import { RuntimePerformanceOperationInputSchema } from "./runtimePerformance.js";
+import { RuntimeHandleSchema } from "./runtimeShared.js";
+
 const RuntimeScenePathSchema = z
   .string()
   .min(8)
@@ -37,13 +41,6 @@ const SafeRuntimePropertyPatternSchema = z
       !pattern.includes("?*"),
     { message: "Runtime property pattern uses unsupported regex features" },
   );
-
-export const RuntimeHandleSchema = z
-  .object({
-    runId: z.uuid(),
-    generation: z.number().int().min(1),
-  })
-  .strict();
 
 const RuntimeWaitConditionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("node_exists"), nodePath: RuntimeNodePathSchema }).strict(),
@@ -84,7 +81,7 @@ const RuntimeWaitConditionSchema = z.discriminatedUnion("type", [
 const RuntimeHandleOperationSchema = <T extends "pause" | "resume" | "stop">(operation: T) =>
   z.object({ operation: z.literal(operation), handle: RuntimeHandleSchema }).strict();
 
-export const RuntimeOperationInputSchema = z.discriminatedUnion("operation", [
+const BaseRuntimeOperationInputSchema = z.discriminatedUnion("operation", [
   z
     .object({
       operation: z.literal("launch"),
@@ -144,6 +141,12 @@ export const RuntimeOperationInputSchema = z.discriminatedUnion("operation", [
   RuntimeHandleOperationSchema("stop"),
 ]);
 
+export const RuntimeOperationInputSchema = z.union([
+  BaseRuntimeOperationInputSchema,
+  RuntimeDebugOperationInputSchema,
+  RuntimePerformanceOperationInputSchema,
+]);
+
 export const RuntimeCaptureInputSchema = z
   .object({
     handle: RuntimeHandleSchema,
@@ -177,7 +180,8 @@ export const RuntimeCommandSchema = z
   })
   .strict();
 
-export type RuntimeHandle = z.infer<typeof RuntimeHandleSchema>;
+export { RuntimeHandleSchema } from "./runtimeShared.js";
+export type { RuntimeHandle } from "./runtimeShared.js";
 export type RuntimeOperationInput = z.infer<typeof RuntimeOperationInputSchema>;
 export type RuntimeCaptureInput = z.infer<typeof RuntimeCaptureInputSchema>;
 export type RuntimeCaptureFrameMetadata = z.infer<typeof RuntimeCaptureFrameMetadataSchema>;

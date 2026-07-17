@@ -1,0 +1,77 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  MonitorSnapshotSchema,
+  ProfileEvidenceSchema,
+  ProfileJobTokenSchema,
+  RuntimePerformanceOperationInputSchema,
+} from "./runtimePerformance.js";
+
+const handle = { runId: "019f644c-1379-79c0-825e-66a4b7653bd1", generation: 1 };
+const jobToken = `pjt_${"c".repeat(43)}`;
+
+describe("Phase 7 runtime performance schemas", () => {
+  it("accepts the closed performance operation surface", () => {
+    expect(RuntimePerformanceOperationInputSchema.parse({ operation: "monitor_snapshot", handle })).toMatchObject({
+      operation: "monitor_snapshot",
+      groups: ["frame", "memory", "objects", "rendering", "physics", "audio", "navigation", "pipeline", "custom"],
+    });
+    expect(RuntimePerformanceOperationInputSchema.parse({
+      operation: "profile_start",
+      handle,
+      durationMs: 1_000,
+      intervalFrames: 2,
+      groups: ["frame", "memory"],
+      retainRaw: true,
+    })).toMatchObject({ operation: "profile_start" });
+    for (const operation of ["profile_status", "profile_cancel", "profile_result"] as const) {
+      expect(RuntimePerformanceOperationInputSchema.parse({ operation, handle, jobToken }).operation).toBe(operation);
+    }
+  });
+
+  it("enforces capture and group bounds", () => {
+    expect(() => RuntimePerformanceOperationInputSchema.parse({ operation: "profile_start", handle, durationMs: 99, intervalFrames: 1, groups: ["frame"], retainRaw: false })).toThrow();
+    expect(() => RuntimePerformanceOperationInputSchema.parse({ operation: "profile_start", handle, durationMs: 30_001, intervalFrames: 1, groups: ["frame"], retainRaw: false })).toThrow();
+    expect(() => RuntimePerformanceOperationInputSchema.parse({ operation: "profile_start", handle, durationMs: 1_000, intervalFrames: 121, groups: ["frame"], retainRaw: false })).toThrow();
+    expect(() => RuntimePerformanceOperationInputSchema.parse({ operation: "monitor_snapshot", handle, groups: ["frame", "frame"] })).toThrow();
+    expect(() => RuntimePerformanceOperationInputSchema.parse({ operation: "profile_status", handle, jobToken, extra: true })).toThrow();
+  });
+
+  it("validates snapshots and bounded profile evidence", () => {
+    expect(MonitorSnapshotSchema.parse({
+      schemaVersion: 1,
+      frame: 12,
+      monotonicUsec: 99,
+      engine: { version: "4.7.stable.official.test", renderer: "gl_compatibility", renderingMethod: "gl_compatibility", graphicsApi: "OpenGL" },
+      groups: { frame: { time_fps: 60, time_process: 0.01 } },
+      unavailable: [],
+      gpuTimestamps: { supported: false },
+    })).toMatchObject({ frame: 12 });
+    expect(ProfileEvidenceSchema.parse({
+      schemaVersion: 1,
+      jobToken,
+      state: "completed",
+      complete: true,
+      startedMonotonicUsec: 1,
+      finishedMonotonicUsec: 2,
+      startFrame: 1,
+      endFrame: 2,
+      requestedDurationMs: 100,
+      intervalFrames: 1,
+      observedSamples: 1,
+      retainedSamples: 1,
+      invalidSamples: 0,
+      droppedSamples: 0,
+      aggregates: { time_fps: { min: 60, max: 60, mean: 60, p50: 60, p95: 60, p99: 60 } },
+      rawSamples: [],
+      engine: { version: "4.7.stable.official.test", renderer: "gl_compatibility", renderingMethod: "gl_compatibility", graphicsApi: "OpenGL" },
+      gpuTimestamps: { supported: false },
+      sha256: "a".repeat(64),
+    })).toMatchObject({ state: "completed", observedSamples: 1 });
+  });
+
+  it("validates opaque job tokens", () => {
+    expect(ProfileJobTokenSchema.parse(jobToken)).toBe(jobToken);
+    expect(() => ProfileJobTokenSchema.parse("pjt_short")).toThrow();
+  });
+});

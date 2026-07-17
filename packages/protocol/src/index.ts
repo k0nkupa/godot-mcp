@@ -61,6 +61,28 @@ export {
   type ToolResult,
 } from "./schemas.js";
 export {
+  DebugFrameTokenSchema,
+  DebugVariableTokenSchema,
+  RUNTIME_DEBUG_OPERATIONS,
+  RuntimeDebugOperationInputSchema,
+  type DebugFrameToken,
+  type DebugVariableToken,
+  type RuntimeDebugOperationInput,
+} from "./runtimeDebug.js";
+export {
+  MonitorGroupSchema,
+  MonitorSnapshotSchema,
+  ProfileEvidenceSchema,
+  ProfileJobTokenSchema,
+  RUNTIME_PERFORMANCE_OPERATIONS,
+  RuntimePerformanceOperationInputSchema,
+  type MonitorGroup,
+  type MonitorSnapshot,
+  type ProfileEvidence,
+  type ProfileJobToken,
+  type RuntimePerformanceOperationInput,
+} from "./runtimePerformance.js";
+export {
   RuntimeCaptureInputSchema,
   RuntimeCaptureFrameMetadataSchema,
   RuntimeCommandSchema,
