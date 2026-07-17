@@ -1,4 +1,4 @@
-export { findGodotBinary, runGodot, type RunGodotOptions, type RunGodotResult } from "./godot.js";
+export { findGodotBinary, hasUnexpectedGodotScriptFailure, runGodot, type RunGodotOptions, type RunGodotResult } from "./godot.js";
 export { copyFixture, waitUntil, type TempProject } from "./tempProject.js";
 export { inspectPng, type PngInspection } from "./png.js";
 export {

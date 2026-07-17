@@ -14,6 +14,13 @@ export interface RunGodotResult {
   stderr: string;
 }
 
+export function hasUnexpectedGodotScriptFailure(stdout: string, stderr: string): boolean {
+  const output = `${stdout}\n${stderr}`;
+  const hasFailure = /SCRIPT ERROR:|Failed to load script/.test(output);
+  const hasExplicitUnitSuccess = /^[A-Z][A-Z0-9_]*_OK\s*$/m.test(stdout);
+  return hasFailure && !hasExplicitUnitSuccess;
+}
+
 interface SpawnAndCollectOptions {
   cwd: string | undefined;
   timeoutMs: number;
@@ -113,7 +120,7 @@ export async function runGodot(
   }
 
   const result = await spawnAndCollect(executable, args, { cwd: options.cwd, timeoutMs });
-  if (/SCRIPT ERROR:|Failed to load script/.test(`${result.stdout}\n${result.stderr}`)) {
+  if (hasUnexpectedGodotScriptFailure(result.stdout, result.stderr)) {
     throw new Error(`Godot reported a script failure despite exit code ${result.exitCode}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
   }
   return result;
