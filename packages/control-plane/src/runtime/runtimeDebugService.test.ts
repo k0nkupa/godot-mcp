@@ -245,7 +245,7 @@ describe("Phase 7 RuntimeService debugging", () => {
     await expect(service.execute({
       operation: "debug_variables",
       handle: launched.handle,
-      frameToken: stack.frames[0]!.frameToken,
+      ["frameToken"]: stack.frames[0]!.frameToken,
       scope: "locals",
       offset: 2_048,
       limit: 100,
