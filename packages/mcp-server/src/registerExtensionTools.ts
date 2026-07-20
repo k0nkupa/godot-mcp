@@ -7,7 +7,7 @@ import { ToolResultSchema } from "@godot-mcp/protocol";
 import { executeTool, type ToolExecutionDependencies } from "./executeTool.js";
 import { toMcpToolResult } from "./toolResult.js";
 
-const ExtensionCallSchema = z.object({ extension: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/), operation: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/), input: z.unknown() }).strict();
+const ExtensionCallSchema = z.object({ extension: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/), operation: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/), input: z.json() }).strict();
 const RESERVED_AUDIT_KEYS = new Set(["extension", "operation"]);
 
 function extensionAuditArguments(extension: string, operation: string, audit: () => Record<string, unknown>): Record<string, unknown> {
@@ -31,7 +31,8 @@ export function registerExtensionTools(server: McpServer, dependencies: Extensio
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
   }, async (rawInput) => {
     const input = ExtensionCallSchema.parse(rawInput);
-    if (Buffer.byteLength(JSON.stringify(input.input)) > 256 * 1024) throw new Error("Extension input exceeds 256 KiB");
+    const serializedInput = JSON.stringify(input.input);
+    if (serializedInput !== undefined && Buffer.byteLength(serializedInput) > 256 * 1024) throw new Error("Extension input exceeds 256 KiB");
     const definition = dependencies.extensions.resolve(input.extension, input.operation);
     let parsed: unknown;
     return toMcpToolResult(await executeTool(

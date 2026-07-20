@@ -84,7 +84,9 @@ export async function executeTool(
 ): Promise<ExecutedToolResult> {
   const correlationId = randomUUID();
   const startedAt = new Date().toISOString();
-  let auditArguments = options.auditFallbackArguments ?? argumentsValue;
+  let auditArguments = typeof options.auditArguments === "function"
+    ? (options.auditFallbackArguments ?? argumentsValue)
+    : (options.auditArguments ?? options.auditFallbackArguments ?? argumentsValue);
   try {
     authorize(dependencies.grants, policy);
     auditArguments = typeof options.auditArguments === "function" ? options.auditArguments(correlationId) : (options.auditArguments ?? argumentsValue);

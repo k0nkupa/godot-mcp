@@ -36,12 +36,12 @@ export class ExtensionRegistry {
     if (!NAME.test(definition.extension) || !NAME.test(definition.operation)) throw new Error("Extension and operation names must be bounded lowercase identifiers");
     if (definition.policy.tier === "unsafe_fixture" || definition.policy.pack === "unsafe") throw new Error("Extensions cannot acquire unsafe fixture authority");
     const knownPolicy = EXTENSION_POLICIES.find((policy) => policy.command === definition.policy.command);
-    if (!knownPolicy || knownPolicy.tier !== definition.policy.tier || knownPolicy.pack !== definition.policy.pack || JSON.stringify(knownPolicy.requiredPacks ?? []) !== JSON.stringify(definition.policy.requiredPacks ?? [])) {
+    if (!knownPolicy || knownPolicy.tier !== definition.policy.tier || knownPolicy.pack !== definition.policy.pack || knownPolicy.mutating !== definition.policy.mutating || JSON.stringify(knownPolicy.requiredPacks ?? []) !== JSON.stringify(definition.policy.requiredPacks ?? [])) {
       throw new Error("Extension operations must use an exact existing control-plane policy");
     }
     const key = this.key(definition.extension, definition.operation);
     if (this.definitions.has(key)) throw new Error("Duplicate extension operation");
-    const policy = Object.freeze({ ...definition.policy, ...(definition.policy.requiredPacks === undefined ? {} : { requiredPacks: Object.freeze([...definition.policy.requiredPacks]) }) });
+    const policy = Object.freeze({ ...knownPolicy, ...(knownPolicy.requiredPacks === undefined ? {} : { requiredPacks: Object.freeze([...knownPolicy.requiredPacks]) }) });
     this.definitions.set(key, Object.freeze({ ...definition, policy }) as ExtensionDefinition);
   }
 

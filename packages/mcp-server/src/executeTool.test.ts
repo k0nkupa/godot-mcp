@@ -42,6 +42,17 @@ it("uses a redacted audit argument override without changing handler input", asy
   expect(audit).not.toContain("private_action");
   expect(audit).not.toContain("keycode");
   expect(audit).not.toContain("\"x\":44");
+
+  await executeTool(
+    { project, grants: { tiers: ["observe"], packs: ["core"] }, audit: new JsonlAuditSink(auditPath), session },
+    INPUT_POLICY,
+    rawArguments,
+    () => ({ data: { accepted: true } }),
+    { auditArguments: summary },
+  );
+  const deniedAudit = await readFile(auditPath, "utf8");
+  expect(deniedAudit).not.toContain("private_action");
+  expect(deniedAudit).not.toContain("keycode");
 });
 
 it("returns and audits mutation warnings changes and rollback facts", async () => {

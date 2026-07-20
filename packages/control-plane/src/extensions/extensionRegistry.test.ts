@@ -16,6 +16,7 @@ it("denies unsafe authority and invalid dynamic names", () => {
   expect(() => registry.register({ extension: "fixture", operation: "exec", policy: UNSAFE_POLICY, inputSchema: z.unknown(), outputSchema: z.unknown(), audit: () => ({}), handler: async () => null })).toThrow(/unsafe/i);
   expect(() => registry.register({ extension: "../escape", operation: "read", policy: CORE_QUERY_POLICY, inputSchema: z.unknown(), outputSchema: z.unknown(), audit: () => ({}), handler: async () => null })).toThrow(/identifiers/i);
   expect(() => registry.register({ extension: "fixture", operation: "fake", policy: { ...CORE_QUERY_POLICY, command: "forged" }, inputSchema: z.unknown(), outputSchema: z.unknown(), audit: () => ({}), handler: async () => null })).toThrow(/exact existing/i);
+  expect(() => registry.register({ extension: "fixture", operation: "fake_mutation", policy: { ...CORE_QUERY_POLICY, mutating: !CORE_QUERY_POLICY.mutating }, inputSchema: z.unknown(), outputSchema: z.unknown(), audit: () => ({}), handler: async () => null })).toThrow(/exact existing/i);
 });
 
 it("snapshots validated definitions and policies", () => {
