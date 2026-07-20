@@ -6,6 +6,7 @@ import {
   expandPermissionTiers,
   EDITOR_POLICY,
   INPUT_POLICY,
+  PROJECT_POLICY,
   VISUAL_POLICY,
   RUNTIME_CAPTURE_POLICY,
   RUNTIME_POLICY,
@@ -141,5 +142,16 @@ describe("authorization policy", () => {
     const grants = { tiers: ["observe", "runtime_control"] as const, packs: ["core", "runtime", "input", "visual"] as const };
     expect(authorize({ tiers: [...grants.tiers], packs: [...grants.packs] }, VISUAL_POLICY)).toEqual({ allowed: true });
     expect(visibleCapabilities({ tiers: [...grants.tiers], packs: [...grants.packs] }).map((item) => item.command)).toContain("godot_visual");
+  });
+
+  it("requires project_operate and project independently", () => {
+    expect(() => authorize({ tiers: ["observe", "project_operate"], packs: ["core"] }, PROJECT_POLICY))
+      .toThrowError(expect.objectContaining({ code: "PERMISSION_REQUIRED" }));
+    expect(() => authorize({ tiers: ["observe"], packs: ["core", "project"] }, PROJECT_POLICY))
+      .toThrowError(expect.objectContaining({ code: "PERMISSION_REQUIRED" }));
+    expect(authorize({ tiers: ["observe", "project_operate"], packs: ["core", "project"] }, PROJECT_POLICY))
+      .toEqual({ allowed: true });
+    expect(visibleCapabilities({ tiers: ["observe", "project_operate"], packs: ["core", "project"] }).map((item) => item.command))
+      .toContain("godot_project");
   });
 });

@@ -46,6 +46,17 @@ it("rejects incomplete visual capability sets", () => {
   })).toThrow("visual pack requires runtime and input packs");
 });
 
+it("accepts only the explicit project_operate and project pair", () => {
+  expect(normalizeRuntimeGrants({ tiers: ["observe", "project_operate"], packs: ["core", "project"] })).toEqual({
+    tiers: ["observe", "project_operate"],
+    packs: ["core", "project"],
+  });
+  expect(() => normalizeRuntimeGrants({ tiers: ["observe", "project_operate"], packs: ["core"] }))
+    .toThrow("project_operate must be granted with the project pack");
+  expect(() => normalizeRuntimeGrants({ tiers: ["observe"], packs: ["core", "project"] }))
+    .toThrow("project_operate must be granted with the project pack");
+});
+
 it("creates an observe-only runtime and removes its descriptor on concurrent close", async () => {
   const project = await copyFixture();
   cleanups.push(project.cleanup);

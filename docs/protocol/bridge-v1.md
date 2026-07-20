@@ -87,6 +87,14 @@ Debugger operations are carried by the existing `godot_runtime` tool: set/clear 
 
 Performance operations on the same tool are monitor snapshot, profile start/status/cancel/result. The harness samples public `Performance`, `EngineProfiler`, and `RenderingServer` APIs only. One job runs at a time for 100 ms–30 seconds with an interval of 1–120 frames, at most eight requested groups, 128 metrics, 2,048 retained samples, and four MiB of complete wire-encoded terminal evidence. Requested built-in groups and EngineProfiler ticks take priority over custom monitors at the metric cap. Active jobs survive scene rebinding, and status/cancel/result remain reachable while no game scene is bound. Terminal evidence records completeness, cancellation/failure reason, explicit metric-truncation metadata, engine metadata, aggregates, optional bounded samples, explicit unsupported GPU timestamp capability, and a canonical SHA-256. GPU timing remains unsupported because this runtime cannot bracket actual rendered work across frame boundaries honestly. Audit stores only bounded operation/count/state/digest metadata, never debugger values, watches, monitor samples, or raw profile evidence.
 
+## Phase 9 project operations
+
+An explicitly project-authorized session may send `project.operation` only when both `project_operate` and `project` are present. The attached addon accepts exactly `settings_apply`, `plugin_set`, and selective `reimport`; all use the existing signed envelope, deadline, bounded queue, and terminal-result rules. Settings are confined to safe namespaces and primitive values, plugin paths to one existing `res://addons/<name>/plugin.cfg`, and the MCP addon itself is denied.
+
+Long full-import, run, build-solutions, and export jobs do not traverse the bridge. The control plane launches the configured Godot binary with a closed argument map, scrubbed environment, project identity, deadline, and PID/start fingerprint. Public job tokens and artifact URIs are opaque. Export destinations are generated beneath the project evidence root; no caller host path or environment is accepted.
+
+The control plane journals mutation start/completion and project-job process identity. Completed mutations replay their hash-only receipts. An incomplete mutation fails closed as an unknown outcome. Restart recovery signals a journaled child only after exact PID/fingerprint verification; ambiguity is terminal without a signal.
+
 ## Limits and closes
 
 - Text frames only; binary frames close with policy violation (`1008`).

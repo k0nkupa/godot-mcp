@@ -121,7 +121,7 @@ func _handle_message(text: String) -> void:
 	if not _paired and message.method == "pair.complete":
 		_complete_pairing()
 		return
-	if message.method in ["editor.query", "editor.capture", "editor.mutate", "runtime.prepare", "runtime.command", "runtime.capture", "runtime.cleanup"]:
+	if message.method in ["editor.query", "editor.capture", "editor.mutate", "project.operation", "runtime.prepare", "runtime.command", "runtime.capture", "runtime.cleanup"]:
 		var params: Variant = message.params
 		if typeof(params) != TYPE_DICTIONARY or not params.has("requestId") or typeof(params.get("arguments")) != TYPE_DICTIONARY:
 			rejected.emit("INVALID_REQUEST", "Bridge command parameters are invalid")
@@ -131,6 +131,9 @@ func _handle_message(text: String) -> void:
 			return
 		if String(message.method) == "editor.mutate" and not _editor_granted():
 			send_command_error(String(params.requestId), "PERMISSION_REQUIRED", "Project mutation and editor pack were not granted for this session")
+			return
+		if String(message.method) == "project.operation" and not _project_granted():
+			send_command_error(String(params.requestId), "PERMISSION_REQUIRED", "Project operation tier and project pack were not granted for this session")
 			return
 		command_received.emit({"requestId": String(params.requestId), "deadlineUnixMs": int(message.deadlineUnixMs), "method": String(message.method), "arguments": params.arguments})
 		return
@@ -174,6 +177,14 @@ func _editor_granted() -> bool:
 		typeof(grants) == TYPE_DICTIONARY
 		and "project_mutate" in grants.get("tiers", [])
 		and "editor" in grants.get("packs", [])
+	)
+
+func _project_granted() -> bool:
+	var grants: Variant = _descriptor.get("grants", {})
+	return (
+		typeof(grants) == TYPE_DICTIONARY
+		and "project_operate" in grants.get("tiers", [])
+		and "project" in grants.get("packs", [])
 	)
 
 func _complete_pairing() -> void:

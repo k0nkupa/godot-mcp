@@ -94,7 +94,7 @@ afterEach(async () => {
 
 describe("BridgeSession requests", () => {
   it("correlates the closed runtime editor commands", async () => {
-    for (const method of ["runtime.prepare", "runtime.command", "runtime.capture", "runtime.cleanup"] as const) {
+    for (const method of ["project.operation", "runtime.prepare", "runtime.command", "runtime.capture", "runtime.cleanup"] as const) {
       const request = peer.session.request<{ accepted: boolean }>(method, {}, { timeoutMs: 1_000 });
       const sent = await peer.nextEnvelope();
       const requestId = String((sent.params as { requestId: string }).requestId);

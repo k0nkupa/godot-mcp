@@ -68,6 +68,15 @@ describe("connect grants", () => {
     expect(() => parseConnectGrants(["runtime_control"], ["input", "visual"])).toThrow(/visual requires runtime and input/i);
   });
 
+  it("requires the exact project operation grant pair", () => {
+    expect(parseConnectGrants(["project_operate"], ["project"])).toEqual({
+      tiers: ["observe", "project_operate"],
+      packs: ["core", "project"],
+    });
+    expect(() => parseConnectGrants(["project_operate"], [])).toThrow(/project pack/i);
+    expect(() => parseConnectGrants([], ["project"])).toThrow(/project_operate/i);
+  });
+
   it("forwards the explicitly selected Godot binary to runtime launch", async () => {
     const grants = parseConnectGrants(["runtime_control"], ["runtime"]);
     await connectProject("/private/project", grants, "/custom/godot");

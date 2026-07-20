@@ -8,10 +8,10 @@ export function parseConnectGrants(grants: readonly string[], packs: readonly st
   const normalizedGrants = [...new Set(grants.flatMap((value) => value.split(",")).filter(Boolean))];
   const normalizedPacks = [...new Set(packs.flatMap((value) => value.split(",")).filter(Boolean))];
   for (const grant of normalizedGrants) {
-    if (grant !== "runtime_control" && grant !== "project_mutate") throw new Error(`Unsupported connect grant: ${grant}`);
+    if (grant !== "runtime_control" && grant !== "project_mutate" && grant !== "project_operate") throw new Error(`Unsupported connect grant: ${grant}`);
   }
   for (const pack of normalizedPacks) {
-    if (pack !== "runtime" && pack !== "input" && pack !== "editor" && pack !== "visual") throw new Error(`Unsupported connect pack: ${pack}`);
+    if (pack !== "runtime" && pack !== "input" && pack !== "editor" && pack !== "visual" && pack !== "project") throw new Error(`Unsupported connect pack: ${pack}`);
   }
   const hasRuntimePack = normalizedPacks.includes("runtime") || normalizedPacks.includes("input");
   if (normalizedGrants.includes("runtime_control") !== hasRuntimePack) {
@@ -24,12 +24,17 @@ export function parseConnectGrants(grants: readonly string[], packs: readonly st
   if (normalizedPacks.includes("visual") && (!normalizedPacks.includes("runtime") || !normalizedPacks.includes("input"))) {
     throw new Error("visual requires runtime and input packs");
   }
-  if (!hasRuntimePack && !hasEditorPack) return { tiers: ["observe"], packs: ["core"] };
+  const hasProjectPack = normalizedPacks.includes("project");
+  if (normalizedGrants.includes("project_operate") !== hasProjectPack) {
+    throw new Error("project_operate must be granted with the project pack");
+  }
+  if (!hasRuntimePack && !hasEditorPack && !hasProjectPack) return { tiers: ["observe"], packs: ["core"] };
   return {
     tiers: [
       "observe",
       ...(normalizedGrants.includes("runtime_control") ? ["runtime_control" as const] : []),
       ...(normalizedGrants.includes("project_mutate") ? ["project_mutate" as const] : []),
+      ...(normalizedGrants.includes("project_operate") ? ["project_operate" as const] : []),
     ],
     packs: [
       "core",
@@ -37,6 +42,7 @@ export function parseConnectGrants(grants: readonly string[], packs: readonly st
       ...(normalizedPacks.includes("input") ? ["input" as const] : []),
       ...(normalizedPacks.includes("editor") ? ["editor" as const] : []),
       ...(normalizedPacks.includes("visual") ? ["visual" as const] : []),
+      ...(normalizedPacks.includes("project") ? ["project" as const] : []),
     ],
   };
 }

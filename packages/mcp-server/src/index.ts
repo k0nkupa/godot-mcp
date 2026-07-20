@@ -1,5 +1,11 @@
 export { createGodotMcpServer, type GodotMcpServerDependencies } from "./createServer.js";
 export {
+  projectAuditArguments,
+  registerProjectTools,
+  type ProjectOperationsController,
+  type ProjectToolDependencies,
+} from "./registerProjectTools.js";
+export {
   registerInputTools,
   type InputController,
   type InputToolDependencies,

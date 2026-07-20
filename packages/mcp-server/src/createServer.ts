@@ -7,11 +7,13 @@ import { registerInputTools, type InputController } from "./registerInputTools.j
 import { registerEditorTools, type EditorController } from "./registerEditorTools.js";
 import { registerRuntimeTools, type RuntimeController } from "./registerRuntimeTools.js";
 import { registerVisualTools, type VisualController } from "./registerVisualTools.js";
+import { registerProjectTools, type ProjectOperationsController } from "./registerProjectTools.js";
 
 export type GodotMcpServerDependencies = CoreToolDependencies & {
   runtime?: RuntimeController & Partial<InputController>;
   editor?: EditorController;
   visual?: VisualController;
+  projectOperations?: ProjectOperationsController;
 };
 
 export function createGodotMcpServer(dependencies: GodotMcpServerDependencies): McpServer {
@@ -40,5 +42,10 @@ export function createGodotMcpServer(dependencies: GodotMcpServerDependencies): 
     dependencies.grants.packs.includes("input") &&
     dependencies.grants.packs.includes("visual")
   ) registerVisualTools(server, { ...dependencies, visual: dependencies.visual });
+  if (
+    dependencies.projectOperations &&
+    dependencies.grants.tiers.includes("project_operate") &&
+    dependencies.grants.packs.includes("project")
+  ) registerProjectTools(server, { ...dependencies, projectOperations: dependencies.projectOperations });
   return server;
 }

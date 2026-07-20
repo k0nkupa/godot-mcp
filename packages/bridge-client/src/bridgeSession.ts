@@ -129,6 +129,7 @@ export class BridgeSession {
       | "editor.query"
       | "editor.capture"
       | "editor.mutate"
+      | "project.operation"
       | "runtime.prepare"
       | "runtime.command"
       | "runtime.capture"

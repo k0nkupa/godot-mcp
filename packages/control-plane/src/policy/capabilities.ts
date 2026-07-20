@@ -104,6 +104,12 @@ export const VISUAL_POLICY: CommandPolicy = {
   requiredPacks: ["runtime", "input", "visual"],
   mutating: true,
 };
+export const PROJECT_POLICY: CommandPolicy = {
+  command: "godot_project",
+  tier: "project_operate",
+  pack: "project",
+  mutating: true,
+};
 
 export const PHASE_ONE_POLICIES: readonly CommandPolicy[] = [
   CORE_CAPABILITIES_POLICY,
@@ -129,10 +135,11 @@ export const RUNTIME_POLICIES: readonly CommandPolicy[] = [
 export const INPUT_POLICIES: readonly CommandPolicy[] = [INPUT_POLICY];
 export const EDITOR_POLICIES: readonly CommandPolicy[] = [EDITOR_POLICY];
 export const VISUAL_POLICIES: readonly CommandPolicy[] = [VISUAL_POLICY];
+export const PROJECT_POLICIES: readonly CommandPolicy[] = [PROJECT_POLICY];
 
 export function visibleCapabilities(grants: SessionGrants): CommandPolicy[] {
   const tiers = expandPermissionTiers(grants.tiers);
-  return [...CORE_POLICIES, ...RUNTIME_POLICIES, ...INPUT_POLICIES, ...EDITOR_POLICIES, ...VISUAL_POLICIES].filter(
+  return [...CORE_POLICIES, ...RUNTIME_POLICIES, ...INPUT_POLICIES, ...EDITOR_POLICIES, ...VISUAL_POLICIES, ...PROJECT_POLICIES].filter(
     (policy) => tiers.includes(policy.tier) && (policy.requiredPacks ?? [policy.pack]).every((pack) => grants.packs.includes(pack)),
   );
 }

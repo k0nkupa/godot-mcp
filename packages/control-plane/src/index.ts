@@ -22,6 +22,42 @@ export {
 } from "./project/projectIdentity.js";
 export { resolveProjectPath, type ProjectPathMode } from "./project/pathPolicy.js";
 export {
+  ArtifactStore,
+  scanArtifactDirectory,
+  type ArtifactScanEntry,
+  type ArtifactScanFinding,
+  type ArtifactScanOptions,
+  type ArtifactScanResult,
+} from "./project/artifactStore.js";
+export {
+  OwnedProjectProcess,
+  projectProcessFingerprint,
+  projectGodotArguments,
+  recoverOwnedProjectProcess,
+  scrubProjectEnvironment,
+  type ProjectProcessInput,
+} from "./project/projectProcess.js";
+export {
+  ProjectJobService,
+  type ProjectJobProcess,
+  type ProjectJobServiceDependencies,
+} from "./project/projectJobService.js";
+export {
+  ProjectJobJournal,
+  type ProjectJobJournalSnapshot,
+} from "./project/projectJobJournal.js";
+export {
+  ProjectMutationJournal,
+  ProjectMutationService,
+  type ProjectMutationBridge,
+} from "./project/projectMutationService.js";
+export { ProjectService } from "./project/projectService.js";
+export {
+  assertBuildSolutionsPreflight,
+  assertExportPreflight,
+  projectOperationPreflight,
+} from "./project/projectPreflight.js";
+export {
   CORE_CAPABILITIES_POLICY,
   CORE_CAPTURE_POLICY,
   CORE_DOCTOR_POLICY,
@@ -33,6 +69,8 @@ export {
   EDITOR_POLICY,
   INPUT_POLICIES,
   INPUT_POLICY,
+  PROJECT_POLICIES,
+  PROJECT_POLICY,
   VISUAL_POLICIES,
   VISUAL_POLICY,
   PHASE_ONE_POLICIES,

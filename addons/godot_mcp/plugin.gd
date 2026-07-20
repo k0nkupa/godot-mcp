@@ -9,6 +9,7 @@ const EditorCapture = preload("res://addons/godot_mcp/observation/editor_capture
 const MainThreadQueue = preload("res://addons/godot_mcp/commands/main_thread_queue.gd")
 const RuntimeDebugger = preload("res://addons/godot_mcp/runtime/runtime_debugger.gd")
 const EditorMutation = preload("res://addons/godot_mcp/mutation/editor_mutation.gd")
+const ProjectOperations = preload("res://addons/godot_mcp/project/project_operations.gd")
 
 var bridge: Node
 var command_queue: Node
@@ -17,6 +18,7 @@ var editor_query: RefCounted
 var editor_capture: RefCounted
 var runtime_debugger: EditorDebuggerPlugin
 var editor_mutation: RefCounted
+var project_operations: RefCounted
 var dap_guard: TCPServer
 var dap_disabled := false
 var secure_launch_attested := false
@@ -32,6 +34,7 @@ func _enter_tree() -> void:
 	editor_query = EditorQuery.new(get_editor_interface(), diagnostic_logger)
 	editor_capture = EditorCapture.new(get_editor_interface())
 	editor_mutation = EditorMutation.new(get_editor_interface(), get_undo_redo(), ProjectSettings.globalize_path("res://"), func() -> int: return bridge.session_generation() if is_instance_valid(bridge) else 0)
+	project_operations = ProjectOperations.new(get_editor_interface().get_resource_filesystem())
 	runtime_debugger = RuntimeDebugger.new()
 	add_debugger_plugin(runtime_debugger)
 	command_queue = MainThreadQueue.new()
@@ -55,6 +58,8 @@ func _execute_command(command: Dictionary) -> Dictionary:
 		outcome = await editor_capture.execute(command.arguments)
 	elif String(command.method) == "editor.mutate":
 		outcome = editor_mutation.execute(command.arguments)
+	elif String(command.method) == "project.operation":
+		outcome = project_operations.execute(command.arguments)
 	elif String(command.method) == "runtime.prepare":
 		outcome = runtime_debugger.prepare(
 			command.arguments.get("descriptor", {}),
@@ -224,3 +229,4 @@ func _exit_tree() -> void:
 	if editor_mutation != null:
 		editor_mutation.clear()
 	editor_mutation = null
+	project_operations = null

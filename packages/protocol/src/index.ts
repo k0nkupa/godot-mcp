@@ -1,5 +1,18 @@
 export { canonicalFloat64Le, canonicalJson, decodeFloat64Le } from "./canonicalJson.js";
 export {
+  ProjectArtifactManifestSchema,
+  ProjectJobReceiptSchema,
+  ProjectMutationResultSchema,
+  ProjectOperationInputSchema,
+  ProjectOperationResultSchema,
+  ProjectSettingNameSchema,
+  type ProjectArtifactManifest,
+  type ProjectJobReceipt,
+  type ProjectMutationResult,
+  type ProjectOperationInput,
+  type ProjectOperationResult,
+} from "./projectOperations.js";
+export {
   AUTHORING_OPERATIONS,
   EditorAuthoringStepSchema,
   ExtendedEditorVariantSchema,
