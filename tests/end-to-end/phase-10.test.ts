@@ -10,22 +10,27 @@ const confirmation = "I UNDERSTAND THIS RUNS UNSANDBOXED CODE";
 test.skipIf(process.platform !== "darwin")("Phase 10 runs visibly unsandboxed code only in a registered disposable copy through stdio", async () => {
   const template = await copyFixture(); const container = await mkdtemp(join(tmpdir(), "godot-mcp-phase10-e2e-")); const copy = join(container, "copy"); const registry = join(container, "registry.json");
   let editor: Awaited<ReturnType<typeof launchEditor>> | undefined; let client: Awaited<ReturnType<typeof launchMcpClient>> | undefined;
+  let stage = "register";
   try {
+    stage = "init"; expect((await runCli(["init", "--project", template.root])).exitCode).toBe(0);
+    stage = "register";
     const registered = await runCli(["unsafe-register", "--project", template.root, "--registry", registry, "--confirmation", confirmation]); expect(registered.exitCode).toBe(0);
-    const registrationId = (JSON.parse(registered.stdout) as { registrationId: string }).registrationId;
+    const registrationId = (JSON.parse(registered.stdout) as { registrationId: string }).registrationId; stage = "stamp";
     await cp(template.root, copy, { recursive: true });
     expect((await runCli(["unsafe-stamp-copy", "--project", copy, "--registry", registry, "--registration", registrationId])).exitCode).toBe(0);
-    const approved = await runCli(["unsafe-approve", "--project", copy, "--registry", registry, "--activation-dir", container, "--confirmation", confirmation, "--ttl-ms", "120000"]); expect(approved.exitCode).toBe(0);
+    stage = "approve"; const approved = await runCli(["unsafe-approve", "--project", copy, "--registry", registry, "--activation-dir", container, "--confirmation", confirmation, "--ttl-ms", "120000"]); expect(approved.exitCode).toBe(0);
     const leasePath = (JSON.parse(approved.stdout) as { leasePath: string }).leasePath;
-    expect((await runCli(["init", "--project", copy])).exitCode).toBe(0);
     expect((await runGodot(["--headless", "--editor", "--path", copy, "--import"])).exitCode).toBe(0);
-    const port = await reserveLoopbackPort(); editor = await launchEditor(copy, { headless: false, debugServerPort: port, dapPort: port });
+    stage = "editor"; const port = await reserveLoopbackPort(); editor = await launchEditor(copy, { headless: false, debugServerPort: port, dapPort: port });
+    stage = "connect";
     client = await launchMcpClient(["connect", "--project", copy, "--grant", "unsafe_fixture", "--pack", "unsafe", "--registry", registry, "--activation", leasePath]);
-    await waitUntil(async () => ((await client?.callTool({ name: "godot_session", arguments: {} })).structuredContent as { data?: { state?: string } })?.data?.state === "attached", 15_000, 100);
+    stage = "attach"; await waitUntil(async () => ((await client?.callTool({ name: "godot_session", arguments: {} })).structuredContent as { data?: { state?: string } })?.data?.state === "attached", 15_000, 100);
     expect((await client.listTools()).tools.map((tool) => tool.name)).toContain("godot_unsafe_fixture");
-    const started = await callUnsafe(client, { operation: "execute_start", source: 'extends SceneTree\nfunc _init():\n print("PHASE10_STDIO_UNSAFE_OK")\n quit()\n', deadlineMs: 5_000 }) as { jobToken: string };
+    stage = "execute_start"; const started = await callUnsafe(client, { operation: "execute_start", source: 'extends SceneTree\nfunc _init():\n print("PHASE10_STDIO_UNSAFE_OK")\n quit()\n', deadlineMs: 5_000 }) as { jobToken: string };
     await waitUntil(async () => ["completed", "failed", "cancelled"].includes(String((await callUnsafe(client!, { operation: "job_status", jobToken: started.jobToken }) as { state: string }).state)), 10_000, 50);
     await expect(callUnsafe(client, { operation: "job_result", jobToken: started.jobToken })).resolves.toMatchObject({ state: "completed", unsafe: true, sandboxed: false, cleanup: "succeeded" });
+  } catch (error) {
+    throw new Error(`stage=${stage}\n${String(error)}\nMCP:\n${client?.stderr ?? ""}\nEDITOR:\n${editor?.output ?? ""}`, { cause: error });
   } finally { await client?.close(); await editor?.close(); await template.cleanup(); await rm(container, { recursive: true, force: true }); }
 }, 120_000);
 
