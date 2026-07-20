@@ -15,3 +15,4 @@ export {
   type RuntimeOptions,
 } from "./runtime/createRuntime.js";
 export { connectProject } from "./commands/connect.js";
+export { approveUnsafeFixtureCommand, defaultUnsafeRegistryPath, registerUnsafeFixtureCommand, stampUnsafeFixtureCopyCommand } from "./commands/unsafeFixture.js";

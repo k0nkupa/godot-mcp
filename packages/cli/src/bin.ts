@@ -4,11 +4,15 @@ import { parseArgs } from "node:util";
 import { resolve } from "node:path";
 
 import {
+  approveUnsafeFixtureCommand,
   connectProject,
+  defaultUnsafeRegistryPath,
   disableAddon,
   doctorProject,
   initProject,
   launchSecureEditor,
+  registerUnsafeFixtureCommand,
+  stampUnsafeFixtureCopyCommand,
   uninstallProject,
 } from "./index.js";
 import { parseConnectGrants } from "./commands/connect.js";
@@ -22,11 +26,18 @@ async function main(): Promise<number> {
       godot: { type: "string" },
       grant: { type: "string", multiple: true, default: [] },
       pack: { type: "string", multiple: true, default: [] },
+      registry: { type: "string", default: defaultUnsafeRegistryPath() },
+      activation: { type: "string" },
+      "activation-dir": { type: "string" },
+      confirmation: { type: "string" },
+      registration: { type: "string" },
+      "ttl-ms": { type: "string" },
+      extension: { type: "string", multiple: true, default: [] },
     },
   });
   const [command, ...extra] = parsed.positionals;
-  if (!command || extra.length > 0 || !["init", "doctor", "disable", "uninstall", "connect", "editor"].includes(command)) {
-    process.stderr.write("Usage: godot-mcp <init|doctor|disable|uninstall|connect|editor> [--project PATH]\n");
+  if (!command || extra.length > 0 || !["init", "doctor", "disable", "uninstall", "connect", "editor", "unsafe-register", "unsafe-stamp-copy", "unsafe-approve"].includes(command)) {
+    process.stderr.write("Usage: godot-mcp <init|doctor|disable|uninstall|connect|editor|unsafe-register|unsafe-stamp-copy|unsafe-approve> [--project PATH]\n");
     return 2;
   }
 
@@ -48,7 +59,27 @@ async function main(): Promise<number> {
       parsed.values.project,
       parseConnectGrants(parsed.values.grant, parsed.values.pack),
       parsed.values.godot,
+      parsed.values.activation === undefined ? undefined : { registryPath: parsed.values.registry, leasePath: parsed.values.activation },
+      parsed.values.extension,
     );
+    return 0;
+  }
+  if (command === "unsafe-register") {
+    const result = await registerUnsafeFixtureCommand(parsed.values.project, parsed.values.registry, parsed.values.confirmation ?? "");
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+    return 0;
+  }
+  if (command === "unsafe-stamp-copy") {
+    if (!parsed.values.registration) throw new Error("--registration is required");
+    const result = await stampUnsafeFixtureCopyCommand(parsed.values.project, parsed.values.registry, parsed.values.registration);
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+    return 0;
+  }
+  if (command === "unsafe-approve") {
+    if (!parsed.values["activation-dir"]) throw new Error("--activation-dir is required");
+    const ttlMs = parsed.values["ttl-ms"] === undefined ? undefined : Number(parsed.values["ttl-ms"]);
+    const result = await approveUnsafeFixtureCommand(parsed.values.project, parsed.values.registry, parsed.values["activation-dir"], parsed.values.confirmation ?? "", ttlMs);
+    process.stdout.write(`${JSON.stringify(result)}\n`);
     return 0;
   }
   if (command === "disable") {

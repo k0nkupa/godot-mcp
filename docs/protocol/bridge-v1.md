@@ -95,6 +95,12 @@ Long full-import, run, build-solutions, and export jobs do not traverse the brid
 
 The control plane journals mutation start/completion and project-job process identity. Completed mutations replay their hash-only receipts. An incomplete mutation fails closed as an unknown outcome. Restart recovery signals a journaled child only after exact PID/fingerprint verification; ambiguity is terminal without a signal.
 
+## Phase 10 unsafe fixture and extensions
+
+Unsafe GDScript never crosses the editor bridge. After outside-MCP registration and one-use activation, the control plane writes bounded source into the disposable copy and launches a separate fixed Godot process. Public receipts always state `unsafe: true` and `sandboxed: false`. The addon receives no unsafe method, source, lease, or extension module.
+
+Startup-allowlisted extensions share one `godot_extension` MCP tool, not a bridge passthrough. Each operation supplies typed schemas and an existing command policy and executes through normal authorization/audit routing with a frozen least-authority context.
+
 ## Limits and closes
 
 - Text frames only; binary frames close with policy violation (`1008`).

@@ -77,6 +77,12 @@ describe("connect grants", () => {
     expect(() => parseConnectGrants([], ["project"])).toThrow(/project_operate/i);
   });
 
+  it("requires the exact unsafe fixture grant pair", () => {
+    expect(parseConnectGrants(["unsafe_fixture"], ["unsafe"])).toEqual({ tiers: ["observe", "unsafe_fixture"], packs: ["core", "unsafe"] });
+    expect(() => parseConnectGrants(["unsafe_fixture"], [])).toThrow(/unsafe pack/i);
+    expect(() => parseConnectGrants([], ["unsafe"])).toThrow(/unsafe_fixture/i);
+  });
+
   it("forwards the explicitly selected Godot binary to runtime launch", async () => {
     const grants = parseConnectGrants(["runtime_control"], ["runtime"]);
     await connectProject("/private/project", grants, "/custom/godot");

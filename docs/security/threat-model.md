@@ -1,4 +1,4 @@
-# Phase 0–9 threat model
+# Phase 0–10 threat model
 
 ## Security boundary
 
@@ -118,4 +118,4 @@ Receipts are append-only JSONL under `.godot/evidence/godot-mcp/`. Audit values 
 
 ## Explicitly out of scope
 
-Unsafe fixture mode is not implemented in Phase 9. Arbitrary evidence retrieval, expression evaluation, variable mutation, arbitrary method invocation, shell access, host filesystem access, network access, publishing, signing, and notarization remain out of scope. Any future unsafe fixture mode must require a disposable registered fixture, separate process, scrubbed environment, short grant, and interactive approval; it must not be described as a secure sandbox for hostile code running as the current user.
+Unsafe fixture mode is not a sandbox. It reduces accidental reachability through an outside-MCP registration, a distinct disposable copy identity, exact confirmation phrase, one-use short activation, separate fixed Godot process, scrubbed environment, isolated HOME/XDG roots, bounds, exact process ownership, audit, and cleanup. Arbitrary GDScript still runs with the current OS user's authority. Containers/VMs, arbitrary shell exposure, package publishing, and additional compatibility cells remain out of scope.

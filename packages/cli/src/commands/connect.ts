@@ -1,7 +1,8 @@
-import { connectStdio } from "@godot-mcp/mcp-server";
-import { ExtensionRegistry, type SessionGrants } from "@godot-mcp/control-plane";
-import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+
+import { ExtensionRegistry, type SessionGrants } from "@godot-mcp/control-plane";
+import { connectStdio } from "@godot-mcp/mcp-server";
 
 import { runDoctor } from "../install/doctor.js";
 import { createRuntime } from "../runtime/createRuntime.js";
