@@ -77,4 +77,12 @@ describe("comparePng", () => {
     expect(() => comparePng({ baseline: black, current: black, settings: settings({ masks: [{ x: 4, y: 0, width: 1, height: 1 }] }) })).toThrow(/bounds/i);
     expect(() => comparePng({ baseline: createRgbaPng(2048, 2048, () => [0, 0, 0, 0]), current: black, settings: settings() })).toThrow(/dimensions/i);
   });
+
+  it("rejects hostile IHDR dimensions before attempting to decode pixels", () => {
+    const hostile = Buffer.from(black);
+    hostile.writeUInt32BE(2049, 16);
+
+    expect(() => comparePng({ baseline: hostile, current: black, settings: settings() }))
+      .toThrowError(expect.objectContaining({ code: "PAYLOAD_TOO_LARGE" }));
+  });
 });

@@ -13,6 +13,8 @@ import { GodotMcpException } from "../errors.js";
 
 const MAX_PNG_BYTES = 8 * 1024 * 1024;
 const MAX_PIXELS = 4_194_304;
+const PNG_SIGNATURE = Buffer.from("89504e470d0a1a0a", "hex");
+const IHDR = Buffer.from("IHDR", "ascii");
 
 export interface ComparePngInput {
   baseline: Uint8Array;
@@ -44,9 +46,23 @@ function comparisonError(code: "INVALID_REQUEST" | "PAYLOAD_TOO_LARGE", message:
 
 function decodePng(bytes: Uint8Array): DecodedPng {
   if (bytes.byteLength > MAX_PNG_BYTES) throw comparisonError("PAYLOAD_TOO_LARGE", "Visual comparison PNG exceeds eight MiB");
+  const encoded = Buffer.from(bytes);
+  if (
+    encoded.byteLength < 24 ||
+    !encoded.subarray(0, PNG_SIGNATURE.byteLength).equals(PNG_SIGNATURE) ||
+    encoded.readUInt32BE(8) !== 13 ||
+    !encoded.subarray(12, 16).equals(IHDR)
+  ) throw comparisonError("INVALID_REQUEST", "Visual comparison input is not a valid PNG");
+  const declaredWidth = encoded.readUInt32BE(16);
+  const declaredHeight = encoded.readUInt32BE(20);
+  if (
+    declaredWidth < 1 || declaredHeight < 1 ||
+    declaredWidth > 2048 || declaredHeight > 2048 ||
+    declaredWidth * declaredHeight > MAX_PIXELS
+  ) throw comparisonError("PAYLOAD_TOO_LARGE", "Visual comparison PNG dimensions exceed certified bounds");
   let decoded: PNG;
   try {
-    decoded = PNG.sync.read(Buffer.from(bytes));
+    decoded = PNG.sync.read(encoded);
   } catch {
     throw comparisonError("INVALID_REQUEST", "Visual comparison input is not a valid PNG");
   }
