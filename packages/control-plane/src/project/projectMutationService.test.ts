@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 
 import { copyFixture } from "@godot-mcp/testkit";
@@ -8,9 +9,10 @@ import { ProjectMutationJournal, ProjectMutationService } from "./projectMutatio
 
 const key = "019f75d0-1234-7abc-8def-0123456789ab";
 const input: Extract<ProjectOperationInput, { operation: "settings_apply" }> = { operation: "settings_apply", idempotencyKey: key, changes: [{ name: "application/config/name", expectedValue: "old", value: "new" }] };
+const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
 const result: ProjectMutationResult = {
   operation: "settings_apply",
-  changes: [{ settingNameSha256: "a".repeat(64), preimageSha256: "b".repeat(64), postimageSha256: "c".repeat(64) }],
+  changes: [{ settingNameSha256: sha256("application/config/name"), preimageSha256: sha256(JSON.stringify("old")), postimageSha256: sha256(JSON.stringify("new")) }],
   rollback: "not_needed",
 };
 
@@ -46,6 +48,39 @@ describe("ProjectMutationService", () => {
       const service = new ProjectMutationService(() => ({ request: async () => ({ data: { ...result, changes: [] } }) }), journal);
       await expect(service.execute(input, "req-1")).rejects.toThrow();
       await expect(service.execute(input, "req-2")).rejects.toThrow(/unknown outcome/i);
+    } finally { await project.cleanup(); }
+  });
+
+  it("serializes concurrent retries so one idempotency key dispatches once", async () => {
+    const project = await copyFixture();
+    let calls = 0;
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    try {
+      const journal = await ProjectMutationJournal.open(join(project.root, "journal.jsonl"));
+      const service = new ProjectMutationService(() => ({ request: async () => {
+        calls += 1;
+        await pending;
+        return { data: result };
+      } }), journal);
+      const first = service.execute(input, "req-1");
+      const retry = service.execute(input, "req-2");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const callsBeforeRelease = calls;
+      release();
+      await expect(Promise.all([first, retry])).resolves.toEqual([result, result]);
+      expect(callsBeforeRelease).toBe(1);
+      expect(calls).toBe(1);
+    } finally { await project.cleanup(); }
+  });
+
+  it("rejects receipts that do not match the requested target or value", async () => {
+    const project = await copyFixture();
+    try {
+      const journal = await ProjectMutationJournal.open(join(project.root, "journal.jsonl"));
+      const mismatched = { ...result, changes: [{ ...result.changes[0]!, postimageSha256: "d".repeat(64) }] };
+      const service = new ProjectMutationService(() => ({ request: async () => ({ data: mismatched }) }), journal);
+      await expect(service.execute(input, "req-1")).rejects.toThrow(/mismatched project mutation receipt/i);
     } finally { await project.cleanup(); }
   });
 });

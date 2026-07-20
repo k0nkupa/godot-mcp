@@ -96,9 +96,17 @@ export interface ProjectMutationBridge {
 }
 
 export class ProjectMutationService {
+  private tail: Promise<void> = Promise.resolve();
+
   constructor(private readonly bridge: () => ProjectMutationBridge | null, private readonly journal: ProjectMutationJournal) {}
 
   async execute(rawInput: ProjectMutationInput, correlationId: string): Promise<ProjectMutationResult> {
+    const run = this.tail.then(() => this.executeExclusive(rawInput, correlationId));
+    this.tail = run.then(() => undefined, () => undefined);
+    return run;
+  }
+
+  private async executeExclusive(rawInput: ProjectMutationInput, correlationId: string): Promise<ProjectMutationResult> {
     const parsed = ProjectOperationInputSchema.parse(rawInput);
     if (parsed.operation !== "settings_apply" && parsed.operation !== "plugin_set") throw conflict("Operation is not a project mutation");
     const input = parsed;
@@ -113,13 +121,24 @@ export class ProjectMutationService {
     await this.journal.begin(input.idempotencyKey, requestDigest);
     const response = await bridge.request("project.operation", input, { timeoutMs: 30_000, maxResponseBytes: 256 * 1024, correlationId });
     const result = ProjectMutationResultSchema.parse(response.data);
-    if (result.operation !== input.operation) {
-      throw conflict("Godot returned a mismatched project mutation receipt", true);
-    }
-    if (result.operation === "settings_apply" && input.operation === "settings_apply" && result.changes.length !== input.changes.length) {
+    if (!receiptMatchesRequest(input, result)) {
       throw conflict("Godot returned a mismatched project mutation receipt", true);
     }
     await this.journal.complete(input.idempotencyKey, requestDigest, result);
     return result;
   }
+}
+
+function receiptMatchesRequest(input: ProjectMutationInput, result: ProjectMutationResult): boolean {
+  if (result.operation !== input.operation) return false;
+  if (result.operation === "plugin_set" && input.operation === "plugin_set") {
+    return result.pluginSha256 === sha256(input.pluginPath) && result.enabled === input.enabled;
+  }
+  if (result.operation !== "settings_apply" || input.operation !== "settings_apply" || result.changes.length !== input.changes.length) return false;
+  return result.changes.every((receipt, index) => {
+    const change = input.changes[index];
+    if (!change) return false;
+    if (receipt.settingNameSha256 !== sha256(change.name) || receipt.postimageSha256 !== sha256(JSON.stringify(change.value))) return false;
+    return change.expectedValue === undefined || receipt.preimageSha256 === sha256(JSON.stringify(change.expectedValue));
+  });
 }

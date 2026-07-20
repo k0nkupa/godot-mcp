@@ -20,6 +20,8 @@ it("requires an existing preset with an explicit Godot MCP exclusion", async () 
   try {
     await writeFile(join(project.root, "export_presets.cfg"), '[preset.0]\nname="Safe"\nexclude_filter="addons/godot_mcp/**"\n');
     await expect(assertExportPreflight(project.root, "Safe")).resolves.toBeUndefined();
+    await writeFile(join(project.root, "export_presets.cfg"), '[preset.0]\nname="Weak"\nexclude_filter="addons/godot_mcp/*"\n');
+    await expect(assertExportPreflight(project.root, "Weak")).rejects.toThrow(/must exclude/i);
     await expect(assertExportPreflight(project.root, "Missing")).rejects.toThrow(/does not exist/i);
     await writeFile(join(project.root, "export_presets.cfg"), '[preset.0]\nname="Unsafe"\nexclude_filter=""\n');
     await expect(assertExportPreflight(project.root, "Unsafe")).rejects.toThrow(/must exclude/i);

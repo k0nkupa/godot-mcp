@@ -35,7 +35,7 @@ export async function assertExportPreflight(projectRoot: string, presetName: str
   const section = sections.find((candidate) => candidate.match(/^name="(.*)"$/mu)?.[1] === presetName);
   if (!section) throw denied("Selected export preset does not exist");
   const excludes = section.match(/^exclude_filter="(.*)"$/mu)?.[1]?.split(",").map((value) => value.trim()) ?? [];
-  if (!excludes.some((value) => value === "addons/godot_mcp/**" || value === "addons/godot_mcp/*")) {
+  if (!excludes.includes("addons/godot_mcp/**")) {
     throw denied("Export preset must exclude addons/godot_mcp/**");
   }
 }
