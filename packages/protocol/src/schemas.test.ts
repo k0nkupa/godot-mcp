@@ -17,6 +17,7 @@ describe("protocol schemas", () => {
 
   it("accepts the defined capability packs and rejects unknown packs", () => {
     expect(CapabilityPackSchema.safeParse("core").success).toBe(true);
+    expect(CapabilityPackSchema.safeParse("visual").success).toBe(true);
     expect(CapabilityPackSchema.safeParse("unsafe").success).toBe(true);
     expect(CapabilityPackSchema.safeParse("shell").success).toBe(false);
   });

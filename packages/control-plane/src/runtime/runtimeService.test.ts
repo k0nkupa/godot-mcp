@@ -11,6 +11,55 @@ const project = {
   projectConfigSha256: "a".repeat(64),
 };
 
+it("binds deterministic pins into both the descriptor and fixed process launch", async () => {
+  const descriptorInputs: unknown[] = [];
+  const processInputs: unknown[] = [];
+  const pins = { width: 320, height: 180, renderer: "gl_compatibility" as const, locale: "en_NZ", seed: 42, fixedFps: 60 as const };
+  const service = new RuntimeService({
+    project,
+    sessionId: () => "session_12345678",
+    createDescriptor: async (input) => {
+      descriptorInputs.push(input);
+      return {
+        path: "/private/runtime/descriptor.json",
+        descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001, ownerLeasePath: "/private/runtime/runtime-owner.lease" },
+        secret: Buffer.alloc(32),
+        cleanup: async () => undefined,
+      };
+    },
+    prepare: async () => ({ debugPort: 6007 }),
+    launchProcess: async (input) => {
+      processInputs.push(input);
+      return { pid: 42, fingerprint: "42:start", stop: async () => undefined, wait: async () => new Promise<number>(() => undefined) };
+    },
+    command: async (operation) => operation === "await_ready" ? { pid: 42, godotVersion: "4.7.stable", observedPins: pins } : { ok: true },
+  });
+
+  const launched = await service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000, pins });
+  expect(descriptorInputs).toEqual([expect.objectContaining({ pins })]);
+  expect(processInputs).toEqual([expect.objectContaining({ pins })]);
+  await service.execute({ operation: "stop", handle: launched.handle });
+});
+
+it("rejects a pinned runtime that reports different observed pins", async () => {
+  const pins = { width: 320, height: 180, renderer: "gl_compatibility" as const, locale: "en_NZ", seed: 42, fixedFps: 60 as const };
+  const service = new RuntimeService({
+    project,
+    sessionId: () => "session_12345678",
+    createDescriptor: async (input) => ({
+      path: "/private/runtime/descriptor.json",
+      descriptor: { ...input, secret: "a".repeat(43), launchNonce: "b".repeat(43), createdAtUnixMs: 1, expiresAtUnixMs: 60_001, ownerLeasePath: "/private/runtime/runtime-owner.lease" },
+      secret: Buffer.alloc(32), cleanup: async () => undefined,
+    }),
+    prepare: async () => ({ debugPort: 6007 }),
+    launchProcess: async () => ({ pid: 42, fingerprint: "42:start", stop: async () => undefined, wait: async () => new Promise<number>(() => undefined) }),
+    command: async (operation) => operation === "await_ready" ? { pid: 42, observedPins: { ...pins, width: 321 } } : { ok: true },
+  });
+
+  await expect(service.launch({ scenePath: "res://runtime/runtime_fixture.tscn", startupTimeoutMs: 5_000, pins }))
+    .rejects.toMatchObject({ code: "AUTHENTICATION_FAILED" });
+});
+
 it("serializes one runtime generation and rejects stale handles", async () => {
   const calls: string[] = [];
   const timeouts: Array<number | undefined> = [];

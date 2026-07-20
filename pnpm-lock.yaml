@@ -76,6 +76,9 @@ importers:
       '@godot-mcp/protocol':
         specifier: workspace:*
         version: link:../protocol
+      pngjs:
+        specifier: 7.0.0
+        version: 7.0.0
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -83,6 +86,9 @@ importers:
       '@godot-mcp/testkit':
         specifier: workspace:*
         version: link:../testkit
+      '@types/pngjs':
+        specifier: 6.0.5
+        version: 6.0.5
 
   packages/mcp-server:
     dependencies:

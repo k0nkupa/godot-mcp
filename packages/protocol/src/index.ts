@@ -100,4 +100,22 @@ export {
   type RuntimeHandle,
   type RuntimeOperationInput,
 } from "./runtime.js";
+export {
+  EvidenceObservationUriSchema,
+  RuntimeLaunchPinsSchema,
+  ScenarioDeclarationSchema,
+  ScenarioJobReceiptSchema,
+  ScenarioReportSchema,
+  VisualComparisonResultSchema,
+  VisualComparisonSettingsSchema,
+  VisualOperationInputSchema,
+  VisualRectSchema,
+  type RuntimeLaunchPins,
+  type ScenarioDeclaration,
+  type ScenarioJobReceipt,
+  type ScenarioReport,
+  type VisualComparisonResult,
+  type VisualComparisonSettings,
+  type VisualOperationInput,
+} from "./visual.js";
 export { BRIDGE_PROTOCOL_VERSION, PRODUCT_VERSION } from "./version.js";

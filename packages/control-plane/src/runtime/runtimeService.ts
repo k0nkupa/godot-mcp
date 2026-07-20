@@ -11,10 +11,11 @@ import type {
   RuntimeCaptureInput,
   RuntimeDebugOperationInput,
   RuntimeHandle,
+  RuntimeLaunchPins,
   RuntimeOperationInput,
   RuntimePerformanceOperationInput,
 } from "@godot-mcp/protocol";
-import { DebugStopResultSchema, InputOperationResultSchema, MonitorSnapshotSchema, ProfileJobReceiptSchema, ProfileResultSchema } from "@godot-mcp/protocol";
+import { canonicalJson, DebugStopResultSchema, InputOperationResultSchema, MonitorSnapshotSchema, ProfileJobReceiptSchema, ProfileResultSchema, RuntimeLaunchPinsSchema } from "@godot-mcp/protocol";
 
 import { GodotMcpException } from "../errors.js";
 import { resolveProjectPath } from "../project/pathPolicy.js";
@@ -40,6 +41,7 @@ interface RuntimeProcessLaunchInput {
   projectRoot: string;
   debugPort: number;
   descriptorPath: string;
+  pins?: RuntimeLaunchPins;
 }
 
 export interface RuntimeServiceDependencies {
@@ -221,6 +223,7 @@ export class RuntimeService {
         runId: this.handle.runId,
         generation: this.handle.generation,
         scenePath: input.scenePath,
+        ...(input.pins ? { pins: input.pins } : {}),
       };
       this.descriptor = await (this.dependencies.createDescriptor ?? createRuntimeDescriptor)(descriptorInput);
       const descriptor = this.descriptor;
@@ -253,6 +256,7 @@ export class RuntimeService {
         projectRoot: this.dependencies.project.rootRealPath,
         debugPort: prepared.debugPort,
         descriptorPath: descriptor.path,
+        ...(input.pins ? { pins: input.pins } : {}),
       });
       this.assertLaunchCurrent(epoch);
       const ownedProcess = this.process;
@@ -270,6 +274,12 @@ export class RuntimeService {
         Number((ready as { pid: unknown }).pid) !== this.process.pid
       ) {
         throw runtimeError("AUTHENTICATION_FAILED", "Authenticated runtime PID does not match the owned process");
+      }
+      if (input.pins) {
+        const observedPins = RuntimeLaunchPinsSchema.safeParse((ready as { observedPins?: unknown }).observedPins);
+        if (!observedPins.success || canonicalJson(observedPins.data) !== canonicalJson(input.pins)) {
+          throw runtimeError("AUTHENTICATION_FAILED", "Runtime did not apply the authenticated deterministic launch pins");
+        }
       }
       const readySessionId = Number((ready as { debuggerSessionId?: unknown }).debuggerSessionId);
       if (this.dependencies.requireAuthenticatedDebuggerMetadata && (!Number.isInteger(readySessionId) || readySessionId < 0)) {

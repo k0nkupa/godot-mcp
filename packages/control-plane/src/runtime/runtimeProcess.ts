@@ -2,6 +2,8 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
+import type { RuntimeLaunchPins } from "@godot-mcp/protocol";
+
 import { GodotMcpException } from "../errors.js";
 
 const execFileAsync = promisify(execFile);
@@ -11,12 +13,19 @@ export interface RuntimeArgumentsInput {
   projectRoot: string;
   debugPort: number;
   descriptorPath: string;
+  pins?: RuntimeLaunchPins;
 }
 
 export function godotRuntimeArguments(input: RuntimeArgumentsInput): string[] {
   return [
     "--path",
     input.projectRoot,
+    ...(input.pins ? [
+      "--resolution", `${input.pins.width}x${input.pins.height}`,
+      "--rendering-method", input.pins.renderer,
+      "--language", input.pins.locale,
+      "--fixed-fps", String(input.pins.fixedFps),
+    ] : []),
     "--scene",
     "res://addons/godot_mcp/runtime/runtime_harness.tscn",
     "--remote-debug",

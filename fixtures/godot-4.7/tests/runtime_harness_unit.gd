@@ -14,6 +14,11 @@ func _init() -> void:
 	assert(RuntimeHarness.descriptor_argument(PackedStringArray(["--godot-mcp-runtime-descriptor=a", "--godot-mcp-runtime-descriptor=b"])).is_empty())
 	assert(RuntimeHarness.descriptor_path_is_allowed("/tmp/godot-mcp/runtime-a.json", "/tmp/godot-mcp"))
 	assert(not RuntimeHarness.descriptor_path_is_allowed("/tmp/else/runtime-a.json", "/tmp/godot-mcp"))
+	var valid_pins := {"width": 320, "height": 180, "renderer": "gl_compatibility", "locale": "en_NZ", "seed": 42, "fixedFps": 60}
+	assert(RuntimeHarness.descriptor_pins_are_valid(valid_pins))
+	assert(not RuntimeHarness.descriptor_pins_are_valid(valid_pins.merged({"fixedFps": 59}, true)))
+	assert(not RuntimeHarness.descriptor_pins_are_valid(valid_pins.merged({"locale": "../../etc"}, true)))
+	assert(not RuntimeHarness.descriptor_pins_are_valid(valid_pins.merged({"rawArguments": ["--script", "bad.gd"]}, true)))
 	assert(RuntimeHarness.operation_is_allowed("tree"))
 	assert(RuntimeHarness.operation_is_allowed("input"))
 	assert(RuntimeHarness.operation_is_allowed("monitor_snapshot"))

@@ -6,6 +6,7 @@ import {
   expandPermissionTiers,
   EDITOR_POLICY,
   INPUT_POLICY,
+  VISUAL_POLICY,
   RUNTIME_CAPTURE_POLICY,
   RUNTIME_POLICY,
   visibleCapabilities,
@@ -124,5 +125,21 @@ describe("authorization policy", () => {
       pack: "editor",
       mutating: true,
     });
+  });
+
+  it("requires runtime, input, and visual together for visual QA", () => {
+    for (const packs of [
+      ["core", "visual"],
+      ["core", "runtime", "visual"],
+      ["core", "input", "visual"],
+    ] as const) {
+      expect(() => authorize({ tiers: ["observe", "runtime_control"], packs: [...packs] }, VISUAL_POLICY))
+        .toThrowError(expect.objectContaining({ code: "PERMISSION_REQUIRED" }));
+      expect(visibleCapabilities({ tiers: ["observe", "runtime_control"], packs: [...packs] }).map((item) => item.command))
+        .not.toContain("godot_visual");
+    }
+    const grants = { tiers: ["observe", "runtime_control"] as const, packs: ["core", "runtime", "input", "visual"] as const };
+    expect(authorize({ tiers: [...grants.tiers], packs: [...grants.packs] }, VISUAL_POLICY)).toEqual({ allowed: true });
+    expect(visibleCapabilities({ tiers: [...grants.tiers], packs: [...grants.packs] }).map((item) => item.command)).toContain("godot_visual");
   });
 });

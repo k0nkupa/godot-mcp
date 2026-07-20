@@ -5,10 +5,11 @@ import { expandPermissionTiers, type CommandPolicy, type SessionGrants } from ".
 
 export function authorize(grants: SessionGrants, policy: CommandPolicy): { allowed: true } {
   const tiers = expandPermissionTiers(grants.tiers);
-  if (!tiers.includes(policy.tier) || !grants.packs.includes(policy.pack)) {
+  const requiredPacks = policy.requiredPacks ?? [policy.pack];
+  if (!tiers.includes(policy.tier) || !requiredPacks.every((pack) => grants.packs.includes(pack))) {
     throw new GodotMcpException({
       code: "PERMISSION_REQUIRED",
-      message: `${policy.command} requires tier ${policy.tier} and capability pack ${policy.pack}`,
+      message: `${policy.command} requires tier ${policy.tier} and capability packs ${requiredPacks.join(", ")}`,
       retryable: false,
       correlationId: randomUUID(),
       partialEffects: false,

@@ -16,6 +16,31 @@ describe("owned runtime launch", () => {
     ]);
   });
 
+  it("maps parsed launch pins to fixed engine arguments without raw passthrough", () => {
+    expect(godotRuntimeArguments({
+      projectRoot: "/private/project",
+      debugPort: 6007,
+      descriptorPath: "/private/runtime/runtime.json",
+      pins: { width: 320, height: 180, renderer: "gl_compatibility", locale: "en_NZ", seed: 42, fixedFps: 60 },
+    })).toEqual([
+      "--path", "/private/project",
+      "--resolution", "320x180",
+      "--rendering-method", "gl_compatibility",
+      "--language", "en_NZ",
+      "--fixed-fps", "60",
+      "--scene", "res://addons/godot_mcp/runtime/runtime_harness.tscn",
+      "--remote-debug", "tcp://127.0.0.1:6007",
+      "--", "--godot-mcp-runtime-descriptor=/private/runtime/runtime.json",
+    ]);
+    expect(godotRuntimeArguments({
+      projectRoot: "/private/project",
+      debugPort: 6007,
+      descriptorPath: "/private/runtime/runtime.json",
+      pins: { width: 320, height: 180, renderer: "gl_compatibility", locale: "en_NZ", seed: 42, fixedFps: 60 },
+      rawArguments: ["--script", "res://bad.gd"],
+    } as never)).not.toContain("--script");
+  });
+
   it("keeps only the runtime allowlist and removes credentials", () => {
     expect(scrubRuntimeEnvironment({ PATH: "/bin", HOME: "/tmp/home", LANG: "en_NZ", AWS_SECRET_ACCESS_KEY: "secret", TOKEN: "secret" })).toEqual({ PATH: "/bin", HOME: "/tmp/home", LANG: "en_NZ" });
   });

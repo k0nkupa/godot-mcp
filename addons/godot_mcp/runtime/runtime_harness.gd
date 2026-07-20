@@ -165,6 +165,9 @@ func _capture(message: String, data: Array) -> bool:
 	return true
 
 func _load_game_scene() -> void:
+	var launch_pins: Dictionary = _descriptor.get("pins", {})
+	if not launch_pins.is_empty():
+		seed(int(launch_pins.seed))
 	var resource := load(String(_descriptor.scenePath))
 	if resource == null or not resource is PackedScene:
 		get_tree().quit(3)
@@ -185,6 +188,8 @@ func _load_game_scene() -> void:
 		"runId": String(_descriptor.runId),
 		"generation": int(_descriptor.generation),
 		"pid": OS.get_process_id(),
+		"godotVersion": Engine.get_version_info().string,
+		"observedPins": observed_launch_pins(launch_pins),
 	}])
 
 func _bind_game_scene() -> void:
@@ -350,7 +355,52 @@ static func descriptor_has_required_fields(descriptor: Dictionary) -> bool:
 	for field in ["project", "sessionId", "runId", "generation", "scenePath", "ownerLeasePath", "secret", "launchNonce", "expiresAtUnixMs"]:
 		if not descriptor.has(field):
 			return false
-	return typeof(descriptor.project) == TYPE_DICTIONARY and descriptor.project.has("projectId")
+	return (
+		typeof(descriptor.project) == TYPE_DICTIONARY
+		and descriptor.project.has("projectId")
+		and (not descriptor.has("pins") or descriptor_pins_are_valid(descriptor.pins))
+	)
+
+static func descriptor_pins_are_valid(pins: Variant) -> bool:
+	if typeof(pins) != TYPE_DICTIONARY or pins.size() != 6:
+		return false
+	for field in ["width", "height", "renderer", "locale", "seed", "fixedFps"]:
+		if not pins.has(field):
+			return false
+	return (
+		typeof(pins.width) == TYPE_INT and int(pins.width) >= 1 and int(pins.width) <= 2048
+		and typeof(pins.height) == TYPE_INT and int(pins.height) >= 1 and int(pins.height) <= 2048
+		and String(pins.renderer) in ["gl_compatibility", "mobile"]
+		and locale_pin_is_valid(String(pins.locale))
+		and typeof(pins.seed) == TYPE_INT and int(pins.seed) >= -2147483648 and int(pins.seed) <= 2147483647
+		and typeof(pins.fixedFps) == TYPE_INT and int(pins.fixedFps) in [30, 60, 120]
+	)
+
+static func locale_pin_is_valid(locale: String) -> bool:
+	var parts := locale.split("_", false)
+	if parts.size() < 1 or parts.size() > 2 or parts[0].length() < 2 or parts[0].length() > 3:
+		return false
+	if parts.size() == 2 and parts[1].length() != 2:
+		return false
+	for part: String in parts:
+		for index in part.length():
+			var code := part.unicode_at(index)
+			if not (code >= 65 and code <= 90) and not (code >= 97 and code <= 122):
+				return false
+	return true
+
+func observed_launch_pins(declared: Dictionary) -> Dictionary:
+	if declared.is_empty():
+		return {}
+	var viewport_size := get_viewport().get_visible_rect().size
+	return {
+		"width": roundi(viewport_size.x),
+		"height": roundi(viewport_size.y),
+		"renderer": RenderingServer.get_current_rendering_method(),
+		"locale": TranslationServer.get_locale(),
+		"seed": int(declared.seed),
+		"fixedFps": int(declared.fixedFps),
+	}
 
 static func operation_is_allowed(operation: String) -> bool:
 	return operation in ["status", "tree", "node", "logs", "wait", "pause", "resume", "step", "stop", "capture", "input", "monitor_snapshot", "profile_start", "profile_status", "profile_cancel", "profile_result", "debug_stack_data", "debug_variables_data", "debug_children_data", "debug_clear_data"]

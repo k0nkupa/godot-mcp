@@ -19,3 +19,9 @@ export {
 } from "./registerEditorTools.js";
 export { connectStdio } from "./stdio.js";
 export { toMcpToolResult } from "./toolResult.js";
+export {
+  registerVisualTools,
+  visualAuditArguments,
+  type VisualController,
+  type VisualToolDependencies,
+} from "./registerVisualTools.js";

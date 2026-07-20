@@ -29,6 +29,7 @@ it("creates an owner-only one-use runtime descriptor", async () => {
     runId: "019f644c-1379-79c0-825e-66a4b7653bd2",
     generation: 1,
     scenePath: "res://runtime/runtime_fixture.tscn",
+    pins: { width: 320, height: 180, renderer: "gl_compatibility" as const, locale: "en_NZ", seed: 42, fixedFps: 60 as const },
   };
 
   const material = await createRuntimeDescriptor(input);
@@ -39,6 +40,31 @@ it("creates an owner-only one-use runtime descriptor", async () => {
   expect(material.descriptor.secret).toMatch(/^[A-Za-z0-9_-]{43}$/);
   await expect(consumeRuntimeDescriptor(material.path, input)).resolves.toMatchObject(input);
   await expect(consumeRuntimeDescriptor(material.path, input)).rejects.toMatchObject({ code: "AUTHENTICATION_FAILED" });
+});
+
+it("rejects a descriptor whose deterministic launch pins do not match", async () => {
+  const project = await copyFixture();
+  cleanups.push(project.cleanup);
+  process.env.XDG_RUNTIME_DIR = join(project.root, "runtime");
+  const input = {
+    project: {
+      projectId: "019f644c-1379-79c0-825e-66a4b7653bd1",
+      rootRealPath: project.root,
+      projectConfigSha256: "d".repeat(64),
+    },
+    sessionId: "session_12345678",
+    runId: "019f644c-1379-79c0-825e-66a4b7653bd7",
+    generation: 1,
+    scenePath: "res://runtime/runtime_fixture.tscn",
+    pins: { width: 320, height: 180, renderer: "gl_compatibility" as const, locale: "en_NZ", seed: 42, fixedFps: 60 as const },
+  };
+  const material = await createRuntimeDescriptor(input);
+  cleanups.push(material.cleanup);
+
+  await expect(consumeRuntimeDescriptor(material.path, {
+    ...input,
+    pins: { ...input.pins, seed: 43 },
+  })).rejects.toMatchObject({ code: "AUTHENTICATION_FAILED" });
 });
 
 it("rejects expired and mismatched descriptors", async () => {

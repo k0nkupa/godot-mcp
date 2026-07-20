@@ -33,6 +33,8 @@ export {
   EDITOR_POLICY,
   INPUT_POLICIES,
   INPUT_POLICY,
+  VISUAL_POLICIES,
+  VISUAL_POLICY,
   PHASE_ONE_POLICIES,
   RUNTIME_CAPTURE_POLICY,
   RUNTIME_POLICIES,
@@ -47,7 +49,10 @@ export { redactAuditValue } from "./audit/redact.js";
 export {
   EvidenceStore,
   type EvidenceReference,
+  type JsonEvidenceReference,
+  type PngBaselineManifest,
   type PngEvidenceMetadata,
+  type PngObservation,
 } from "./evidence/evidenceStore.js";
 export {
   JsonlAuditSink,
@@ -127,3 +132,16 @@ export {
   traceSha256,
   type InputAuditSummary,
 } from "./runtime/inputReceipt.js";
+export { comparePng, type ComparePngInput, type ComparePngOutput } from "./visual/pngComparison.js";
+export {
+  ScenarioService,
+  type ScenarioFrame,
+  type ScenarioRuntime,
+  type ScenarioServiceDependencies,
+} from "./visual/scenarioService.js";
+export {
+  VisualService,
+  type VisualExecutionResult,
+  type VisualScenarioController,
+  type VisualServiceDependencies,
+} from "./visual/visualService.js";

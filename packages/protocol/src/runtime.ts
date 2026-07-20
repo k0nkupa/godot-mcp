@@ -2,9 +2,9 @@ import { z } from "zod";
 
 import { RuntimeDebugOperationInputSchema } from "./runtimeDebug.js";
 import { RuntimePerformanceOperationInputSchema } from "./runtimePerformance.js";
-import { RuntimeHandleSchema } from "./runtimeShared.js";
+import { RuntimeHandleSchema, RuntimeLaunchPinsSchema } from "./runtimeShared.js";
 
-const RuntimeScenePathSchema = z
+export const RuntimeScenePathSchema = z
   .string()
   .min(8)
   .max(512)
@@ -14,7 +14,7 @@ const RuntimeScenePathSchema = z
     message: "Runtime scene path may not traverse outside the project",
   });
 
-const RuntimeNodePathSchema = z
+export const RuntimeNodePathSchema = z
   .string()
   .min(1)
   .max(512)
@@ -27,8 +27,8 @@ const RuntimeNodePathSchema = z
     { message: "Runtime node path must be relative and contain no traversal or subnames" },
   );
 
-const PrimitiveSchema = z.union([z.string().max(4096), z.number().finite(), z.boolean(), z.null()]);
-const SafeRuntimePropertyPatternSchema = z
+export const RuntimePrimitiveSchema = z.union([z.string().max(4096), z.number().finite(), z.boolean(), z.null()]);
+export const SafeRuntimePropertyPatternSchema = z
   .string()
   .min(1)
   .max(64)
@@ -42,7 +42,7 @@ const SafeRuntimePropertyPatternSchema = z
     { message: "Runtime property pattern uses unsupported regex features" },
   );
 
-const RuntimeWaitConditionSchema = z.discriminatedUnion("type", [
+export const RuntimeWaitConditionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("node_exists"), nodePath: RuntimeNodePathSchema }).strict(),
   z.object({ type: z.literal("node_missing"), nodePath: RuntimeNodePathSchema }).strict(),
   z
@@ -50,7 +50,7 @@ const RuntimeWaitConditionSchema = z.discriminatedUnion("type", [
       type: z.literal("property_equals"),
       nodePath: RuntimeNodePathSchema,
       property: z.string().min(1).max(128).regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
-      value: PrimitiveSchema,
+      value: RuntimePrimitiveSchema,
     })
     .strict(),
   z
@@ -87,6 +87,7 @@ const BaseRuntimeOperationInputSchema = z.discriminatedUnion("operation", [
       operation: z.literal("launch"),
       scenePath: RuntimeScenePathSchema,
       startupTimeoutMs: z.number().int().min(1_000).max(30_000).default(15_000),
+      pins: RuntimeLaunchPinsSchema.optional(),
     })
     .strict(),
   z.object({ operation: z.literal("status"), handle: RuntimeHandleSchema.optional() }).strict(),

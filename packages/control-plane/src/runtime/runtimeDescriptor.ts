@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { lstat, readFile, readdir, rename, rm, utimes, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
-import { ProjectIdentitySchema, RuntimeHandleSchema, type ProjectIdentity } from "@godot-mcp/protocol";
+import { canonicalJson, ProjectIdentitySchema, RuntimeHandleSchema, RuntimeLaunchPinsSchema, type ProjectIdentity, type RuntimeLaunchPins } from "@godot-mcp/protocol";
 import { z } from "zod";
 
 import { GodotMcpException } from "../errors.js";
@@ -15,6 +15,7 @@ export const RuntimeDescriptorSchema = z
     runId: RuntimeHandleSchema.shape.runId,
     generation: RuntimeHandleSchema.shape.generation,
     scenePath: z.string().startsWith("res://").endsWith(".tscn").max(512),
+    pins: RuntimeLaunchPinsSchema.optional(),
     ownerLeasePath: z.string().min(1).max(1024),
     secret: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
     launchNonce: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
@@ -31,6 +32,7 @@ export interface RuntimeDescriptorInput {
   runId: string;
   generation: number;
   scenePath: string;
+  pins?: RuntimeLaunchPins;
   now?: number;
 }
 
@@ -60,7 +62,8 @@ function assertExpected(descriptor: RuntimeDescriptor, expected: RuntimeDescript
     descriptor.sessionId !== expected.sessionId ||
     descriptor.runId !== expected.runId ||
     descriptor.generation !== expected.generation ||
-    descriptor.scenePath !== expected.scenePath
+    descriptor.scenePath !== expected.scenePath ||
+    canonicalJson(descriptor.pins ?? null) !== canonicalJson(expected.pins ?? null)
   ) {
     throw authenticationFailed("Runtime descriptor identity does not match the prepared run");
   }
@@ -114,6 +117,7 @@ export async function createRuntimeDescriptor(input: RuntimeDescriptorInput): Pr
     runId: input.runId,
     generation: input.generation,
     scenePath: input.scenePath,
+    ...(input.pins ? { pins: input.pins } : {}),
     ownerLeasePath: join(directory, `runtime-${input.project.projectId}-${input.runId}.lease`),
     secret: secret.toString("base64url"),
     launchNonce: randomBytes(32).toString("base64url"),
