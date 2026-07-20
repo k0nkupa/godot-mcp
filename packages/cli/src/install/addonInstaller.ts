@@ -32,6 +32,7 @@ import {
 export interface InstallAddonResult {
   projectRoot: string;
   manifest: InstallManifest;
+  warnings?: string[];
 }
 
 function conflict(message: string): GodotMcpException {
@@ -202,9 +203,10 @@ export async function upgradeAddon(
   const temporaryRoot = join(addonsRoot, `.godot_mcp.upgrade-${transactionId}`);
   const backupRoot = join(addonsRoot, `.godot_mcp.rollback-${transactionId}`);
   let switched = false;
+  let manifest: InstallManifest | undefined;
   try {
     const entries = await stageAddon(resolve(sourceInput), temporaryRoot);
-    const manifest: InstallManifest = {
+    manifest = {
       ...oldManifest,
       productVersion: PRODUCT_VERSION,
       installedAt: new Date().toISOString(),
@@ -220,8 +222,6 @@ export async function upgradeAddon(
     }
     switched = true;
     await writeInstallManifest(project.rootRealPath, manifest);
-    await rm(backupRoot, { recursive: true });
-    return { projectRoot: project.rootRealPath, manifest };
   } catch (error) {
     await rm(temporaryRoot, { recursive: true, force: true });
     if (switched) {
@@ -230,6 +230,12 @@ export async function upgradeAddon(
       await writeInstallManifest(project.rootRealPath, oldManifest);
     }
     throw error;
+  }
+  try {
+    await rm(backupRoot, { recursive: true });
+    return { projectRoot: project.rootRealPath, manifest };
+  } catch {
+    return { projectRoot: project.rootRealPath, manifest, warnings: [`Committed upgrade retained rollback residue: ${backupRoot}`] };
   }
 }
 

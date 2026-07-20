@@ -242,7 +242,10 @@ export async function verifyRelease(output) {
     assert(packedJson.license === "MIT" && entries.has("package/README.md") && entries.has("package/LICENSE"), `npm tarball distribution metadata is incomplete: ${artifact.name}`);
     assert(!JSON.stringify(packedJson.dependencies ?? {}).includes("workspace:"), `npm tarball contains workspace dependency: ${artifact.name}`);
     assert(![...entries.keys()].some((name) => /\.test\.(?:js|d\.ts)(?:\.map)?$/.test(name)), `npm tarball contains compiled tests: ${artifact.name}`);
-    if (packedJson.name === "@godot-mcp/cli") assert(entries.has("package/godot/plugin_state.gd"), "CLI tarball omits its Godot plugin-state helper");
+    if (packedJson.name === "@godot-mcp/cli") {
+      assert(packedJson.bin?.["godot-mcp"] === "./dist/bin.js", "CLI tarball omits its godot-mcp executable mapping");
+      assert(entries.has("package/godot/plugin_state.gd"), "CLI tarball omits its Godot plugin-state helper");
+    }
   }
   const checksumLines = (await readFile(join(output, "SHA256SUMS"), "utf8")).trim().split("\n");
   const checksums = new Map(checksumLines.map((line) => {

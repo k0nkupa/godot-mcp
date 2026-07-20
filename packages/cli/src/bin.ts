@@ -53,8 +53,8 @@ async function main(): Promise<number> {
     return report.healthy ? 0 : 4;
   }
   if (command === "upgrade") {
-    await upgradeProject(parsed.values.project, parsed.values.source);
-    process.stdout.write(`${JSON.stringify({ ok: true, command })}\n`);
+    const result = await upgradeProject(parsed.values.project, parsed.values.source);
+    process.stdout.write(`${JSON.stringify({ ok: true, command, ...result })}\n`);
     return 0;
   }
   if (command === "editor") {
