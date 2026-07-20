@@ -309,7 +309,7 @@ Expected: FAIL because launch pins are not represented.
 
 - [ ] **Step 3: Implement the fixed pin mapping**
 
-Include pins inside the signed descriptor envelope. Build engine arguments from parsed fields, never strings supplied by callers. Set the seed before loading the game scene. Extend runtime-ready metadata with the observed viewport, renderer, locale, seed, and fixed FPS.
+Include pins inside the signed descriptor envelope. Build engine arguments from parsed fields, never strings supplied by callers. Set the seed before loading the game scene. Extend runtime-ready metadata with the observed runtime-window resolution, renderer, locale, seed, and fixed FPS.
 
 - [ ] **Step 4: Verify GREEN and earlier launch security**
 

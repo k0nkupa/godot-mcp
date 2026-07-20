@@ -399,10 +399,10 @@ static func locale_pin_is_valid(locale: String) -> bool:
 func observed_launch_pins(declared: Dictionary) -> Dictionary:
 	if declared.is_empty():
 		return {}
-	var viewport_size := get_viewport().get_visible_rect().size
+	var window_size := DisplayServer.window_get_size()
 	return {
-		"width": roundi(viewport_size.x),
-		"height": roundi(viewport_size.y),
+		"width": window_size.x,
+		"height": window_size.y,
 		"renderer": RenderingServer.get_current_rendering_method(),
 		"locale": TranslationServer.get_locale(),
 		"seed": int(declared.seed),

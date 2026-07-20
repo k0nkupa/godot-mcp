@@ -65,7 +65,7 @@ A scenario contains:
 - `scenePath`: contained `res://` `.tscn` path;
 - `startupTimeoutMs`: 1,000–30,000;
 - `deadlineMs`: 1,000–120,000;
-- `pins`: viewport width and height, renderer (`gl_compatibility` or `mobile`), locale, integer seed, and fixed FPS from the certified set `30`, `60`, or `120`;
+- `pins`: runtime-window width and height, renderer (`gl_compatibility` or `mobile`), locale, integer seed, and fixed FPS from the certified set `30`, `60`, or `120`;
 - `steps`: 1–64 closed-union steps.
 
 Supported steps are:

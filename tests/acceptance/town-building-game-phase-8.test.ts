@@ -22,7 +22,10 @@ test.skipIf(!sourcePresent)("accepts a town-building-game archive without changi
   try {
     await mkdir(project, { recursive: true });
     await extractHeadArchive(project);
-    const imported = await runGodot(["--headless", "--editor", "--path", project, "--import"]);
+    const imported = await runGodot(
+      ["--headless", "--editor", "--path", project, "--import"],
+      { timeoutMs: 300_000 },
+    );
     expect(imported.exitCode, imported.stderr).toBe(0);
     expect((await runCli(["init", "--project", project])).exitCode).toBe(0);
     const port = await reserveLoopbackPort();
@@ -63,7 +66,7 @@ test.skipIf(!sourcePresent)("accepts a town-building-game archive without changi
     await rm(container, { recursive: true, force: true });
     expect(await sourceState()).toEqual(before);
   }
-}, 180_000);
+}, 600_000);
 
 function townScenario(name: string, steps: ScenarioDeclaration["steps"]): ScenarioDeclaration {
   return { name, scenePath: "res://scenes/main.tscn", startupTimeoutMs: 30_000, deadlineMs: 120_000, pins, steps };

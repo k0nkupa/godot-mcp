@@ -14,7 +14,7 @@ PNG inputs are limited to eight MiB, 2048×2048, and 4,194,304 pixels. JSON evid
 
 For each compared pixel, the comparator takes the maximum absolute delta across RGBA. A pixel differs when that value is greater than `maxChannelDelta`. A result passes only when both `differentPixels <= maxDifferentPixels` and `floor(differentPixels * 1_000_000 / comparedPixels) <= maxDifferentRatioMillionths`. Masked pixels are excluded from both numerator and denominator. Failed comparisons remain ordinary visual results and retain current-frame, red-diff, and comparison-report evidence.
 
-Launch determinism is pinned inside the authenticated one-use runtime descriptor: viewport width/height, fixed renderer, locale, signed 32-bit seed, and fixed FPS. The harness applies the seed before scene load and reports observed pins. These controls reduce variance; they do not claim cross-machine rendering identity.
+Launch determinism is pinned inside the authenticated one-use runtime descriptor: runtime-window width/height, fixed renderer, locale, signed 32-bit seed, and fixed FPS. The harness attests the observed window size controlled by `--resolution`, applies the seed before scene load, and reports the remaining observed pins. Project stretch settings may use different logical canvas coordinates. These controls reduce variance; they do not claim cross-machine rendering identity.
 
 Audit records contain operation names, hashed scenario/baseline names, step-kind counts, and evidence observation URIs. They exclude input values/unicode, property values, log text, PNG bytes, caller paths, and raw scenario documents.
 
