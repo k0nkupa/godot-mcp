@@ -20,7 +20,9 @@ Audit records contain operation names, hashed scenario/baseline names, step-kind
 
 ## Realistic acceptance
 
-When `/Users/tony/Projects/town-building-game` exists, acceptance records its `HEAD`, NUL-delimited working-tree status digest, and index digest; materializes `git archive HEAD` into a disposable directory; installs the addon only in that archive; and performs two pinned paused smoke captures of `res://scenes/main.tscn`. The documented comparison allows channel delta 4 and at most 1% changed pixels. The source checkout must have identical recorded state after success or failure.
+When `/Users/tony/Projects/town-building-game` exists at the pinned source commit, acceptance records its `HEAD`, NUL-delimited working-tree status digest, and index digest; materializes `git archive HEAD` into a disposable directory; and installs the addon only in that archive. The archive uses a unique custom Godot user-data directory. An acceptance-only script exercises the project's real save/domain classes to create a deterministic developed town with four buildings, 18 residents, and fixed progression state.
+
+The normal gate never creates its own oracle. It waits for 30 rendered frames within a 30-second readiness bound, requires no error logs, pauses the runtime, captures the 1280×720 frame, and compares it with the human-approved repository baseline. The comparison allows channel delta 4 and at most 1% changed pixels. Refresh mode (`GODOT_MCP_UPDATE_TOWN_BASELINE=1`) writes a candidate bundle and deliberately fails until a human visually approves the candidate and installs its exact PNG and metadata. Both modes remove the disposable project and custom user data, and the source checkout must have identical recorded state after success or failure.
 
 ## Gate
 
