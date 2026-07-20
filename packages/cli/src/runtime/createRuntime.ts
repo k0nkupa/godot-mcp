@@ -78,16 +78,21 @@ export class GodotMcpRuntime {
     void reason;
     if (!this.closePromise) {
       const activeClose = (async () => {
-        let runtimeError: unknown;
+        const runtimeErrors: unknown[] = [];
         try {
           await this.visualScenario?.close();
+        } catch (error) {
+          runtimeErrors.push(error);
+        }
+        try {
           await this.runtime.close();
         } catch (error) {
-          runtimeError = error;
+          runtimeErrors.push(error);
         }
         await Promise.allSettled([this.mcp.close(), this.bridge.close()]);
         this.session.close();
-        if (runtimeError) throw runtimeError;
+        if (runtimeErrors.length === 1) throw runtimeErrors[0];
+        if (runtimeErrors.length > 1) throw new AggregateError(runtimeErrors, "Runtime shutdown encountered multiple failures");
       })();
       this.closePromise = activeClose;
       void activeClose.catch(() => {

@@ -151,6 +151,33 @@ describe("EvidenceStore", () => {
     }
   });
 
+  it("allows only one concurrent creator to select an immutable baseline", async () => {
+    const project = await copyFixture();
+    try {
+      const store = new EvidenceStore(project.root);
+      const first = await store.putPng("session_12345678", png, { viewport: "runtime", width: 1, height: 1 });
+      const second = await store.putPng("session_12345678", Buffer.concat([png, Buffer.from("racing")]), {
+        viewport: "runtime",
+        width: 1,
+        height: 1,
+      });
+
+      const results = await Promise.allSettled([
+        store.createPngBaseline("session_12345678", "concurrent", first.observationUri, 1),
+        store.createPngBaseline("session_12345678", "concurrent", second.observationUri, 2),
+      ]);
+
+      expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+      expect(results.filter((result) => result.status === "rejected")).toEqual([
+        expect.objectContaining({ reason: expect.objectContaining({ code: "CONFLICT" }) }),
+      ]);
+      const winner = await store.readPngBaseline("concurrent");
+      expect([first.sha256, second.sha256]).toContain(winner.sha256);
+    } finally {
+      await project.cleanup();
+    }
+  });
+
   it("rejects symlinked baseline bytes", async () => {
     const project = await copyFixture();
     try {

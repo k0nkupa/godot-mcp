@@ -27,7 +27,9 @@ const fixtureStatus = spawnSync("git", ["status", "--porcelain", "--untracked-fi
 if (fixtureStatus.status !== 0) throw new Error(fixtureStatus.stderr || "Could not inspect fixture status");
 if (fixtureStatus.stdout.trim()) offenders.push(...fixtureStatus.stdout.trim().split("\n").map((line) => `fixture diff: ${line}`));
 
-if (recordPath && await exists(recordPath)) {
+if (recordPath && !(await exists(recordPath))) {
+  offenders.push(`required cleanup record is missing: ${recordPath}`);
+} else if (recordPath) {
   const record = JSON.parse(await readFile(recordPath, "utf8"));
   if (typeof record.projectRoot === "string") await visit(record.projectRoot, record.projectRoot);
   if (typeof record.runtimeDirectory === "string") await visit(record.runtimeDirectory, record.runtimeDirectory);

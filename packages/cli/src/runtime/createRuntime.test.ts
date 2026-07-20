@@ -148,3 +148,19 @@ it("closes every outer resource while preserving runtime cleanup failures", asyn
   await expect(runtime.close("retry")).resolves.toBeUndefined();
   expect(runtimeCloseCalls).toBe(2);
 });
+
+it("still closes the owned runtime when visual scenario shutdown fails", async () => {
+  const closed: string[] = [];
+  const runtime = new GodotMcpRuntime(
+    {} as never,
+    {} as never,
+    { close: () => { closed.push("session"); } } as never,
+    { close: async () => { closed.push("bridge"); } } as never,
+    { close: async () => { closed.push("runtime"); } } as never,
+    { close: async () => { closed.push("mcp"); } } as never,
+    { close: async () => { closed.push("scenario"); throw new Error("scenario cleanup failed"); } } as never,
+  );
+
+  await expect(runtime.close("test")).rejects.toThrow("scenario cleanup failed");
+  expect(closed).toEqual(expect.arrayContaining(["scenario", "runtime", "mcp", "bridge", "session"]));
+});

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, open, readFile, rename, rm } from "node:fs/promises";
+import { link, lstat, mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { canonicalJson } from "@godot-mcp/protocol";
@@ -94,6 +94,25 @@ async function atomicWrite(path: string, contents: Uint8Array | string): Promise
   } catch (error) {
     await rm(temporary, { force: true });
     throw error;
+  }
+}
+
+async function atomicWriteOnce(path: string, contents: Uint8Array | string): Promise<boolean> {
+  const temporary = `${path}.tmp-${randomUUID()}`;
+  const handle = await open(temporary, "wx", 0o600);
+  try {
+    await handle.writeFile(contents);
+  } finally {
+    await handle.close();
+  }
+  try {
+    await link(temporary, path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw error;
+  } finally {
+    await rm(temporary, { force: true });
   }
 }
 
@@ -356,8 +375,12 @@ export class EvidenceStore {
     };
     const pngPath = join(directory, `${observation.sha256}.png`);
     if (!(await readOptionalPlainFile(pngPath))) await atomicWrite(pngPath, observation.data);
-    await atomicWrite(manifestPath, `${canonicalJson(manifest)}\n`);
-    return manifest;
+    if (await atomicWriteOnce(manifestPath, `${canonicalJson(manifest)}\n`)) return manifest;
+    const winner = await this.readPngBaselineData(name);
+    if (winner.manifest.sha256 !== observation.sha256) {
+      throw evidenceError("CONFLICT", "Visual baseline name already refers to different evidence");
+    }
+    return winner.manifest;
   }
 
   async readPngBaseline(name: string): Promise<PngBaselineManifest> {

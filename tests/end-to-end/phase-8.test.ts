@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { ScenarioDeclaration, ScenarioReport } from "@godot-mcp/protocol";
@@ -22,11 +23,16 @@ test.skipIf(process.platform !== "darwin")(
     process.env.XDG_RUNTIME_DIR = join(project.root, "runtime");
     let editor: Awaited<ReturnType<typeof launchEditor>> | undefined;
     let client: Awaited<ReturnType<typeof launchMcpClient>> | undefined;
+    let editorPid = 0;
+    let clientPid = 0;
+    let listenerPort = 0;
     try {
       expect((await runGodot(["--headless", "--editor", "--path", project.root, "--import"])).exitCode).toBe(0);
       expect((await runCli(["init", "--project", project.root])).exitCode).toBe(0);
       const port = await reserveLoopbackPort();
+      listenerPort = port;
       editor = await launchEditor(project.root, { headless: false, debugServerPort: port, dapPort: port });
+      editorPid = editor.pid;
       client = await launchMcpClient([
         "connect", "--project", project.root,
         "--grant", "runtime_control",
@@ -34,6 +40,7 @@ test.skipIf(process.platform !== "darwin")(
         "--pack", "input",
         "--pack", "visual",
       ]);
+      clientPid = client.pid;
       await waitUntil(async () => {
         const result = await client?.callTool({ name: "godot_session", arguments: {} });
         return (result?.structuredContent as { data?: { state?: string } } | undefined)?.data?.state === "attached";
@@ -63,6 +70,14 @@ test.skipIf(process.platform !== "darwin")(
     } finally {
       await client?.close();
       await editor?.close();
+      if (process.env.GODOT_MCP_PHASE8_CLEANUP_RECORD) {
+        await writeFile(process.env.GODOT_MCP_PHASE8_CLEANUP_RECORD, `${JSON.stringify({
+          projectRoot: project.root,
+          runtimeDirectory: join(project.root, "runtime"),
+          pids: [editorPid, clientPid].filter((pid) => pid > 0),
+          ports: [listenerPort].filter((port) => port > 0),
+        })}\n`, "utf8");
+      }
       if (previousRuntime === undefined) delete process.env.XDG_RUNTIME_DIR;
       else process.env.XDG_RUNTIME_DIR = previousRuntime;
       await project.cleanup();
