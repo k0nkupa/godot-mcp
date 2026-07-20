@@ -2,6 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   ProjectMutationResultSchema,
   ProjectOperationInputSchema,
+  canonicalFloat64Le,
+  canonicalJson,
   type ProjectMutationResult,
   type ProjectOperationInput,
 } from "@godot-mcp/protocol";
@@ -22,6 +24,13 @@ type JournalRecord = z.infer<typeof RecordSchema>;
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function settingValueSha256(value: string | number | boolean | null): string {
+  const canonical = typeof value === "number" && !Number.isSafeInteger(value)
+    ? canonicalJson({ $godotMcpFloat64Le: canonicalFloat64Le(value) })
+    : canonicalJson(value);
+  return sha256(canonical);
 }
 
 function conflict(message: string, partialEffects = false): GodotMcpException {
@@ -138,7 +147,7 @@ function receiptMatchesRequest(input: ProjectMutationInput, result: ProjectMutat
   return result.changes.every((receipt, index) => {
     const change = input.changes[index];
     if (!change) return false;
-    if (receipt.settingNameSha256 !== sha256(change.name) || receipt.postimageSha256 !== sha256(JSON.stringify(change.value))) return false;
-    return change.expectedValue === undefined || receipt.preimageSha256 === sha256(JSON.stringify(change.expectedValue));
+    if (receipt.settingNameSha256 !== sha256(change.name) || receipt.postimageSha256 !== settingValueSha256(change.value)) return false;
+    return change.expectedValue === undefined || receipt.preimageSha256 === settingValueSha256(change.expectedValue);
   });
 }

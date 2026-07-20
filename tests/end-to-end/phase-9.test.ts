@@ -1,4 +1,4 @@
-import { mkdir, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { copyFixture, launchEditor, launchMcpClient, reserveLoopbackPort, runCli, runGodot, waitUntil } from "@godot-mcp/testkit";
@@ -29,7 +29,9 @@ test.skipIf(process.platform !== "darwin")("Phase 9 operates a disposable projec
     await expect(callProject(client, { operation: "settings_apply", idempotencyKey: key, changes: [{ name: "application/config/name", expectedValue: "Godot MCP Fixture", value: "Phase 9 Fixture" }] })).resolves.toMatchObject({ operation: "settings_apply" });
     const enabledPlugin = await client.callTool({ name: "godot_project", arguments: { operation: "plugin_set", idempotencyKey: crypto.randomUUID(), pluginPath: "res://addons/phase9_example/plugin.cfg", expectedEnabled: false, enabled: true } });
     expect(enabledPlugin.structuredContent, editor.output).toMatchObject({ ok: true, data: { operation: "plugin_set", enabled: true } });
+    expect(await readFile(join(project.root, "project.godot"), "utf8")).toContain("res://addons/phase9_example/plugin.cfg");
     await expect(callProject(client, { operation: "plugin_set", idempotencyKey: crypto.randomUUID(), pluginPath: "res://addons/phase9_example/plugin.cfg", expectedEnabled: true, enabled: false })).resolves.toMatchObject({ operation: "plugin_set", enabled: false });
+    expect(await readFile(join(project.root, "project.godot"), "utf8")).not.toContain("res://addons/phase9_example/plugin.cfg");
     const external = join(dirname(project.root), "external");
     await mkdir(external);
     await writeFile(join(external, "plugin.cfg"), "[plugin]\n");

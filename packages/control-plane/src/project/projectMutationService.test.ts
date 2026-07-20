@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 
 import { copyFixture } from "@godot-mcp/testkit";
-import type { ProjectMutationResult, ProjectOperationInput } from "@godot-mcp/protocol";
+import { canonicalFloat64Le, canonicalJson, type ProjectMutationResult, type ProjectOperationInput } from "@godot-mcp/protocol";
 import { describe, expect, it } from "vitest";
 
 import { ProjectMutationJournal, ProjectMutationService } from "./projectMutationService.js";
@@ -84,6 +84,22 @@ describe("ProjectMutationService", () => {
       const mismatched = { ...result, changes: [{ ...result.changes[0]!, postimageSha256: "d".repeat(64) }] };
       const service = new ProjectMutationService(() => ({ request: async () => ({ data: mismatched }) }), journal);
       await expect(service.execute(input, "req-1")).rejects.toThrow(/mismatched project mutation receipt/i);
+    } finally { await project.cleanup(); }
+  });
+
+  it("verifies floating-point receipts with the shared bridge encoding", async () => {
+    const project = await copyFixture();
+    const floatInput: Extract<ProjectOperationInput, { operation: "settings_apply" }> = { operation: "settings_apply", idempotencyKey: key, changes: [{ name: "physics/common/physics_ticks_per_second", expectedValue: 1.5, value: 2.5 }] };
+    const digest = (value: number): string => sha256(canonicalJson({ $godotMcpFloat64Le: canonicalFloat64Le(value) }));
+    const floatResult: ProjectMutationResult = {
+      operation: "settings_apply",
+      changes: [{ settingNameSha256: sha256("physics/common/physics_ticks_per_second"), preimageSha256: digest(1.5), postimageSha256: digest(2.5) }],
+      rollback: "not_needed",
+    };
+    try {
+      const journal = await ProjectMutationJournal.open(join(project.root, "journal.jsonl"));
+      const service = new ProjectMutationService(() => ({ request: async () => ({ data: floatResult }) }), journal);
+      await expect(service.execute(floatInput, "req-1")).resolves.toEqual(floatResult);
     } finally { await project.cleanup(); }
   });
 });

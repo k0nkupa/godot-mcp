@@ -6,7 +6,14 @@ class FakeEditor:
 	extends RefCounted
 	var enabled := false
 	func is_plugin_enabled(_plugin: String) -> bool: return enabled
-	func set_plugin_enabled(_plugin: String, value: bool) -> void: enabled = value
+	func set_plugin_enabled(plugin: String, value: bool) -> void:
+		enabled = value
+		var path := "res://addons/%s/plugin.cfg" % plugin
+		var persisted := ProjectSettings.get_setting("editor_plugins/enabled", PackedStringArray()) as PackedStringArray
+		persisted = persisted.duplicate()
+		if value and not persisted.has(path): persisted.append(path)
+		if not value and persisted.has(path): persisted.remove_at(persisted.find(path))
+		ProjectSettings.set_setting("editor_plugins/enabled", persisted)
 
 func _init() -> void:
 	assert(ProjectOperations.setting_name_is_allowed("display/window/size/viewport_width"))
@@ -20,6 +27,7 @@ func _init() -> void:
 	assert(not ProjectOperations.setting_value_is_allowed("file:///tmp/secret"))
 	assert(not ProjectOperations.setting_value_is_allowed("/tmp/secret"))
 	assert(not ProjectOperations.setting_value_is_allowed({"host": "value"}))
+	assert(ProjectOperations.setting_value_sha256(1.5) == "a25d5408a653d657c8fa1e163e4eecc0006d04b3dafb3a0518fe990c93f63263")
 	assert(ProjectOperations.plugin_path_is_allowed("res://addons/example/plugin.cfg"))
 	assert(not ProjectOperations.plugin_path_is_allowed("res://addons/godot_mcp/plugin.cfg"))
 	assert(not ProjectOperations.plugin_path_is_allowed("res://addons/../escape/plugin.cfg"))

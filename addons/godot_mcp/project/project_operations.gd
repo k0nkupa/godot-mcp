@@ -2,6 +2,9 @@
 class_name GodotMcpProjectOperations
 extends RefCounted
 
+const CanonicalJson = preload("res://addons/godot_mcp/bridge/canonical_json.gd")
+const SessionCrypto = preload("res://addons/godot_mcp/bridge/session_crypto.gd")
+
 const ALLOWED_PREFIXES := ["application/", "audio/", "display/", "input/", "navigation/", "physics/", "rendering/"]
 const DENIED_PREFIXES := [
 	"application/run/disable_stdout", "application/run/disable_stderr", "application/run/main_run_args",
@@ -86,6 +89,9 @@ static func setting_value_is_allowed(value: Variant) -> bool:
 		return false
 	return not (text.length() >= 3 and text.unicode_at(1) == 58 and text.unicode_at(2) in [47, 92]) and not lowered.begins_with("file:")
 
+static func setting_value_sha256(value: Variant) -> String:
+	return CanonicalJson.encode(SessionCrypto._canonical_signing_params(value)).sha256_text()
+
 func _settings_apply(arguments: Dictionary) -> Dictionary:
 	var changes: Variant = arguments.get("changes", [])
 	if typeof(changes) != TYPE_ARRAY or changes.is_empty() or changes.size() > 32:
@@ -117,8 +123,8 @@ func _settings_apply(arguments: Dictionary) -> Dictionary:
 	for index in changes.size():
 		receipts.append({
 			"settingNameSha256": String(changes[index].name).sha256_text(),
-			"preimageSha256": JSON.stringify(preimages[index].value).sha256_text(),
-			"postimageSha256": JSON.stringify(changes[index].value).sha256_text(),
+			"preimageSha256": setting_value_sha256(preimages[index].value),
+			"postimageSha256": setting_value_sha256(changes[index].value),
 		})
 	return {"ok": true, "data": {"operation": "settings_apply", "changes": receipts, "rollback": "not_needed"}}
 
@@ -128,13 +134,17 @@ func _plugin_set(arguments: Dictionary) -> Dictionary:
 		return _error("TARGET_NOT_FOUND", "Project plugin is unavailable or denied")
 	var plugin_name := path.trim_prefix("res://addons/").trim_suffix("/plugin.cfg")
 	var currently_enabled := bool(_editor.is_plugin_enabled(plugin_name))
+	var persisted_before := ProjectSettings.get_setting("editor_plugins/enabled", PackedStringArray()) as PackedStringArray
+	persisted_before = persisted_before.duplicate()
 	if typeof(arguments.get("expectedEnabled")) != TYPE_BOOL or bool(arguments.expectedEnabled) != currently_enabled:
 		return _error("CONFLICT", "Project plugin state changed")
 	if typeof(arguments.get("enabled")) != TYPE_BOOL or bool(arguments.enabled) == currently_enabled:
 		return _error("INVALID_REQUEST", "Project plugin operation must change state")
 	_editor.set_plugin_enabled(plugin_name, bool(arguments.enabled))
-	if bool(_editor.is_plugin_enabled(plugin_name)) != bool(arguments.enabled):
-		return _plugin_rollback_failure(plugin_name, currently_enabled, "Project plugin postcondition failed")
+	var save_error := ProjectSettings.save()
+	var persisted_after := ProjectSettings.get_setting("editor_plugins/enabled", PackedStringArray()) as PackedStringArray
+	if save_error != OK or bool(_editor.is_plugin_enabled(plugin_name)) != bool(arguments.enabled) or persisted_after.has(path) != bool(arguments.enabled):
+		return _plugin_rollback_failure(plugin_name, currently_enabled, persisted_before, "Project plugin postcondition failed")
 	return {"ok": true, "data": {"operation": "plugin_set", "pluginSha256": path.sha256_text(), "enabled": bool(arguments.enabled), "rollback": "not_needed"}}
 
 func _reimport(arguments: Dictionary) -> Dictionary:
@@ -161,9 +171,12 @@ func _settings_rollback_failure(preimages: Array[Dictionary], message: String) -
 	var rollback := "succeeded" if ProjectSettings.save() == OK else "failed"
 	return {"ok": false, "code": "GODOT_RUNTIME_ERROR" if rollback == "succeeded" else "ROLLBACK_FAILED", "message": message, "retryable": false, "partialEffects": rollback == "failed", "rollback": rollback}
 
-func _plugin_rollback_failure(plugin_name: String, enabled: bool, message: String) -> Dictionary:
+func _plugin_rollback_failure(plugin_name: String, enabled: bool, persisted: PackedStringArray, message: String) -> Dictionary:
 	_editor.set_plugin_enabled(plugin_name, enabled)
-	var rollback := "succeeded" if bool(_editor.is_plugin_enabled(plugin_name)) == enabled else "failed"
+	ProjectSettings.set_setting("editor_plugins/enabled", persisted)
+	var saved := ProjectSettings.save() == OK
+	var restored := ProjectSettings.get_setting("editor_plugins/enabled", PackedStringArray()) as PackedStringArray
+	var rollback := "succeeded" if saved and bool(_editor.is_plugin_enabled(plugin_name)) == enabled and restored == persisted else "failed"
 	return {"ok": false, "code": "GODOT_RUNTIME_ERROR" if rollback == "succeeded" else "ROLLBACK_FAILED", "message": message, "retryable": false, "partialEffects": rollback == "failed", "rollback": rollback}
 
 static func _error(code: String, message: String) -> Dictionary:
