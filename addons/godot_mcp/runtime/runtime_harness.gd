@@ -368,13 +368,20 @@ static func descriptor_pins_are_valid(pins: Variant) -> bool:
 		if not pins.has(field):
 			return false
 	return (
-		typeof(pins.width) == TYPE_INT and int(pins.width) >= 1 and int(pins.width) <= 2048
-		and typeof(pins.height) == TYPE_INT and int(pins.height) >= 1 and int(pins.height) <= 2048
+		json_integer_is_in_range(pins.width, 1, 2048)
+		and json_integer_is_in_range(pins.height, 1, 2048)
 		and String(pins.renderer) in ["gl_compatibility", "mobile"]
 		and locale_pin_is_valid(String(pins.locale))
-		and typeof(pins.seed) == TYPE_INT and int(pins.seed) >= -2147483648 and int(pins.seed) <= 2147483647
-		and typeof(pins.fixedFps) == TYPE_INT and int(pins.fixedFps) in [30, 60, 120]
+		and json_integer_is_in_range(pins.seed, -2147483648, 2147483647)
+		and json_integer_is_in_range(pins.fixedFps, 30, 120)
+		and int(pins.fixedFps) in [30, 60, 120]
 	)
+
+static func json_integer_is_in_range(value: Variant, minimum: int, maximum: int) -> bool:
+	if typeof(value) not in [TYPE_INT, TYPE_FLOAT]:
+		return false
+	var numeric := float(value)
+	return is_finite(numeric) and numeric == floor(numeric) and numeric >= minimum and numeric <= maximum
 
 static func locale_pin_is_valid(locale: String) -> bool:
 	var parts := locale.split("_", false)

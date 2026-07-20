@@ -16,6 +16,8 @@ func _init() -> void:
 	assert(not RuntimeHarness.descriptor_path_is_allowed("/tmp/else/runtime-a.json", "/tmp/godot-mcp"))
 	var valid_pins := {"width": 320, "height": 180, "renderer": "gl_compatibility", "locale": "en_NZ", "seed": 42, "fixedFps": 60}
 	assert(RuntimeHarness.descriptor_pins_are_valid(valid_pins))
+	var round_tripped_pins: Variant = JSON.parse_string(JSON.stringify(valid_pins))
+	assert(RuntimeHarness.descriptor_pins_are_valid(round_tripped_pins))
 	assert(not RuntimeHarness.descriptor_pins_are_valid(valid_pins.merged({"fixedFps": 59}, true)))
 	assert(not RuntimeHarness.descriptor_pins_are_valid(valid_pins.merged({"locale": "../../etc"}, true)))
 	assert(not RuntimeHarness.descriptor_pins_are_valid(valid_pins.merged({"rawArguments": ["--script", "bad.gd"]}, true)))

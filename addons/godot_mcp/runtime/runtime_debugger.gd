@@ -475,6 +475,10 @@ func _accept_ready(payload: Dictionary, debugger_session_id: int) -> void:
 		"scenePath": String(_prepared.scenePath),
 		"debuggerSessionId": debugger_session_id,
 	}
+	if typeof(payload.get("godotVersion")) == TYPE_STRING:
+		_ready_info.godotVersion = String(payload.godotVersion)
+	if typeof(payload.get("observedPins")) == TYPE_DICTIONARY:
+		_ready_info.observedPins = payload.observedPins.duplicate(true)
 	runtime_ready.emit(_ready_info.duplicate(true))
 
 func _accept_result(payload: Dictionary, debugger_session_id: int) -> void:
