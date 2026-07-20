@@ -30,6 +30,8 @@ jobs:
         run: npm install --global npm@12.0.1
       - run: pnpm install --frozen-lockfile
       - name: Verify immutable release preconditions
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: node scripts/verify-release-preconditions.mjs
       - name: Install checksum-pinned Godot 4.7
         env:
@@ -48,9 +50,7 @@ jobs:
         uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
         with:
           subject-path: release/out/*
-      - name: Publish npm tarballs with trusted publishing
-        run: for artifact in release/out/*.tgz; do npm publish "$artifact" --access public --provenance; done
-      - name: Publish exact GitHub release set
+      - name: Resume or publish the exact npm and GitHub release set
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" release/out/* --verify-tag --generate-notes
+        run: node scripts/publish-release.mjs release/out

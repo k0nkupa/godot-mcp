@@ -26,6 +26,7 @@ if (tag !== `v${product.productVersion}`) throw new Error(`Release requires exac
 if (await run("git", ["status", "--porcelain=v1", "--untracked-files=all"])) throw new Error("Release requires a clean checkout");
 const remote = await run("git", ["remote", "get-url", "origin"]);
 if (!/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?$/.test(remote)) throw new Error("Release requires an HTTPS GitHub origin");
+const repository = remote.replace(/^https:\/\/github\.com\//, "").replace(/\.git$/, "");
 const certified = matrix.cells.filter((cell) => cell.state === "certified");
 if (certified.length === 0) throw new Error("Release requires at least one certified compatibility cell");
 for (const cell of certified) {
@@ -35,6 +36,7 @@ for (const cell of certified) {
   if (receipt?.schemaVersion !== 1 || receipt.result !== "passed" || receipt.gate !== "phase-11-cell" || !sameCell) throw new Error(`Compatibility receipt identity is invalid: ${cell.receipt}`);
   if (!/^[a-f0-9]{40}$/.test(receipt.sourceRevision) || !/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/actions\/runs\/[0-9]+$/.test(receipt.workflowRunUrl)) throw new Error(`Compatibility receipt provenance is invalid: ${cell.receipt}`);
   if (!Array.isArray(receipt.stages) || receipt.stages.length !== 15 || receipt.stages.some((stage) => stage?.status !== "passed")) throw new Error(`Compatibility receipt stages are incomplete: ${cell.receipt}`);
+  await run("gh", ["attestation", "verify", resolve(root, cell.receipt), "--repo", repository, "--signer-workflow", `${repository}/.github/workflows/compatibility.yml`, "--source-digest", receipt.sourceRevision, "--deny-self-hosted-runners"]);
   await run("git", ["merge-base", "--is-ancestor", receipt.sourceRevision, "HEAD"]);
   const laterPaths = (await run("git", ["diff", "--name-only", `${receipt.sourceRevision}..HEAD`])).split("\n").filter(Boolean);
   if (laterPaths.some((path) => path !== "release/compatibility-matrix.json" && !path.startsWith("release/receipts/"))) throw new Error(`Product code changed after compatibility certification: ${cell.receipt}`);

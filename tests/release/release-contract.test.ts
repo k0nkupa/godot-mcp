@@ -17,7 +17,8 @@ describe("Phase 11 release contract", () => {
   test("does not advertise pending compatibility cells", async () => {
     const matrix = await readCompatibilityMatrix(resolve("release/compatibility-matrix.json"));
     expect(matrix.cells).toHaveLength(12);
-    expect(matrix.cells.filter((cell) => cell.state === "certified")).toEqual([]);
+    expect(matrix.cells.filter((cell) => cell.state === "pending").length).toBeGreaterThan(0);
+    expect(matrix.cells.filter((cell) => cell.state === "certified").every((cell) => typeof cell.receipt === "string")).toBe(true);
     expect(new Set(matrix.cells.map((cell) => `${cell.godot}/${cell.platform}`)).size).toBe(12);
   });
 
@@ -43,8 +44,13 @@ describe("Phase 11 release contract", () => {
     }
     const release = await readFile(resolve(".github/workflows/release.yml"), "utf8");
     expect(release).toContain("npm install --global npm@12.0.1");
+    expect(release).toContain("publish-release.mjs release/out");
+    const publisher = await readFile(resolve("scripts/publish-release.mjs"), "utf8");
+    expect(publisher).toContain("Published npm artifact differs from release set");
+    expect(publisher).toContain("Existing GitHub asset differs from release set");
     const compatibility = await readFile(resolve(".github/workflows/compatibility.yml"), "utf8");
     expect(compatibility).toContain("write-compatibility-receipt.mjs");
     expect(compatibility).toContain("actions/attest-build-provenance@");
+    expect(await readFile(resolve("scripts/verify-release-preconditions.mjs"), "utf8")).toContain('"attestation", "verify"');
   });
 });
