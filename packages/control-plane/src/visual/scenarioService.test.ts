@@ -220,6 +220,41 @@ describe("ScenarioService", () => {
     }
   });
 
+  it("stops a runtime whose pending launch resolves after cancellation", async () => {
+    const project = await copyFixture();
+    let resolveLaunch!: (value: Awaited<ReturnType<ScenarioRuntime["launch"]>>) => void;
+    const pendingLaunch = new Promise<Awaited<ReturnType<ScenarioRuntime["launch"]>>>((resolve) => {
+      resolveLaunch = resolve;
+    });
+    try {
+      const fake = runtime({
+        async launch(input) {
+          fake.calls.push({ method: "launch", ...input });
+          return pendingLaunch;
+        },
+      });
+      const service = new ScenarioService({ projectId, sessionId: () => "session_12345678", runtime: fake.implementation, evidence: new EvidenceStore(project.root) });
+      const started = service.start(declaration([{ kind: "control", action: "pause" }]));
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+
+      service.cancel(started.jobToken);
+      resolveLaunch({
+        handle,
+        root: {
+          godotVersion: "4.7.stable.official.5b4e0cb0f",
+          observedPins: { width: 320, height: 180, renderer: "gl_compatibility", locale: "en_NZ", seed: 42, fixedFps: 60 },
+        },
+      });
+
+      await terminal(service, started.jobToken);
+      expect(service.result(started.jobToken)).toMatchObject({ state: "cancelled", cleanup: "succeeded", handle });
+      expect(fake.calls.filter((call) => call.operation === "stop")).toEqual([{ method: "execute", operation: "stop", handle }]);
+    } finally {
+      resolveLaunch({ handle, root: {} });
+      await project.cleanup();
+    }
+  });
+
   it("does not launch when a queued job is cancelled before execution begins", async () => {
     const project = await copyFixture();
     try {

@@ -199,21 +199,37 @@ export class ScenarioService {
     const captures = new Map<string, StoredFrame[]>();
     try {
       this.assertJobActive(job);
-      const launched = await this.boundary(job, this.dependencies.runtime.launch({
+      const launchPromise = this.dependencies.runtime.launch({
         scenePath: job.scenario.scenePath,
         startupTimeoutMs: job.scenario.startupTimeoutMs,
         pins: job.scenario.pins,
-      }));
-      handle = launched.handle;
-      if (isRecord(launched.root) && typeof launched.root.godotVersion === "string") observedGodotVersion = launched.root.godotVersion;
-      if (isRecord(launched.root)) {
-        const parsedObservedPins = RuntimeLaunchPinsSchema.safeParse(launched.root.observedPins);
-        if (parsedObservedPins.success) observedPins = parsedObservedPins.data;
+      });
+      const adoptLaunch = (launched: Awaited<typeof launchPromise>): void => {
+        handle = launched.handle;
+        if (isRecord(launched.root) && typeof launched.root.godotVersion === "string") observedGodotVersion = launched.root.godotVersion;
+        if (isRecord(launched.root)) {
+          const parsedObservedPins = RuntimeLaunchPinsSchema.safeParse(launched.root.observedPins);
+          if (parsedObservedPins.success) observedPins = parsedObservedPins.data;
+        }
+      };
+      try {
+        adoptLaunch(await this.boundary(job, launchPromise));
+      } catch (error) {
+        if (errorCode(error) === "CANCELLED" || errorCode(error) === "TIMEOUT") {
+          try {
+            adoptLaunch(await launchPromise);
+          } catch {
+            // Runtime launch owns cleanup when it rejects before yielding a handle.
+          }
+        }
+        throw error;
       }
+      const activeHandle = handle;
+      if (!activeHandle) throw scenarioError("GODOT_RUNTIME_ERROR", "Runtime launch did not yield a handle");
       for (const [index, step] of job.scenario.steps.entries()) {
         const startedMonotonicMs = Math.max(0, Math.floor(this.now() - job.startedAtMs));
         try {
-          const outcome = await this.runStep(job, handle, step, captures, paused);
+          const outcome = await this.runStep(job, activeHandle, step, captures, paused);
           paused = outcome.paused;
           const finishedMonotonicMs = Math.max(startedMonotonicMs, Math.floor(this.now() - job.startedAtMs));
           stepReceipts.push({
