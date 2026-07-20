@@ -64,6 +64,7 @@ func _init() -> void:
 	assert(not RuntimeCapture.source_dimensions_allowed(4096, 4097))
 	assert(RuntimeControl.safe_property_pattern("^ready.*$"))
 	assert(not RuntimeControl.safe_property_pattern("(a+)+$"))
+	assert(not RuntimeControl.safe_property_pattern("["))
 	assert(not RuntimeControl.bounded_primitive_subject(["large", "container"]).valid)
 	assert(String(RuntimeControl.bounded_primitive_subject("x".repeat(5000)).subject).length() == 4096)
 	var debug_capture := RuntimeDebugCapture.new()

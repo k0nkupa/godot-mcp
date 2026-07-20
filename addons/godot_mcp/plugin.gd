@@ -65,8 +65,7 @@ func _execute_command(command: Dictionary) -> Dictionary:
 	elif String(command.method) in ["runtime.command", "runtime.capture"]:
 		outcome = await runtime_debugger.execute(command)
 	elif String(command.method) == "runtime.cleanup":
-		runtime_debugger.clear()
-		outcome = {"ok": true, "data": {"cleaned": true}}
+		outcome = await runtime_debugger.cleanup(int(command.get("deadlineUnixMs", 0)))
 	else:
 		outcome = {"ok": false, "code": "INVALID_REQUEST", "message": "Unsupported editor command", "retryable": false}
 	await _deliver_command(command, outcome)

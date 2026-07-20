@@ -424,6 +424,14 @@ func clear(_reason := "requested") -> void:
 	_debug_data_cleared_for_transition = false
 	_certified_owner_pid = 0
 
+func cleanup(deadline_unix_ms: int) -> Dictionary:
+	clear("cleanup")
+	while not _active_sessions.is_empty() and _now_ms() < deadline_unix_ms:
+		await Engine.get_main_loop().process_frame
+	if not _active_sessions.is_empty():
+		return _error("TIMEOUT", "Debugger sessions did not stop before runtime cleanup completed", true)
+	return {"ok": true, "data": {"cleaned": true}}
+
 func _accept_hello(payload: Dictionary, debugger_session_id: int) -> void:
 	if _prepared.is_empty() or _bound_session_id >= 0 or _now_ms() > int(_prepared.expiresAtUnixMs):
 		return

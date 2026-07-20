@@ -151,7 +151,7 @@ static func _has_property(node: Node, property: String) -> bool:
 static func safe_property_pattern(pattern: String) -> bool:
 	if pattern.is_empty() or pattern.length() > 64:
 		return false
-	for forbidden in ["\\", "+", "{", "}", "(", ")", "|"]:
+	for forbidden in ["\\", "+", "{", "}", "(", ")", "|", "[", "]"]:
 		if forbidden in pattern:
 			return false
 	return pattern.count("*") <= 1 and "**" not in pattern and "*?" not in pattern and "?*" not in pattern
