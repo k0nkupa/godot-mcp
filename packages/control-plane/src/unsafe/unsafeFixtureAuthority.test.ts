@@ -32,3 +32,14 @@ it("consumes and rejects an expired activation", async () => {
     await expect(readFile(approved.leasePath)).rejects.toMatchObject({ code: "ENOENT" });
   } finally { await template.cleanup(); await rm(container, { recursive: true, force: true }); }
 });
+
+it("atomically permits only one concurrent activation consumer", async () => {
+  const template = await copyFixture(); const container = await mkdtemp(join(tmpdir(), "godot-mcp-unsafe-race-")); const copy = join(container, "copy"); const registry = join(container, "registry.json");
+  try {
+    const registration = await registerUnsafeFixture(registry, template.root, UNSAFE_CONFIRMATION_PHRASE); await cp(template.root, copy, { recursive: true }); await stampUnsafeFixtureCopy(registry, copy, registration.registrationId);
+    const approved = await approveUnsafeFixtureCopy(registry, copy, container, UNSAFE_CONFIRMATION_PHRASE, 2_000);
+    const attempts = await Promise.allSettled([consumeUnsafeFixtureActivation(registry, copy, approved.leasePath), consumeUnsafeFixtureActivation(registry, copy, approved.leasePath)]);
+    expect(attempts.filter((attempt) => attempt.status === "fulfilled")).toHaveLength(1);
+    expect(attempts.filter((attempt) => attempt.status === "rejected")).toHaveLength(1);
+  } finally { await template.cleanup(); await rm(container, { recursive: true, force: true }); }
+});

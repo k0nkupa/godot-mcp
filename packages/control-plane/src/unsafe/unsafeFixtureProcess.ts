@@ -28,7 +28,8 @@ export class UnsafeFixtureProcess implements UnsafeFixtureProcessHandle {
 
   private constructor(private readonly child: ChildProcess, readonly pid: number, readonly fingerprint: string) {}
 
-  static async launch(input: { godotBin: string; projectRoot: string; scriptPath: string; isolationRoot: string; environment?: NodeJS.ProcessEnv }): Promise<UnsafeFixtureProcess> {
+  static async launch(input: { godotBin: string; projectRoot: string; scriptPath: string; isolationRoot: string; signal: AbortSignal; environment?: NodeJS.ProcessEnv }): Promise<UnsafeFixtureProcess> {
+    if (input.signal.aborted) throw input.signal.reason;
     const home = join(input.isolationRoot, "home");
     const runtime = join(input.isolationRoot, "runtime");
     const config = join(home, ".config"); const cache = join(home, ".cache"); const data = join(home, ".local/share"); const temporary = join(input.isolationRoot, "tmp");
@@ -44,25 +45,35 @@ export class UnsafeFixtureProcess implements UnsafeFixtureProcessHandle {
       ...(source.PATH ? { PATH: source.PATH } : {}),
       ...(source.LANG ? { LANG: source.LANG } : {}),
     };
+    if (input.signal.aborted) throw input.signal.reason;
     const child = spawn(input.godotBin, ["--headless", "--path", input.projectRoot, "--script", input.scriptPath], { env, stdio: ["ignore", "pipe", "pipe"] });
-    await new Promise<void>((resolveSpawn, reject) => { child.once("spawn", resolveSpawn); child.once("error", reject); });
-    if (!child.pid) throw new Error("Unsafe fixture process did not report a PID");
-    let fingerprint: string;
+    const abort = (): void => { if (!childHasExited(child)) child.kill("SIGKILL"); };
+    input.signal.addEventListener("abort", abort, { once: true });
     try {
-      fingerprint = await projectProcessFingerprint(child.pid);
+      await new Promise<void>((resolveSpawn, reject) => { child.once("spawn", resolveSpawn); child.once("error", reject); });
+      if (input.signal.aborted) throw input.signal.reason;
+      if (!child.pid) throw new Error("Unsafe fixture process did not report a PID");
+      let fingerprint: string;
+      try {
+        fingerprint = await projectProcessFingerprint(child.pid);
+      } catch (error) {
+        if (input.signal.aborted) throw input.signal.reason;
+        if (childHasExited(child)) fingerprint = `${child.pid}:exited:${child.exitCode ?? "unknown"}`;
+        else throw error;
+      }
+      if (input.signal.aborted) throw input.signal.reason;
+      const owned = new UnsafeFixtureProcess(child, child.pid, fingerprint);
+      const append = (chunk: Buffer | string): void => {
+        const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        const remaining = MAX_OUTPUT_BYTES - owned.output.byteLength;
+        if (remaining > 0) owned.output = Buffer.concat([owned.output, bytes.subarray(0, remaining)]);
+        if (bytes.byteLength > remaining && !owned.exceeded) { owned.exceeded = true; void owned.stop().catch(() => undefined); }
+      };
+      child.stdout?.on("data", append); child.stderr?.on("data", append);
+      return owned;
     } catch (error) {
-      if (childHasExited(child)) fingerprint = `${child.pid}:exited:${child.exitCode ?? "unknown"}`;
-      else { child.kill("SIGKILL"); await waitForExit(child).catch(() => undefined); throw error; }
-    }
-    const owned = new UnsafeFixtureProcess(child, child.pid, fingerprint);
-    const append = (chunk: Buffer | string): void => {
-      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      const remaining = MAX_OUTPUT_BYTES - owned.output.byteLength;
-      if (remaining > 0) owned.output = Buffer.concat([owned.output, bytes.subarray(0, remaining)]);
-      if (bytes.byteLength > remaining && !owned.exceeded) { owned.exceeded = true; void owned.stop().catch(() => undefined); }
-    };
-    child.stdout?.on("data", append); child.stderr?.on("data", append);
-    return owned;
+      abort(); await waitForExit(child).catch(() => undefined); throw error;
+    } finally { input.signal.removeEventListener("abort", abort); }
   }
 
   diagnostics(): Buffer { return Buffer.from(this.output); }

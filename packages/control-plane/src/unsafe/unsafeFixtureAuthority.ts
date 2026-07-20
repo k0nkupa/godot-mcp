@@ -95,8 +95,10 @@ export async function approveUnsafeFixtureCopy(registryPath: string, copyRoot: s
 }
 
 export async function consumeUnsafeFixtureActivation(registryPath: string, copyRoot: string, leasePath: string, now = Date.now()): Promise<UnsafeActivation> {
+  const claimedPath = join(dirname(leasePath), `.unsafe-consumed-${randomUUID()}.json`);
   let raw: unknown;
-  try { raw = await readOwnerOnlyJson(leasePath); } finally { await rm(leasePath, { force: true }); }
+  await rename(leasePath, claimedPath);
+  try { raw = await readOwnerOnlyJson(claimedPath); } finally { await rm(claimedPath, { force: true }); }
   const lease = LeaseSchema.parse(raw);
   const project = await projectIdentity(copyRoot);
   const marker = MarkerSchema.parse(await readOwnerOnlyJson(join(project.root, ".godot-mcp-unsafe-fixture.json")));

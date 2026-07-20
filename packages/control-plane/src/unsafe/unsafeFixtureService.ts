@@ -16,7 +16,7 @@ const OUTPUT_CHUNK_BYTES = 512 * 1024;
 export interface UnsafeFixtureServiceDependencies {
   activation: UnsafeActivation;
   sessionId(): string | null;
-  launch(input: { projectRoot: string; scriptPath: string; isolationRoot: string }): Promise<UnsafeFixtureProcessHandle>;
+  launch(input: { projectRoot: string; scriptPath: string; isolationRoot: string; signal: AbortSignal }): Promise<UnsafeFixtureProcessHandle>;
   evidence?: EvidenceStore;
   now?: () => number;
 }
@@ -89,6 +89,7 @@ export class UnsafeFixtureService {
 
   private async run(job: UnsafeJob): Promise<void> {
     job.state = "running"; let exitCode: number | null = null; let terminal: "completed" | "failed" | "cancelled" = "failed"; let cleanup: "succeeded" | "failed" = "succeeded"; const evidence: string[] = [];
+    const deadlineTimer = setTimeout(() => job.controller.abort(unsafeError("TIMEOUT", "Unsafe fixture deadline expired")), Math.max(0, job.deadlineAt - this.now()));
     let root = join(this.dependencies.activation.copyRoot, ".godot", "evidence", "godot-mcp", "unsafe", job.token);
     const script = join(root, "script.gd");
     try {
@@ -98,13 +99,14 @@ export class UnsafeFixtureService {
       try { await handle.writeFile(job.source, "utf8"); } finally { await handle.close(); }
       job.source = "";
       if (job.controller.signal.aborted) throw job.controller.signal.reason;
-      job.process = await this.dependencies.launch({ projectRoot: this.dependencies.activation.copyRoot, scriptPath: script, isolationRoot: join(root, "isolation") });
+      job.process = await this.dependencies.launch({ projectRoot: this.dependencies.activation.copyRoot, scriptPath: script, isolationRoot: join(root, "isolation"), signal: job.controller.signal });
       exitCode = await this.interruptible(job, job.process.wait());
       terminal = exitCode === 0 && !job.process.outputExceeded() ? "completed" : "failed";
     } catch {
       await job.process?.stop().catch(() => undefined);
-      terminal = job.controller.signal.aborted ? "cancelled" : "failed";
+      terminal = job.controller.signal.reason instanceof GodotMcpException && job.controller.signal.reason.code === "CANCELLED" ? "cancelled" : "failed";
     } finally {
+      clearTimeout(deadlineTimer);
       const output = job.process?.diagnostics() ?? Buffer.alloc(0);
       const chunkCount = Math.max(1, Math.ceil(output.byteLength / OUTPUT_CHUNK_BYTES));
       for (let index = 0; index < chunkCount; index += 1) {
@@ -123,8 +125,9 @@ export class UnsafeFixtureService {
   }
 
   private async interruptible(job: UnsafeJob, operation: Promise<number>): Promise<number> {
-    const remaining = job.deadlineAt - this.now(); let timer: ReturnType<typeof setTimeout> | undefined; let listener: (() => void) | undefined;
-    const interruption = new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(unsafeError("TIMEOUT", "Unsafe fixture deadline expired")), remaining); listener = () => reject(job.controller.signal.reason); job.controller.signal.addEventListener("abort", listener, { once: true }); });
-    try { return await Promise.race([operation, interruption]); } finally { if (timer) clearTimeout(timer); if (listener) job.controller.signal.removeEventListener("abort", listener); }
+    if (job.controller.signal.aborted) throw job.controller.signal.reason;
+    let listener: (() => void) | undefined;
+    const interruption = new Promise<never>((_resolve, reject) => { listener = () => reject(job.controller.signal.reason); job.controller.signal.addEventListener("abort", listener, { once: true }); });
+    try { return await Promise.race([operation, interruption]); } finally { if (listener) job.controller.signal.removeEventListener("abort", listener); }
   }
 }

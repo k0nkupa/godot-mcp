@@ -55,6 +55,16 @@ it("keeps one opaque session job and cancels only its owned process", async () =
   } finally { release(143); await project.cleanup(); }
 });
 
+it("cancels an unsafe job while its process is still launching", async () => {
+  const project = await copyFixture(); let release!: () => void; const launching = new Promise<void>((resolve) => { release = resolve; }); let stopped = 0;
+  try {
+    const service = new UnsafeFixtureService({ activation: activation(project.root), sessionId: () => "session_12345678", launch: async () => { await launching; return { pid: 123, fingerprint: "123:owned", wait: async () => 0, stop: async () => { stopped += 1; }, diagnostics: () => Buffer.alloc(0), outputExceeded: () => false }; } });
+    const started = service.start("extends SceneTree", 5_000); await new Promise((resolve) => setTimeout(resolve, 10)); service.cancel(started.jobToken); release(); await terminal(service, started.jobToken);
+    expect(service.result(started.jobToken)).toMatchObject({ state: "cancelled", cleanup: "succeeded" });
+    expect(stopped).toBe(1);
+  } finally { release(); await project.cleanup(); }
+});
+
 it("chunks bounded output evidence and treats a pre-launch failure as clean", async () => {
   const project = await copyFixture();
   try {
