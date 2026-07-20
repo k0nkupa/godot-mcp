@@ -13,7 +13,9 @@ const RESERVED_AUDIT_KEYS = new Set(["extension", "operation"]);
 function extensionAuditArguments(extension: string, operation: string, audit: () => Record<string, unknown>): Record<string, unknown> {
   const facts = audit();
   for (const key of Object.keys(facts)) if (RESERVED_AUDIT_KEYS.has(key)) throw new Error(`Extension audit metadata cannot override ${key}`);
-  if (Buffer.byteLength(JSON.stringify(facts)) > 64 * 1024) throw new Error("Extension audit metadata exceeds 64 KiB");
+  const serializedFacts = JSON.stringify(facts);
+  if (serializedFacts === undefined) throw new Error("Extension audit metadata must be JSON serializable");
+  if (Buffer.byteLength(serializedFacts) > 64 * 1024) throw new Error("Extension audit metadata exceeds 64 KiB");
   return { extension, operation, ...facts };
 }
 
@@ -32,7 +34,8 @@ export function registerExtensionTools(server: McpServer, dependencies: Extensio
   }, async (rawInput) => {
     const input = ExtensionCallSchema.parse(rawInput);
     const serializedInput = JSON.stringify(input.input);
-    if (serializedInput !== undefined && Buffer.byteLength(serializedInput) > 256 * 1024) throw new Error("Extension input exceeds 256 KiB");
+    if (serializedInput === undefined) throw new Error("Extension input must be JSON serializable");
+    if (Buffer.byteLength(serializedInput) > 256 * 1024) throw new Error("Extension input exceeds 256 KiB");
     const definition = dependencies.extensions.resolve(input.extension, input.operation);
     let parsed: unknown;
     return toMcpToolResult(await executeTool(
@@ -48,7 +51,9 @@ export function registerExtensionTools(server: McpServer, dependencies: Extensio
         });
         const result = await definition.handler(context, parsed);
         const output = definition.outputSchema.parse(result);
-        if (Buffer.byteLength(JSON.stringify(output)) > 512 * 1024) throw new Error("Extension output exceeds 512 KiB");
+        const serializedOutput = JSON.stringify(output);
+        if (serializedOutput === undefined) throw new Error("Extension output must be JSON serializable");
+        if (Buffer.byteLength(serializedOutput) > 512 * 1024) throw new Error("Extension output exceeds 512 KiB");
         return { data: output };
       },
       {

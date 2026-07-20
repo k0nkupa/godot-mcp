@@ -62,3 +62,15 @@ it("authorizes before extension validation and audits only operation identity on
     const audit = await readFile(auditPath, "utf8"); expect(audit).not.toContain("PRIVATE_EXTENSION_INPUT"); expect(audit).toContain('"operation":"mutate"');
   } finally { await Promise.allSettled([client.close(), server.close()]); await rm(directory, { recursive: true, force: true }); }
 });
+
+it("rejects non-JSON extension audit metadata and output through the audited error path", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "godot-mcp-extension-json-")); const project = { projectId: "019f75d0-1234-7abc-8def-0123456789ab", rootRealPath: directory, projectConfigSha256: "a".repeat(64) }; const grants = { tiers: ["observe"] as const, packs: ["core"] as const }; const registry = new ExtensionRegistry();
+  registry.register({ extension: "fixture", operation: "bad_audit", policy: CORE_QUERY_POLICY, inputSchema: z.null(), outputSchema: z.null(), audit: () => ({ toJSON: () => undefined }), handler: async () => null });
+  registry.register({ extension: "fixture", operation: "bad_output", policy: CORE_QUERY_POLICY, inputSchema: z.null(), outputSchema: z.undefined(), audit: () => ({}), handler: async () => undefined });
+  const session = new SessionService(project, { tiers: [...grants.tiers], packs: [...grants.packs] }, async () => ({ healthy: true, checks: [] })); const auditPath = join(directory, "audit.jsonl"); const server = createGodotMcpServer({ project, grants: { tiers: [...grants.tiers], packs: [...grants.packs] }, session, audit: new JsonlAuditSink(auditPath), bridge: () => null, evidence: new EvidenceStore(directory), extensions: registry, extensionContext: (correlationId) => ({ project, correlationId, evidence: { putJson: async () => "godot-mcp:unused" } }) }); const client = new Client({ name: "extension-json-test", version: "1" }); const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  try {
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    for (const operation of ["bad_audit", "bad_output"]) expect((await client.callTool({ name: "godot_extension", arguments: { extension: "fixture", operation, input: null } })).structuredContent).toMatchObject({ ok: false, data: { error: { code: "INVALID_REQUEST" } } });
+    expect((await readFile(auditPath, "utf8")).trim().split("\n")).toHaveLength(2);
+  } finally { await Promise.allSettled([client.close(), server.close()]); await rm(directory, { recursive: true, force: true }); }
+});
