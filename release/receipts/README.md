@@ -1,5 +1,7 @@
 # Compatibility receipts
 
+Trusted manual compatibility runs emit an attested JSON receipt artifact. Verify its GitHub attestation before committing the unchanged receipt here and changing the matching matrix cell from `pending` to `certified`.
+
 A certified matrix cell points to one JSON receipt in this directory. Receipts are accepted only when they record:
 
 - schema version 1 and `result: "passed"`;

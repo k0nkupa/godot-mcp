@@ -41,5 +41,10 @@ describe("Phase 11 release contract", () => {
       const contents = await readFile(resolve(workflow), "utf8");
       for (const match of contents.matchAll(/^\s*-?\s*uses:\s*[^@\s]+@([^\s#]+)/gm)) expect(match[1], `${workflow}: ${match[0]}`).toMatch(/^[a-f0-9]{40}$/);
     }
+    const release = await readFile(resolve(".github/workflows/release.yml"), "utf8");
+    expect(release).toContain("npm install --global npm@12.0.1");
+    const compatibility = await readFile(resolve(".github/workflows/compatibility.yml"), "utf8");
+    expect(compatibility).toContain("write-compatibility-receipt.mjs");
+    expect(compatibility).toContain("actions/attest-build-provenance@");
   });
 });
