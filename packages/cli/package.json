@@ -3,9 +3,6 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "bin": {
-    "godot-mcp": "./dist/bin.js"
-  },
   "exports": {
     ".": "./dist/index.js"
   },

@@ -116,13 +116,13 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: 1.29.0
         version: 1.29.0(zod@4.4.3)
+      pngjs:
+        specifier: 7.0.0
+        version: 7.0.0
     devDependencies:
       '@types/pngjs':
         specifier: 6.0.5
         version: 6.0.5
-      pngjs:
-        specifier: 7.0.0
-        version: 7.0.0
 
 packages:
 

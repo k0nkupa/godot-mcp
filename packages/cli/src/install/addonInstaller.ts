@@ -83,6 +83,49 @@ async function atomicWrite(path: string, contents: Uint8Array): Promise<void> {
   await rename(temporary, path);
 }
 
+async function verifyInstalledTree(projectRoot: string, manifest: InstallManifest): Promise<void> {
+  const destinationRoot = join(projectRoot, "addons/godot_mcp");
+  const expectedRelative = manifest.files.map((file) =>
+    file.relativePath.slice("addons/godot_mcp/".length),
+  );
+  const actualRelative = await installedTreeFiles(destinationRoot);
+  if (JSON.stringify(actualRelative) !== JSON.stringify(expectedRelative)) {
+    throw conflict("Installed addon tree contains missing or untracked files");
+  }
+  for (const file of manifest.files) {
+    const current = await readFile(join(projectRoot, file.relativePath));
+    if (sha256(current) !== file.sha256) {
+      throw conflict(`Installed addon file was modified: ${file.relativePath}`);
+    }
+  }
+}
+
+async function stageAddon(sourceRoot: string, temporaryRoot: string): Promise<InstalledFile[]> {
+  const sourceMetadata = await lstat(sourceRoot);
+  if (!sourceMetadata.isDirectory() || sourceMetadata.isSymbolicLink()) {
+    throw conflict("Addon source must be a regular directory");
+  }
+  const files = await sourceFiles(sourceRoot);
+  if (files.length === 0) throw conflict("Addon source contains no files");
+  await mkdir(temporaryRoot, { recursive: false, mode: 0o700 });
+  const entries: InstalledFile[] = [];
+  for (const sourceRelativePath of files) {
+    const sourcePath = join(sourceRoot, sourceRelativePath);
+    const temporaryPath = join(temporaryRoot, sourceRelativePath);
+    await mkdir(dirname(temporaryPath), { recursive: true, mode: 0o700 });
+    await copyFile(sourcePath, temporaryPath);
+    const digest = sha256(await readFile(temporaryPath));
+    if (digest !== sha256(await readFile(sourcePath))) {
+      throw conflict(`Copied addon file failed hash verification: ${sourceRelativePath}`);
+    }
+    entries.push({
+      relativePath: join("addons/godot_mcp", sourceRelativePath).replaceAll("\\", "/"),
+      sha256: digest,
+    });
+  }
+  return entries.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+}
+
 export async function installAddon(
   projectInput: string,
   sourceInput: string,
@@ -97,13 +140,6 @@ export async function installAddon(
   if (await exists(destinationRoot)) throw conflict("Godot MCP addon destination already exists");
   if (await exists(manifestPath(project.rootRealPath))) throw conflict("Godot MCP install manifest already exists");
 
-  const sourceMetadata = await lstat(sourceRoot);
-  if (!sourceMetadata.isDirectory() || sourceMetadata.isSymbolicLink()) {
-    throw conflict("Addon source must be a regular directory");
-  }
-  const files = await sourceFiles(sourceRoot);
-  if (files.length === 0) throw conflict("Addon source contains no files");
-
   const projectPreimage = await readFile(project.projectFileRealPath);
   const configCreated = !(await exists(configPath));
   await createProjectConfig(project.rootRealPath);
@@ -111,23 +147,7 @@ export async function installAddon(
 
   try {
     await mkdir(addonsRoot, { recursive: true, mode: 0o700 });
-    await mkdir(temporaryRoot, { recursive: false, mode: 0o700 });
-    const entries: InstalledFile[] = [];
-    for (const sourceRelativePath of files) {
-      const sourcePath = join(sourceRoot, sourceRelativePath);
-      const temporaryPath = join(temporaryRoot, sourceRelativePath);
-      await mkdir(dirname(temporaryPath), { recursive: true, mode: 0o700 });
-      await copyFile(sourcePath, temporaryPath);
-      const digest = sha256(await readFile(temporaryPath));
-      if (digest !== sha256(await readFile(sourcePath))) {
-        throw conflict(`Copied addon file failed hash verification: ${sourceRelativePath}`);
-      }
-      entries.push({
-        relativePath: join("addons/godot_mcp", sourceRelativePath).replaceAll("\\", "/"),
-        sha256: digest,
-      });
-    }
-    entries.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+    const entries = await stageAddon(sourceRoot, temporaryRoot);
     await rename(temporaryRoot, destinationRoot);
 
     const projectDigest = sha256(projectPreimage);
@@ -157,6 +177,62 @@ export async function installAddon(
   }
 }
 
+export async function upgradeAddon(
+  projectInput: string,
+  sourceInput: string,
+): Promise<InstallAddonResult> {
+  const project = await discoverProject(projectInput);
+  const oldManifest = await readInstallManifest(project.rootRealPath).catch(() => {
+    throw conflict("Godot MCP install manifest is missing or invalid");
+  });
+  await verifyInstalledTree(project.rootRealPath, oldManifest);
+
+  const projectPath = join(project.rootRealPath, "project.godot");
+  const configPath = join(project.rootRealPath, ".godot-mcp.json");
+  if (sha256(await readFile(projectPath)) !== oldManifest.projectFile.postimageSha256) {
+    throw conflict("project.godot changed independently after Godot MCP installation");
+  }
+  if (sha256(await readFile(configPath)) !== oldManifest.projectConfig.sha256) {
+    throw conflict(".godot-mcp.json changed independently after Godot MCP installation");
+  }
+
+  const addonsRoot = join(project.rootRealPath, "addons");
+  const destinationRoot = join(addonsRoot, "godot_mcp");
+  const transactionId = randomUUID();
+  const temporaryRoot = join(addonsRoot, `.godot_mcp.upgrade-${transactionId}`);
+  const backupRoot = join(addonsRoot, `.godot_mcp.rollback-${transactionId}`);
+  let switched = false;
+  try {
+    const entries = await stageAddon(resolve(sourceInput), temporaryRoot);
+    const manifest: InstallManifest = {
+      ...oldManifest,
+      productVersion: PRODUCT_VERSION,
+      installedAt: new Date().toISOString(),
+      manifestSha256: hashFileEntries(entries),
+      files: entries,
+    };
+    await rename(destinationRoot, backupRoot);
+    try {
+      await rename(temporaryRoot, destinationRoot);
+    } catch (error) {
+      await rename(backupRoot, destinationRoot);
+      throw error;
+    }
+    switched = true;
+    await writeInstallManifest(project.rootRealPath, manifest);
+    await rm(backupRoot, { recursive: true });
+    return { projectRoot: project.rootRealPath, manifest };
+  } catch (error) {
+    await rm(temporaryRoot, { recursive: true, force: true });
+    if (switched) {
+      await rm(destinationRoot, { recursive: true, force: true });
+      await rename(backupRoot, destinationRoot);
+      await writeInstallManifest(project.rootRealPath, oldManifest);
+    }
+    throw error;
+  }
+}
+
 export async function uninstallAddon(projectInput: string): Promise<void> {
   const project = await discoverProject(projectInput);
   let manifest: InstallManifest;
@@ -166,20 +242,8 @@ export async function uninstallAddon(projectInput: string): Promise<void> {
     throw conflict("Godot MCP install manifest is missing or invalid");
   }
 
-  const expectedRelative = manifest.files.map((file) =>
-    file.relativePath.slice("addons/godot_mcp/".length),
-  );
   const destinationRoot = join(project.rootRealPath, "addons/godot_mcp");
-  const actualRelative = await installedTreeFiles(destinationRoot);
-  if (JSON.stringify(actualRelative) !== JSON.stringify(expectedRelative)) {
-    throw conflict("Installed addon tree contains missing or untracked files");
-  }
-  for (const file of manifest.files) {
-    const current = await readFile(join(project.rootRealPath, file.relativePath));
-    if (sha256(current) !== file.sha256) {
-      throw conflict(`Installed addon file was modified: ${file.relativePath}`);
-    }
-  }
+  await verifyInstalledTree(project.rootRealPath, manifest);
 
   const projectPath = join(project.rootRealPath, "project.godot");
   if (sha256(await readFile(projectPath)) !== manifest.projectFile.postimageSha256) {

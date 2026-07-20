@@ -9,6 +9,8 @@ Godot MCP is an open-source, security-first MCP server and Godot editor addon. P
 - pnpm 11.13.0
 - Godot 4.7 stable
 
+Compatibility is evidence-gated by `release/compatibility-matrix.json`. Godot 4.4–4.6 and Linux/Windows remain experimental until their exact matrix cells carry trusted certification receipts; pending cells are not advertised as supported.
+
 ## Source quick start
 
 ```bash
@@ -18,6 +20,8 @@ node /absolute/path/to/godot-mcp/packages/cli/dist/bin.js init --project /absolu
 node /absolute/path/to/godot-mcp/packages/cli/dist/bin.js doctor --project /absolute/path/to/godot-project
 node /absolute/path/to/godot-mcp/packages/cli/dist/bin.js editor --project /absolute/path/to/godot-project
 ```
+
+For a verified release-to-release replacement, run `godot-mcp upgrade --project /absolute/path/to/godot-project --source /absolute/path/to/new/addons/godot_mcp`. Upgrade and rollback refuse independently modified installed files and preserve the original uninstall preimage.
 
 Use the `editor` command for the Phase 7-certified launch. It writes a short-lived owner-only startup attestation, then starts Godot with the authenticated editor debugger and native DAP assigned to one loopback port; the debugger binds first, so unauthenticated DAP never acquires a listener. The addon consumes the attestation and connects outward only when a matching MCP runtime publishes a short-lived pairing descriptor. Opening the project through another launcher keeps earlier editor features available, but runtime debugging fails closed because secure startup cannot be proven by copied user arguments alone.
 

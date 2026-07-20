@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "productVersion": "0.1.0",
+  "cells": [
+    { "godot": "4.4", "exactVersion": null, "platform": "linux", "architecture": "x64", "state": "pending", "gate": "phase-11-cell" },
+    { "godot": "4.4", "exactVersion": null, "platform": "macos", "architecture": "arm64", "state": "pending", "gate": "phase-11-cell" },
+    { "godot": "4.4", "exactVersion": null, "platform": "windows", "architecture": "x64", "state": "pending", "gate": "phase-11-cell" },
+    { "godot": "4.5", "exactVersion": null, "platform": "linux", "architecture": "x64", "state": "pending", "gate": "phase-11-cell" },
+    { "godot": "4.5", "exactVersion": null, "platform": "macos", "architecture": "arm64", "state": "pending", "gate": "phase-11-cell" },
+    { "godot": "4.5", "exactVersion": null, "platform": "windows", "architecture": "x64", "state": "pending", "gate": "phase-11-cell" },
+    { "godot": "4.6", "exactVersion": null, "platform": "linux", "architecture": "x64", "state": "pending", "gate": "phase-11-cell" },
+    { "godot": "4.6", "exactVersion": null, "platform": "macos", "architecture": "arm64", "state": "pending", "gate": "phase-11-cell" },
+    { "godot": "4.6", "exactVersion": null, "platform": "windows", "architecture": "x64", "state": "pending", "gate": "phase-11-cell" },
+    { "godot": "4.7", "exactVersion": "4.7.stable.official.5b4e0cb0f", "platform": "linux", "architecture": "x64", "state": "pending", "gate": "phase-11-cell" },
+    { "godot": "4.7", "exactVersion": "4.7.stable.official.5b4e0cb0f", "platform": "macos", "architecture": "arm64", "state": "pending", "gate": "phase-11-cell" },
+    { "godot": "4.7", "exactVersion": "4.7.stable.official.5b4e0cb0f", "platform": "windows", "architecture": "x64", "state": "pending", "gate": "phase-11-cell" }
+  ]
+}

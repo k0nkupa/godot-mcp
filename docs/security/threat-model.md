@@ -2,7 +2,7 @@
 
 ## Security boundary
 
-Phase 0–9 protects a Godot project from unauthenticated network clients, accidental cross-project attachment, replay, stale messages, and ordinary local clients that do not possess the short-lived secrets. It bounds editor metadata/evidence, an explicitly authorized instrumented runtime, permission-scoped editor and project mutations, native GDScript debugging, structured performance and visual evidence, and fixed import/build/export jobs. It does not defend against a process that has already compromised the same operating-system user, and the runtime harness is not a sandbox for hostile game code.
+Phase 0–9 protects a Godot project from unauthenticated network clients, accidental cross-project attachment, replay, stale messages, and ordinary local clients that do not possess the short-lived secrets. It bounds editor metadata/evidence, an explicitly authorized instrumented runtime, permission-scoped editor and project mutations, native GDScript debugging, structured performance evidence, and fixed import/build/export jobs. It does not defend against a process that has already compromised the same operating-system user, and the runtime harness is not a sandbox for hostile game code.
 
 The MCP process listens only on IPv4 loopback (`127.0.0.1`). The Godot addon never opens a listener; it reads the descriptor for its exact project identity and connects outward. Loopback is transport containment, not authentication.
 

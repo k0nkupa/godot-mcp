@@ -5,6 +5,7 @@ import { copyFixture } from "@godot-mcp/testkit";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { installAddon, uninstallAddon } from "../index.js";
+import { hashFileEntries, parseInstallManifest } from "./addonManifest.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 const addonSource = resolve(process.cwd(), "addons/godot_mcp");
@@ -37,5 +38,14 @@ describe("addon installer", () => {
       code: "ENOENT",
     });
     expect(await project.diffFromOriginal()).toEqual([]);
+  });
+
+  it("accepts prior-version ownership but rejects unsafe manifest paths", async () => {
+    const project = await copyFixture(); cleanups.push(project.cleanup);
+    const installed = await installAddon(project.root, addonSource);
+    expect(parseInstallManifest({ ...installed.manifest, productVersion: "0.0.9" })).toMatchObject({ productVersion: "0.0.9" });
+    const files = installed.manifest.files.map((file, index) => index === 0 ? { ...file, relativePath: "addons/godot_mcp/../../outside" } : file);
+    expect(() => parseInstallManifest({ ...installed.manifest, files, manifestSha256: hashFileEntries(files) })).toThrow(/invalid shape/i);
+    expect(() => parseInstallManifest({ ...installed.manifest, productVersion: "999.0.0" })).toThrow(/invalid shape/i);
   });
 });

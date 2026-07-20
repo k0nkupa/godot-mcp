@@ -3,8 +3,10 @@ export { createSecureEditorLaunchAttestation, launchSecureEditor, secureEditorAr
 export { disableAddon } from "./commands/disable.js";
 export { doctorProject } from "./commands/doctor.js";
 export { uninstallProject } from "./commands/uninstall.js";
+export { upgradeProject } from "./commands/upgrade.js";
 export {
   installAddon,
+  upgradeAddon,
   uninstallAddon,
   type InstallAddonResult,
 } from "./install/addonInstaller.js";
