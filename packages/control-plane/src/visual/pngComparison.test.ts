@@ -85,4 +85,12 @@ describe("comparePng", () => {
     expect(() => comparePng({ baseline: hostile, current: black, settings: settings() }))
       .toThrowError(expect.objectContaining({ code: "PAYLOAD_TOO_LARGE" }));
   });
+
+  it("rejects interlaced PNGs before entering the unbounded sync inflate path", () => {
+    const interlaced = Buffer.from(black);
+    interlaced[28] = 1;
+
+    expect(() => comparePng({ baseline: interlaced, current: black, settings: settings() }))
+      .toThrow(/interlaced/i);
+  });
 });

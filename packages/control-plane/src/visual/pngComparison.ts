@@ -48,7 +48,7 @@ function decodePng(bytes: Uint8Array): DecodedPng {
   if (bytes.byteLength > MAX_PNG_BYTES) throw comparisonError("PAYLOAD_TOO_LARGE", "Visual comparison PNG exceeds eight MiB");
   const encoded = Buffer.from(bytes);
   if (
-    encoded.byteLength < 24 ||
+    encoded.byteLength < 29 ||
     !encoded.subarray(0, PNG_SIGNATURE.byteLength).equals(PNG_SIGNATURE) ||
     encoded.readUInt32BE(8) !== 13 ||
     !encoded.subarray(12, 16).equals(IHDR)
@@ -60,6 +60,9 @@ function decodePng(bytes: Uint8Array): DecodedPng {
     declaredWidth > 2048 || declaredHeight > 2048 ||
     declaredWidth * declaredHeight > MAX_PIXELS
   ) throw comparisonError("PAYLOAD_TOO_LARGE", "Visual comparison PNG dimensions exceed certified bounds");
+  if (encoded[28] === 1) {
+    throw comparisonError("INVALID_REQUEST", "Interlaced visual comparison PNGs are not supported");
+  }
   let decoded: PNG;
   try {
     decoded = PNG.sync.read(encoded);
