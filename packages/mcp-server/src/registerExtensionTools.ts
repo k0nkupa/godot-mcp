@@ -8,6 +8,14 @@ import { executeTool, type ToolExecutionDependencies } from "./executeTool.js";
 import { toMcpToolResult } from "./toolResult.js";
 
 const ExtensionCallSchema = z.object({ extension: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/), operation: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/), input: z.unknown() }).strict();
+const RESERVED_AUDIT_KEYS = new Set(["extension", "operation"]);
+
+function extensionAuditArguments(extension: string, operation: string, audit: () => Record<string, unknown>): Record<string, unknown> {
+  const facts = audit();
+  for (const key of Object.keys(facts)) if (RESERVED_AUDIT_KEYS.has(key)) throw new Error(`Extension audit metadata cannot override ${key}`);
+  if (Buffer.byteLength(JSON.stringify(facts)) > 64 * 1024) throw new Error("Extension audit metadata exceeds 64 KiB");
+  return { extension, operation, ...facts };
+}
 
 export interface ExtensionToolDependencies extends ToolExecutionDependencies {
   extensions: ExtensionRegistry;
@@ -42,7 +50,7 @@ export function registerExtensionTools(server: McpServer, dependencies: Extensio
         if (Buffer.byteLength(JSON.stringify(output)) > 512 * 1024) throw new Error("Extension output exceeds 512 KiB");
         return { data: output };
       },
-      { auditArguments: { extension: input.extension, operation: input.operation, ...definition.audit(parsed) } },
+      { auditArguments: () => extensionAuditArguments(input.extension, input.operation, () => definition.audit(parsed)) },
     ));
   });
 }

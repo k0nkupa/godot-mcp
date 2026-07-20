@@ -9,12 +9,13 @@ const CONFIRMATION = "I UNDERSTAND THIS RUNS UNSANDBOXED CODE";
 const MAX_LEASE_MS = 5 * 60_000;
 const RegistrationSchema = z.object({ registrationId: z.uuid(), templateRoot: z.string().min(1), projectSha256: z.string().regex(/^[a-f0-9]{64}$/), markerNonceSha256: z.string().regex(/^[a-f0-9]{64}$/), createdAt: z.string().datetime() }).strict();
 const RegistrySchema = z.object({ schemaVersion: z.literal(1), registrations: z.array(RegistrationSchema).max(128) }).strict();
-const MarkerSchema = z.object({ schemaVersion: z.literal(1), registrationId: z.uuid(), role: z.enum(["template", "copy"]), disposable: z.literal(true), projectSha256: z.string().regex(/^[a-f0-9]{64}$/), markerNonce: z.string().regex(/^[A-Za-z0-9_-]{43}$/), instanceId: z.uuid().optional() }).strict();
-const LeaseSchema = z.object({ schemaVersion: z.literal(1), registrationId: z.uuid(), instanceId: z.uuid(), copyRoot: z.string().min(1), projectSha256: z.string().regex(/^[a-f0-9]{64}$/), markerNonceSha256: z.string().regex(/^[a-f0-9]{64}$/), nonce: z.string().regex(/^[A-Za-z0-9_-]{43}$/), expiresAt: z.string().datetime() }).strict();
+const MarkerSchema = z.object({ schemaVersion: z.literal(1), registrationId: z.uuid(), role: z.enum(["template", "copy"]), disposable: z.literal(true), projectSha256: z.string().regex(/^[a-f0-9]{64}$/), markerNonce: z.string().regex(/^[A-Za-z0-9_-]{43}$/), createdAt: z.string().datetime(), instanceId: z.uuid().optional() }).strict();
+const LeaseSchema = z.object({ schemaVersion: z.literal(1), registrationId: z.uuid(), instanceId: z.uuid(), copyRoot: z.string().min(1), projectSha256: z.string().regex(/^[a-f0-9]{64}$/), markerNonceSha256: z.string().regex(/^[a-f0-9]{64}$/), ownerUid: z.number().int().nonnegative(), nonce: z.string().regex(/^[A-Za-z0-9_-]{43}$/), expiresAt: z.string().datetime() }).strict();
 
 export type UnsafeActivation = z.infer<typeof LeaseSchema>;
 
 function sha256(value: string | Buffer): string { return createHash("sha256").update(value).digest("hex"); }
+function ownerUid(): number { const uid = process.getuid?.(); if (uid === undefined) throw new Error("Unsafe fixture mode requires a POSIX process uid"); return uid; }
 
 async function projectIdentity(root: string): Promise<{ root: string; sha256: string }> {
   const canonical = await realpath(root);
@@ -59,7 +60,7 @@ export async function registerUnsafeFixture(registryPath: string, templateRoot: 
   if (current.registrations.some((entry) => entry.templateRoot === project.root)) throw new Error("Unsafe fixture template is already registered");
   const registrationId = randomUUID();
   const markerNonce = randomBytes(32).toString("base64url");
-  await atomicOwnerOnlyJson(join(project.root, ".godot-mcp-unsafe-fixture.json"), { schemaVersion: 1, registrationId, role: "template", disposable: true, projectSha256: project.sha256, markerNonce });
+  await atomicOwnerOnlyJson(join(project.root, ".godot-mcp-unsafe-fixture.json"), { schemaVersion: 1, registrationId, role: "template", disposable: true, projectSha256: project.sha256, markerNonce, createdAt: new Date().toISOString() });
   current.registrations.push({ registrationId, templateRoot: project.root, projectSha256: project.sha256, markerNonceSha256: sha256(markerNonce), createdAt: new Date().toISOString() });
   await atomicOwnerOnlyJson(registryPath, current);
   return { registrationId };
@@ -75,7 +76,7 @@ export async function stampUnsafeFixtureCopy(registryPath: string, copyRoot: str
   const templateMarker = MarkerSchema.parse(await readOwnerOnlyJson(join(registration.templateRoot, ".godot-mcp-unsafe-fixture.json")));
   if (templateMarker.registrationId !== registrationId || sha256(templateMarker.markerNonce) !== registration.markerNonceSha256) throw new Error("Unsafe fixture template marker changed");
   const instanceId = randomUUID();
-  await atomicOwnerOnlyJson(join(project.root, ".godot-mcp-unsafe-fixture.json"), { ...templateMarker, role: "copy", instanceId });
+  await atomicOwnerOnlyJson(join(project.root, ".godot-mcp-unsafe-fixture.json"), { ...templateMarker, role: "copy", instanceId, createdAt: new Date().toISOString() });
   return { instanceId };
 }
 
@@ -89,7 +90,7 @@ export async function approveUnsafeFixtureCopy(registryPath: string, copyRoot: s
   if (!registration || project.root === registration.templateRoot || project.sha256 !== registration.projectSha256 || sha256(marker.markerNonce) !== registration.markerNonceSha256) throw new Error("Unsafe fixture copy no longer matches registration");
   const expiresAt = new Date(Date.now() + ttlMs).toISOString();
   const leasePath = resolve(activationDirectory, `unsafe-activation-${randomUUID()}.json`);
-  await atomicOwnerOnlyJson(leasePath, { schemaVersion: 1, registrationId: marker.registrationId, instanceId: marker.instanceId, copyRoot: project.root, projectSha256: project.sha256, markerNonceSha256: registration.markerNonceSha256, nonce: randomBytes(32).toString("base64url"), expiresAt });
+  await atomicOwnerOnlyJson(leasePath, { schemaVersion: 1, registrationId: marker.registrationId, instanceId: marker.instanceId, copyRoot: project.root, projectSha256: project.sha256, markerNonceSha256: registration.markerNonceSha256, ownerUid: ownerUid(), nonce: randomBytes(32).toString("base64url"), expiresAt });
   return { leasePath, expiresAt };
 }
 
@@ -100,7 +101,7 @@ export async function consumeUnsafeFixtureActivation(registryPath: string, copyR
   const project = await projectIdentity(copyRoot);
   const marker = MarkerSchema.parse(await readOwnerOnlyJson(join(project.root, ".godot-mcp-unsafe-fixture.json")));
   const registration = (await registry(registryPath)).registrations.find((entry) => entry.registrationId === lease.registrationId);
-  if (!registration || lease.copyRoot !== project.root || lease.copyRoot === registration.templateRoot || lease.projectSha256 !== project.sha256 || lease.instanceId !== marker.instanceId || lease.markerNonceSha256 !== sha256(marker.markerNonce)) throw new Error("Unsafe activation identity mismatch");
+  if (!registration || lease.ownerUid !== ownerUid() || lease.copyRoot !== project.root || lease.copyRoot === registration.templateRoot || lease.projectSha256 !== project.sha256 || lease.instanceId !== marker.instanceId || lease.markerNonceSha256 !== sha256(marker.markerNonce)) throw new Error("Unsafe activation identity mismatch");
   if (Date.parse(lease.expiresAt) <= now || Date.parse(lease.expiresAt) > now + MAX_LEASE_MS) throw new Error("Unsafe activation expired or has an invalid future lifetime");
   return lease;
 }

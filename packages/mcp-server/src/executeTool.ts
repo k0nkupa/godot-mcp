@@ -46,7 +46,7 @@ export interface ExecutedToolResult {
 }
 
 export interface ToolExecutionOptions {
-  auditArguments?: unknown;
+  auditArguments?: unknown | ((correlationId: string) => unknown);
 }
 
 function normalizeError(error: unknown, correlationId: string): GodotMcpError {
@@ -83,8 +83,10 @@ export async function executeTool(
 ): Promise<ExecutedToolResult> {
   const correlationId = randomUUID();
   const startedAt = new Date().toISOString();
+  let auditArguments = argumentsValue;
   try {
     authorize(dependencies.grants, policy);
+    auditArguments = typeof options.auditArguments === "function" ? options.auditArguments(correlationId) : (options.auditArguments ?? argumentsValue);
     const payload = await handler(correlationId);
     const evidence = payload.evidence ?? [];
     const warnings = payload.warnings ?? [];
@@ -99,7 +101,7 @@ export async function executeTool(
       permissionTier: policy.tier,
       startedAt,
       finishedAt: new Date().toISOString(),
-      arguments: options.auditArguments ?? argumentsValue,
+      arguments: auditArguments,
       errorCode: null,
       evidence,
       targetIdentities: auditFacts?.targetIdentities ?? [],
@@ -133,7 +135,7 @@ export async function executeTool(
       permissionTier: policy.tier,
       startedAt,
       finishedAt: new Date().toISOString(),
-      arguments: options.auditArguments ?? argumentsValue,
+      arguments: auditArguments,
       errorCode: normalized.code,
       evidence: [],
       targetIdentities: [],

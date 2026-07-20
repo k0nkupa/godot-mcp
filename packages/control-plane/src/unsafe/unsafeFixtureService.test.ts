@@ -8,7 +8,7 @@ import { UnsafeFixtureProcess, type UnsafeFixtureProcessHandle } from "./unsafeF
 import { UnsafeFixtureService } from "./unsafeFixtureService.js";
 
 function activation(copyRoot: string) {
-  return { schemaVersion: 1 as const, registrationId: crypto.randomUUID(), instanceId: crypto.randomUUID(), copyRoot, projectSha256: "a".repeat(64), markerNonceSha256: "b".repeat(64), nonce: "C".repeat(43), expiresAt: new Date(Date.now() + 60_000).toISOString() };
+  return { schemaVersion: 1 as const, registrationId: crypto.randomUUID(), instanceId: crypto.randomUUID(), copyRoot, projectSha256: "a".repeat(64), markerNonceSha256: "b".repeat(64), ownerUid: process.getuid!(), nonce: "C".repeat(43), expiresAt: new Date(Date.now() + 60_000).toISOString() };
 }
 
 async function terminal(service: UnsafeFixtureService, token: string) {
@@ -40,7 +40,7 @@ test.skipIf(process.env.GODOT_MCP_SKIP_PROCESS_FINGERPRINT === "1")("runs arbitr
 it("keeps one opaque session job and cancels only its owned process", async () => {
   const project = await copyFixture(); let release!: (code: number) => void; const waiting = new Promise<number>((resolve) => { release = resolve; });
   let sessionId = "session_12345678";
-  const process: UnsafeFixtureProcessHandle & { stopped: number } = { pid: 123, fingerprint: "123:owned", stopped: 0, wait: () => waiting, diagnostics: () => "private output", async stop() { this.stopped += 1; release(143); } };
+  const process: UnsafeFixtureProcessHandle & { stopped: number } = { pid: 123, fingerprint: "123:owned", stopped: 0, wait: () => waiting, diagnostics: () => Buffer.from("private output"), outputExceeded: () => false, async stop() { this.stopped += 1; release(143); } };
   try {
     const service = new UnsafeFixtureService({ activation: activation(project.root), sessionId: () => sessionId, launch: async () => process });
     const started = service.start("extends SceneTree", 5_000);
@@ -53,6 +53,22 @@ it("keeps one opaque session job and cancels only its owned process", async () =
     expect(() => service.status(started.jobToken)).toThrow(/stale/i);
     expect(() => service.status(`ujob_${"D".repeat(43)}`)).toThrow(/stale/i);
   } finally { release(143); await project.cleanup(); }
+});
+
+it("chunks bounded output evidence and treats a pre-launch failure as clean", async () => {
+  const project = await copyFixture();
+  try {
+    const large = Buffer.alloc(2 * 1024 * 1024, 65);
+    const service = new UnsafeFixtureService({ activation: activation(project.root), sessionId: () => "session_12345678", launch: async () => ({ pid: 123, fingerprint: "123:owned", wait: async () => 0, stop: async () => undefined, diagnostics: () => large, outputExceeded: () => false }) });
+    const started = service.start("extends SceneTree", 5_000); await terminal(service, started.jobToken);
+    expect(service.result(started.jobToken)).toMatchObject({ state: "completed", cleanup: "succeeded", evidence: expect.arrayContaining([expect.stringMatching(/^godot-mcp:/)]) });
+    expect(service.result(started.jobToken).evidence).toHaveLength(4);
+
+    const failing = new UnsafeFixtureService({ activation: activation(project.root), sessionId: () => "session_12345678", launch: async () => { throw new Error("launch failed"); } });
+    const failed = failing.start("extends SceneTree", 5_000); await terminal(failing, failed.jobToken);
+    expect(failing.result(failed.jobToken)).toMatchObject({ state: "failed", cleanup: "succeeded" });
+    expect(failing.blocksExport()).toBe(false);
+  } finally { await project.cleanup(); }
 });
 
 it("fails activation closed when crash residue exists", async () => {

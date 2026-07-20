@@ -23,7 +23,7 @@ export const UnsafeFixtureJobResultSchema = UnsafeFixtureJobReceiptSchema.extend
   exitCode: z.number().int().min(0).max(255).nullable(),
   sourceSha256: z.string().regex(/^[a-f0-9]{64}$/),
   sourceBytes: z.number().int().min(1).max(65_536),
-  evidence: z.array(EvidenceUriSchema).max(4),
+  evidence: z.array(EvidenceUriSchema).max(8),
   cleanup: z.enum(["succeeded", "failed"]),
 }).strict();
 

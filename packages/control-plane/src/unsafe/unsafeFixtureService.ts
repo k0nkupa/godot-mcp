@@ -11,6 +11,7 @@ import type { UnsafeActivation } from "./unsafeFixtureAuthority.js";
 import type { UnsafeFixtureProcessHandle } from "./unsafeFixtureProcess.js";
 
 interface UnsafeJob { token: string; sessionId: string; source: string; sourceSha256: string; sourceBytes: number; deadlineAt: number; state: UnsafeFixtureJobReceipt["state"]; controller: AbortController; process?: UnsafeFixtureProcessHandle; result?: UnsafeFixtureJobResult; }
+const OUTPUT_CHUNK_BYTES = 512 * 1024;
 
 export interface UnsafeFixtureServiceDependencies {
   activation: UnsafeActivation;
@@ -96,16 +97,26 @@ export class UnsafeFixtureService {
       const handle = await open(script, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
       try { await handle.writeFile(job.source, "utf8"); } finally { await handle.close(); }
       job.source = "";
+      if (job.controller.signal.aborted) throw job.controller.signal.reason;
       job.process = await this.dependencies.launch({ projectRoot: this.dependencies.activation.copyRoot, scriptPath: script, isolationRoot: join(root, "isolation") });
       exitCode = await this.interruptible(job, job.process.wait());
-      terminal = exitCode === 0 ? "completed" : "failed";
+      terminal = exitCode === 0 && !job.process.outputExceeded() ? "completed" : "failed";
     } catch {
       await job.process?.stop().catch(() => undefined);
       terminal = job.controller.signal.aborted ? "cancelled" : "failed";
     } finally {
-      const stored = await this.evidence.putJson(job.sessionId, { output: job.process?.diagnostics() ?? "", state: terminal, exitCode, unsafe: true, sandboxed: false }, { kind: "unsafe_fixture_output" }).catch(() => undefined);
-      if (stored) evidence.push(stored.observationUri);
-      try { await unlink(script); await rm(join(root, "isolation"), { recursive: true, force: true }); await rmdir(root); } catch { cleanup = "failed"; }
+      const output = job.process?.diagnostics() ?? Buffer.alloc(0);
+      const chunkCount = Math.max(1, Math.ceil(output.byteLength / OUTPUT_CHUNK_BYTES));
+      for (let index = 0; index < chunkCount; index += 1) {
+        const chunk = output.subarray(index * OUTPUT_CHUNK_BYTES, (index + 1) * OUTPUT_CHUNK_BYTES);
+        const stored = await this.evidence.putJson(job.sessionId, { outputBase64: chunk.toString("base64"), encoding: "base64", chunkIndex: index, chunkCount, outputExceeded: job.process?.outputExceeded() ?? false, state: terminal, exitCode, unsafe: true, sandboxed: false }, { kind: "unsafe_fixture_output" }).catch(() => undefined);
+        if (stored) evidence.push(stored.observationUri);
+      }
+      const cleanupErrors: unknown[] = [];
+      await unlink(script).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") cleanupErrors.push(error); });
+      await rm(join(root, "isolation"), { recursive: true, force: true }).catch((error) => cleanupErrors.push(error));
+      await rmdir(root).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") cleanupErrors.push(error); });
+      if (cleanupErrors.length > 0) cleanup = "failed";
       job.state = terminal;
       job.result = UnsafeFixtureJobResultSchema.parse({ ...this.receipt(job), state: terminal, exitCode, sourceSha256: job.sourceSha256, sourceBytes: job.sourceBytes, evidence, cleanup });
     }
