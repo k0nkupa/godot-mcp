@@ -7,7 +7,9 @@ import {
   JsonlAuditSink,
   MutationLedger,
   RuntimeService,
+  ScenarioService,
   SessionService,
+  VisualService,
   readProjectIdentity,
   type SessionGrants,
 } from "@godot-mcp/control-plane";
@@ -28,7 +30,7 @@ export interface RuntimeOptions {
   godotBin?: string;
 }
 
-function normalizeRuntimeGrants(grants: SessionGrants | undefined): SessionGrants {
+export function normalizeRuntimeGrants(grants: SessionGrants | undefined): SessionGrants {
   if (grants === undefined) return { tiers: ["observe"], packs: ["core"] };
   const tiers = new Set(grants.tiers);
   const packs = new Set(grants.packs);
@@ -36,7 +38,7 @@ function normalizeRuntimeGrants(grants: SessionGrants | undefined): SessionGrant
     if (tier !== "observe" && tier !== "runtime_control" && tier !== "project_mutate") throw new Error(`Unsupported runtime tier: ${tier}`);
   }
   for (const pack of packs) {
-    if (pack !== "core" && pack !== "runtime" && pack !== "input" && pack !== "editor") throw new Error(`Unsupported runtime pack: ${pack}`);
+    if (pack !== "core" && pack !== "runtime" && pack !== "input" && pack !== "editor" && pack !== "visual") throw new Error(`Unsupported runtime pack: ${pack}`);
   }
   if (!tiers.has("observe") || !packs.has("core")) throw new Error("observe and core grants are required");
   const hasRuntimePack = packs.has("runtime") || packs.has("input");
@@ -47,10 +49,13 @@ function normalizeRuntimeGrants(grants: SessionGrants | undefined): SessionGrant
   if (tiers.has("project_mutate") !== hasEditorPack) {
     throw new Error("project_mutate must be granted with the editor pack");
   }
+  if (packs.has("visual") && (!packs.has("runtime") || !packs.has("input"))) {
+    throw new Error("visual pack requires runtime and input packs");
+  }
   if (!hasRuntimePack && !hasEditorPack) return { tiers: ["observe"], packs: ["core"] };
   return {
     tiers: ["observe", ...(tiers.has("runtime_control") ? ["runtime_control" as const] : []), ...(tiers.has("project_mutate") ? ["project_mutate" as const] : [])],
-    packs: ["core", ...(packs.has("runtime") ? ["runtime" as const] : []), ...(packs.has("input") ? ["input" as const] : []), ...(packs.has("editor") ? ["editor" as const] : [])],
+    packs: ["core", ...(packs.has("runtime") ? ["runtime" as const] : []), ...(packs.has("input") ? ["input" as const] : []), ...(packs.has("editor") ? ["editor" as const] : []), ...(packs.has("visual") ? ["visual" as const] : [])],
   };
 }
 
@@ -66,6 +71,7 @@ export class GodotMcpRuntime {
     readonly bridge: BridgeServer,
     readonly runtime: RuntimeService,
     readonly mcp: GodotMcpServer,
+    readonly visualScenario?: ScenarioService,
   ) {}
 
   close(reason: string): Promise<void> {
@@ -74,6 +80,7 @@ export class GodotMcpRuntime {
       const activeClose = (async () => {
         let runtimeError: unknown;
         try {
+          await this.visualScenario?.close();
           await this.runtime.close();
         } catch (error) {
           runtimeError = error;
@@ -100,6 +107,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<GodotMcpRu
   const session = new SessionService(project, grants, () => runDoctor(project.rootRealPath, godotBin));
   let bridge: BridgeServer | undefined;
   let runtime: RuntimeService | undefined;
+  let visualScenario: ScenarioService | undefined;
   let mcp: GodotMcpServer | undefined;
   const mutationLedger = grants.packs.includes("editor")
     ? await MutationLedger.open(join(project.rootRealPath, ".godot/evidence/godot-mcp/mutation-journal.jsonl"))
@@ -181,18 +189,33 @@ export async function createRuntime(options: RuntimeOptions): Promise<GodotMcpRu
           mutationLedger,
         )
       : undefined;
+    const evidence = new EvidenceStore(project.rootRealPath);
+    const sessionId = () => bridge?.session?.sessionId ?? null;
+    const visual = grants.packs.includes("visual")
+      ? (() => {
+          visualScenario = new ScenarioService({
+            projectId: project.projectId,
+            sessionId,
+            runtime,
+            evidence,
+          });
+          return new VisualService({ sessionId, evidence, scenario: visualScenario });
+        })()
+      : undefined;
     mcp = createGodotMcpServer({
       project,
       grants,
       audit,
       session,
       bridge: () => bridge?.session ?? null,
-      evidence: new EvidenceStore(project.rootRealPath),
+      evidence,
       runtime,
+      ...(visual === undefined ? {} : { visual }),
       ...(editor === undefined ? {} : { editor }),
     });
-    return new GodotMcpRuntime(project, audit, session, bridge, runtime, mcp);
+    return new GodotMcpRuntime(project, audit, session, bridge, runtime, mcp, visualScenario);
   } catch (error) {
+    await visualScenario?.close().catch(() => undefined);
     await runtime?.close().catch(() => undefined);
     await mcp?.close().catch(() => undefined);
     await bridge?.close().catch(() => undefined);

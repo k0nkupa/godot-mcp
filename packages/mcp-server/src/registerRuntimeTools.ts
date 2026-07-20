@@ -13,6 +13,7 @@ import {
   RuntimeOperationInputSchema,
   ToolResultSchema,
   type RuntimeCaptureInput,
+  type RuntimeLaunchPins,
   type RuntimeOperationInput,
 } from "@godot-mcp/protocol";
 
@@ -32,7 +33,7 @@ export interface RuntimeFrame {
 }
 
 export interface RuntimeController {
-  launch(input: { scenePath: string; startupTimeoutMs: number }): Promise<unknown>;
+  launch(input: { scenePath: string; startupTimeoutMs: number; pins?: RuntimeLaunchPins }): Promise<unknown>;
   execute(input: Exclude<RuntimeOperationInput, { operation: "launch" }>): Promise<unknown>;
   capture(input: RuntimeCaptureInput): Promise<{ frames: RuntimeFrame[] }>;
 }
@@ -67,7 +68,11 @@ export function registerRuntimeTools(server: McpServer, dependencies: RuntimeToo
     const auditArguments = runtimeAuditArguments(input);
     return toMcpToolResult(await executeTool(dependencies, RUNTIME_POLICY, input, async () => {
       if (input.operation === "launch") {
-        return { data: await dependencies.runtime.launch({ scenePath: input.scenePath, startupTimeoutMs: input.startupTimeoutMs }) };
+        return { data: await dependencies.runtime.launch({
+          scenePath: input.scenePath,
+          startupTimeoutMs: input.startupTimeoutMs,
+          ...(input.pins ? { pins: input.pins } : {}),
+        }) };
       }
       const data = await dependencies.runtime.execute(input);
       const audit = performanceAuditFacts(input, data);

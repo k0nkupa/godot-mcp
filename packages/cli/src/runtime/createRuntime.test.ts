@@ -5,6 +5,7 @@ import { copyFixture } from "@godot-mcp/testkit";
 import { afterEach, expect, it } from "vitest";
 
 import { createRuntime, GodotMcpRuntime, installAddon } from "../index.js";
+import { normalizeRuntimeGrants } from "./createRuntime.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 const originalRuntimeDirectory = process.env.XDG_RUNTIME_DIR;
@@ -23,6 +24,27 @@ async function pathExists(path: string): Promise<boolean> {
     return false;
   }
 }
+
+it("accepts visual only as the complete runtime input visual capability set", () => {
+  expect(normalizeRuntimeGrants({
+    tiers: ["observe", "runtime_control"],
+    packs: ["core", "visual", "input", "runtime"],
+  })).toEqual({
+    tiers: ["observe", "runtime_control"],
+    packs: ["core", "runtime", "input", "visual"],
+  });
+});
+
+it("rejects incomplete visual capability sets", () => {
+  expect(() => normalizeRuntimeGrants({
+    tiers: ["observe", "runtime_control"],
+    packs: ["core", "runtime", "visual"],
+  })).toThrow("visual pack requires runtime and input packs");
+  expect(() => normalizeRuntimeGrants({
+    tiers: ["observe", "runtime_control"],
+    packs: ["core", "input", "visual"],
+  })).toThrow("visual pack requires runtime and input packs");
+});
 
 it("creates an observe-only runtime and removes its descriptor on concurrent close", async () => {
   const project = await copyFixture();
