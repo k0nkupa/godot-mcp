@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "sourceHead": "20482b130f8083bd381b3fd9dff2e0129b06a52f",
+  "baselineName": "town-smoke-approved",
+  "pins": {
+    "width": 1280,
+    "height": 720,
+    "renderer": "gl_compatibility",
+    "locale": "en",
+    "seed": 42,
+    "fixedFps": 60
+  },
+  "readiness": {
+    "kind": "wait",
+    "timeoutMs": 30000,
+    "condition": {
+      "type": "frames_elapsed",
+      "frames": 30
+    }
+  },
+  "comparisonSettings": {
+    "masks": [],
+    "maxChannelDelta": 4,
+    "maxDifferentPixels": 9216,
+    "maxDifferentRatioMillionths": 10000
+  }
+}

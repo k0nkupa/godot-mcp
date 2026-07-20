@@ -1,20 +1,61 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { access, mkdir, mkdtemp, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { access, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { basename, join } from "node:path";
 
 import type { ScenarioDeclaration, ScenarioReport } from "@godot-mcp/protocol";
-import { launchEditor, launchMcpClient, reserveLoopbackPort, runCli, runGodot, waitUntil } from "@godot-mcp/testkit";
+import { inspectPng, launchEditor, launchMcpClient, reserveLoopbackPort, runCli, runGodot, waitUntil } from "@godot-mcp/testkit";
 import { expect, test } from "vitest";
 
 const source = "/Users/tony/Projects/town-building-game";
 const sourcePresent = await access(join(source, "project.godot")).then(() => true, () => false);
+const expectedSourceHead = "20482b130f8083bd381b3fd9dff2e0129b06a52f";
+const baselineName = "town-smoke-approved";
+const baselineBundle = join(process.cwd(), "tests/acceptance/baselines/town-building-game-phase-8");
+const developedSaveFixture = join(process.cwd(), "tests/acceptance/fixtures/town-developed-save.gd");
 const pins = { width: 1280, height: 720, renderer: "gl_compatibility" as const, locale: "en", seed: 42, fixedFps: 60 as const };
+const readiness = { kind: "wait" as const, timeoutMs: 30_000, condition: { type: "frames_elapsed" as const, frames: 30 } };
+const comparisonSettings = { masks: [], maxChannelDelta: 4, maxDifferentPixels: 9_216, maxDifferentRatioMillionths: 10_000 };
+const updateBaseline = process.env.GODOT_MCP_UPDATE_TOWN_BASELINE === "1";
+
+interface ApprovedTownBaseline {
+  approval: {
+    schemaVersion: 1;
+    sourceHead: string;
+    baselineName: string;
+    pins: typeof pins;
+    readiness: typeof readiness;
+    comparisonSettings: typeof comparisonSettings;
+  };
+  manifest: {
+    schemaVersion: 1;
+    comparisonContractVersion: 1;
+    name: string;
+    sha256: string;
+    mimeType: "image/png";
+    byteLength: number;
+    width: number;
+    height: number;
+    sourceObservationSha256: string;
+    createdAtUnixMs: number;
+  };
+  png: Buffer;
+}
 
 test.skipIf(!sourcePresent)("accepts a town-building-game archive without changing its source checkout", async () => {
   const before = await sourceState();
+  if (!updateBaseline) {
+    expect(before.head, "town-building-game HEAD changed; regenerate and review the Phase 8 baseline").toBe(expectedSourceHead);
+  }
+  const approved = updateBaseline ? undefined : await readApprovedBaseline();
   const container = await mkdtemp("/private/tmp/godot-mcp-phase8-town-");
   const project = join(container, "project");
+  const customUserDataName = basename(container);
+  if (!customUserDataName.startsWith("godot-mcp-phase8-town-")) {
+    throw new Error("Refusing an unexpected custom user-data name");
+  }
+  const userDataDirectory = join(homedir(), "Library", "Application Support", customUserDataName);
   const previousRuntime = process.env.XDG_RUNTIME_DIR;
   process.env.XDG_RUNTIME_DIR = join(container, "runtime");
   let editor: Awaited<ReturnType<typeof launchEditor>> | undefined;
@@ -22,12 +63,16 @@ test.skipIf(!sourcePresent)("accepts a town-building-game archive without changi
   try {
     await mkdir(project, { recursive: true });
     await extractHeadArchive(project);
+    await configureCustomUserData(project, customUserDataName);
     const imported = await runGodot(
       ["--headless", "--editor", "--path", project, "--import"],
       { timeoutMs: 300_000 },
     );
     expect(imported.exitCode, imported.stderr).toBe(0);
-    expect((await runCli(["init", "--project", project])).exitCode).toBe(0);
+    await seedDevelopedSave(project, userDataDirectory);
+    const initialized = await runCli(["init", "--project", project]);
+    expect(initialized.exitCode, initialized.stderr).toBe(0);
+    if (approved) await stageApprovedBaseline(project, approved);
     const port = await reserveLoopbackPort();
     editor = await launchEditor(project, { headless: false, debugServerPort: port, dapPort: port });
     client = await launchMcpClient([
@@ -40,23 +85,61 @@ test.skipIf(!sourcePresent)("accepts a town-building-game archive without changi
       return (result?.structuredContent as { data?: { state?: string } } | undefined)?.data?.state === "attached";
     }, 20_000, 100);
 
-    const first = await runScenario(client, townScenario("town-smoke-source", [
+    const steps: ScenarioDeclaration["steps"] = [
+      readiness,
+      { kind: "assert", assertion: { type: "no_error_logs" } },
       { kind: "control", action: "pause" },
       { kind: "capture", label: "town", maxWidth: 1280, maxHeight: 720, frameCount: 1, intervalFrames: 1, advancePaused: true },
-    ]));
-    expect(first).toMatchObject({ state: "completed", cleanup: "succeeded" });
-    const observationUri = first.steps[1]?.evidence[0];
-    await callVisual(client, { operation: "baseline_create", name: "town-smoke", observationUri });
-
-    const second = await runScenario(client, townScenario("town-smoke-repeat", [
-      { kind: "control", action: "pause" },
-      { kind: "capture", label: "town", maxWidth: 1280, maxHeight: 720, frameCount: 1, intervalFrames: 1, advancePaused: true },
-      {
-        kind: "compare", captureLabel: "town", frameIndex: 0, baselineName: "town-smoke",
-        settings: { masks: [], maxChannelDelta: 4, maxDifferentPixels: 9_216, maxDifferentRatioMillionths: 10_000 },
-      },
-    ]));
-    expect(second).toMatchObject({ state: "completed", failedStepIndex: null, cleanup: "succeeded" });
+      ...(!updateBaseline ? [{
+        kind: "compare" as const,
+        captureLabel: "town",
+        frameIndex: 0,
+        baselineName,
+        settings: comparisonSettings,
+      }] : []),
+    ];
+    const report = await runScenario(client, townScenario("town-smoke-approved", steps));
+    if (report.state !== "completed" && process.env.GODOT_MCP_FAILURE_ARTIFACT_DIR) {
+      await cp(
+        join(project, ".godot/evidence/godot-mcp"),
+        join(process.env.GODOT_MCP_FAILURE_ARTIFACT_DIR, "town-building-game-phase-8-evidence"),
+        { recursive: true, force: true },
+      );
+    }
+    if (updateBaseline) {
+      expect(report, JSON.stringify(report, null, 2)).toMatchObject({ state: "completed", cleanup: "succeeded" });
+      const observationUri = report.steps.find((step) => step.kind === "capture")?.evidence[0];
+      expect(observationUri).toBeTypeOf("string");
+      await callVisual(client, { operation: "baseline_create", name: baselineName, observationUri });
+      const artifactRoot = process.env.GODOT_MCP_FAILURE_ARTIFACT_DIR;
+      if (!artifactRoot) throw new Error("GODOT_MCP_FAILURE_ARTIFACT_DIR is required in baseline-update mode");
+      const candidate = join(artifactRoot, "town-building-game-phase-8-candidate");
+      await mkdir(candidate, { recursive: true });
+      await cp(
+        join(project, ".godot/evidence/godot-mcp/baselines", baselineName),
+        join(candidate, "baseline"),
+        { recursive: true, force: true },
+      );
+      await writeFile(join(candidate, "approval.json"), `${JSON.stringify({
+        schemaVersion: 1,
+        sourceHead: before.head,
+        baselineName,
+        pins,
+        readiness,
+        comparisonSettings,
+      }, null, 2)}\n`, "utf8");
+      throw new Error(`Baseline candidate written to ${candidate}; visual approval is required before commit`);
+    }
+    expect(report, JSON.stringify(report, null, 2)).toMatchObject({
+      state: "completed",
+      failedStepIndex: null,
+      cleanup: "succeeded",
+      steps: expect.arrayContaining([
+        expect.objectContaining({ kind: "wait", state: "completed" }),
+        expect.objectContaining({ kind: "capture", state: "completed" }),
+        expect.objectContaining({ kind: "compare", state: "completed", summary: expect.objectContaining({ passed: true }) }),
+      ]),
+    });
   } finally {
     await client?.close();
     await editor?.close();
@@ -64,9 +147,83 @@ test.skipIf(!sourcePresent)("accepts a town-building-game archive without changi
     else process.env.XDG_RUNTIME_DIR = previousRuntime;
     if (!container.startsWith("/private/tmp/godot-mcp-phase8-town-")) throw new Error("Refusing to remove an unexpected acceptance directory");
     await rm(container, { recursive: true, force: true });
+    if (!basename(userDataDirectory).startsWith("godot-mcp-phase8-town-")) {
+      throw new Error("Refusing to remove an unexpected Godot user-data directory");
+    }
+    await rm(userDataDirectory, { recursive: true, force: true });
     expect(await sourceState()).toEqual(before);
   }
 }, 600_000);
+
+async function configureCustomUserData(project: string, name: string): Promise<void> {
+  if (!/^godot-mcp-phase8-town-[A-Za-z0-9_-]+$/.test(name)) {
+    throw new Error("Custom user-data name is outside the acceptance namespace");
+  }
+  const path = join(project, "project.godot");
+  const settings = await readFile(path, "utf8");
+  const header = "[application]\n";
+  if (!settings.includes(header) || settings.includes("config/use_custom_user_dir")) {
+    throw new Error("Disposable project application settings cannot be safely amended");
+  }
+  const isolated = settings.replace(
+    header,
+    `${header}\nconfig/use_custom_user_dir=true\nconfig/custom_user_dir_name="${name}"\n`,
+  );
+  await writeFile(path, isolated, "utf8");
+}
+
+async function seedDevelopedSave(project: string, userDataDirectory: string): Promise<void> {
+  const fixtureDirectory = join(project, ".godot-mcp", "acceptance");
+  const fixturePath = join(fixtureDirectory, "town-developed-save.gd");
+  await mkdir(fixtureDirectory, { recursive: true });
+  await cp(developedSaveFixture, fixturePath);
+  try {
+    const seeded = await runGodot(
+      ["--headless", "--path", project, "--script", "res://.godot-mcp/acceptance/town-developed-save.gd"],
+      { timeoutMs: 60_000 },
+    );
+    expect(seeded.exitCode, `${seeded.stdout}\n${seeded.stderr}`).toBe(0);
+    expect(`${seeded.stdout}\n${seeded.stderr}`).toContain("GODOT_MCP_TOWN_SAVE_READY");
+    await expect(access(join(userDataDirectory, "saves", "town.json"))).resolves.toBeUndefined();
+  } finally {
+    await rm(fixtureDirectory, { recursive: true, force: true });
+  }
+}
+
+async function readApprovedBaseline(): Promise<ApprovedTownBaseline> {
+  const approval = JSON.parse(await readFile(join(baselineBundle, "approval.json"), "utf8")) as ApprovedTownBaseline["approval"];
+  const manifest = JSON.parse(await readFile(join(baselineBundle, "baseline", "manifest.json"), "utf8")) as ApprovedTownBaseline["manifest"];
+  expect(approval).toEqual({
+    schemaVersion: 1,
+    sourceHead: expectedSourceHead,
+    baselineName,
+    pins,
+    readiness,
+    comparisonSettings,
+  });
+  expect(manifest).toMatchObject({
+    schemaVersion: 1,
+    comparisonContractVersion: 1,
+    name: baselineName,
+    mimeType: "image/png",
+    sourceObservationSha256: manifest.sha256,
+  });
+  expect(manifest.sha256).toMatch(/^[a-f0-9]{64}$/);
+  expect(manifest.byteLength).toBeGreaterThan(0);
+  expect(manifest.createdAtUnixMs).toBeGreaterThanOrEqual(0);
+  const png = await readFile(join(baselineBundle, "baseline", "approved.png"));
+  expect(createHash("sha256").update(png).digest("hex")).toBe(manifest.sha256);
+  expect(png.byteLength).toBe(manifest.byteLength);
+  expect(inspectPng(png)).toMatchObject({ width: manifest.width, height: manifest.height });
+  return { approval, manifest, png };
+}
+
+async function stageApprovedBaseline(project: string, approved: ApprovedTownBaseline): Promise<void> {
+  const destination = join(project, ".godot/evidence/godot-mcp/baselines", approved.manifest.name);
+  await mkdir(destination, { recursive: true });
+  await writeFile(join(destination, "manifest.json"), `${JSON.stringify(approved.manifest)}\n`, "utf8");
+  await writeFile(join(destination, `${approved.manifest.sha256}.png`), approved.png);
+}
 
 function townScenario(name: string, steps: ScenarioDeclaration["steps"]): ScenarioDeclaration {
   return { name, scenePath: "res://scenes/main.tscn", startupTimeoutMs: 30_000, deadlineMs: 120_000, pins, steps };
