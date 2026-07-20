@@ -34,7 +34,7 @@ func _enter_tree() -> void:
 	editor_query = EditorQuery.new(get_editor_interface(), diagnostic_logger)
 	editor_capture = EditorCapture.new(get_editor_interface())
 	editor_mutation = EditorMutation.new(get_editor_interface(), get_undo_redo(), ProjectSettings.globalize_path("res://"), func() -> int: return bridge.session_generation() if is_instance_valid(bridge) else 0)
-	project_operations = ProjectOperations.new(get_editor_interface().get_resource_filesystem())
+	project_operations = ProjectOperations.new(get_editor_interface(), get_editor_interface().get_resource_filesystem())
 	runtime_debugger = RuntimeDebugger.new()
 	add_debugger_plugin(runtime_debugger)
 	command_queue = MainThreadQueue.new()

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { access, cp, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -44,6 +44,8 @@ try {
   try {
     const project = join(fixtureContainer, "project"); const runtime = join(fixtureContainer, "runtime");
     await cp(join(root, "fixtures/godot-4.7"), project, { recursive: true }); await mkdir(join(project, "addons")); await mkdir(runtime); await cp(join(root, "addons/godot_mcp"), join(project, "addons/godot_mcp"), { recursive: true });
+    const external = join(fixtureContainer, "external"); await mkdir(external); await writeFile(join(external, "plugin.cfg"), "[plugin]\n"); await writeFile(join(external, "outside.svg"), "outside\n");
+    await symlink(external, join(project, "addons/external")); await symlink(join(external, "outside.svg"), join(project, "linked-outside.svg"));
     const importLog = join(fixtureContainer, "import.log");
     await run("7/16 disposable import", godot, ["--headless", "--editor", "--path", project, "--import", "--log-file", importLog], { ...environment, XDG_RUNTIME_DIR: runtime });
     if (/SCRIPT ERROR:|Parse Error:|Failed to load script/u.test(await readFile(importLog, "utf8"))) throw new Error("Disposable import logged a script failure");

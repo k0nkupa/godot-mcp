@@ -5,12 +5,14 @@ extends RefCounted
 const ALLOWED_PREFIXES := ["application/", "audio/", "display/", "input/", "navigation/", "physics/", "rendering/"]
 const DENIED_PREFIXES := [
 	"application/run/disable_stdout", "application/run/disable_stderr", "application/run/main_run_args",
-	"application/run/scene", "editor_plugins/", "autoload/", "network/", "filesystem/", "gdextension/",
+	"application/run/main_scene", "application/run/load_shell_environment", "editor_plugins/", "autoload/", "network/", "filesystem/", "gdextension/",
 ]
 
+var _editor: Variant
 var _filesystem: Variant
 
-func _init(filesystem: Variant) -> void:
+func _init(editor: Variant, filesystem: Variant) -> void:
+	_editor = editor
 	_filesystem = filesystem
 
 func execute(arguments: Dictionary) -> Dictionary:
@@ -43,7 +45,31 @@ static func plugin_path_is_allowed(path: String) -> bool:
 	if path == "res://addons/godot_mcp/plugin.cfg" or not path.begins_with("res://addons/") or not path.ends_with("/plugin.cfg"):
 		return false
 	var relative := path.trim_prefix("res://addons/").trim_suffix("/plugin.cfg")
-	return not relative.is_empty() and not relative.contains("/") and not relative.contains("..") and relative.length() <= 64
+	if relative.is_empty() or relative.contains("/") or relative.length() > 64:
+		return false
+	for index in relative.length():
+		var character := relative.unicode_at(index)
+		if not ((character >= 65 and character <= 90) or (character >= 97 and character <= 122) or (character >= 48 and character <= 57) or character in [95, 45]):
+			return false
+	return true
+
+static func project_file_is_contained(path: String) -> bool:
+	if not path.begins_with("res://") or _string_contains_zero(path) or ".." in path.trim_prefix("res://").split("/", false):
+		return false
+	var components := path.trim_prefix("res://").split("/", false)
+	if components.is_empty():
+		return false
+	var project_root := ProjectSettings.globalize_path("res://").simplify_path().trim_suffix("/")
+	var absolute := ProjectSettings.globalize_path(path).simplify_path()
+	if not absolute.begins_with(project_root + "/"):
+		return false
+	var current := project_root
+	for component: String in components:
+		var directory := DirAccess.open(current)
+		if directory == null or directory.is_link(component):
+			return false
+		current = current.path_join(component)
+	return FileAccess.file_exists(current)
 
 static func setting_value_is_allowed(value: Variant) -> bool:
 	if typeof(value) == TYPE_NIL or typeof(value) == TYPE_BOOL or typeof(value) == TYPE_INT:
@@ -98,25 +124,17 @@ func _settings_apply(arguments: Dictionary) -> Dictionary:
 
 func _plugin_set(arguments: Dictionary) -> Dictionary:
 	var path := String(arguments.get("pluginPath", ""))
-	if not plugin_path_is_allowed(path) or not FileAccess.file_exists(ProjectSettings.globalize_path(path)):
+	if _editor == null or not plugin_path_is_allowed(path) or not project_file_is_contained(path):
 		return _error("TARGET_NOT_FOUND", "Project plugin is unavailable or denied")
-	var enabled := ProjectSettings.get_setting("editor_plugins/enabled", PackedStringArray()) as PackedStringArray
-	var currently_enabled := enabled.has(path)
+	var plugin_name := path.trim_prefix("res://addons/").trim_suffix("/plugin.cfg")
+	var currently_enabled := bool(_editor.is_plugin_enabled(plugin_name))
 	if typeof(arguments.get("expectedEnabled")) != TYPE_BOOL or bool(arguments.expectedEnabled) != currently_enabled:
 		return _error("CONFLICT", "Project plugin state changed")
 	if typeof(arguments.get("enabled")) != TYPE_BOOL or bool(arguments.enabled) == currently_enabled:
 		return _error("INVALID_REQUEST", "Project plugin operation must change state")
-	var updated := enabled.duplicate()
-	if bool(arguments.enabled):
-		updated.append(path)
-	else:
-		updated.remove_at(updated.find(path))
-	ProjectSettings.set_setting("editor_plugins/enabled", updated)
-	if ProjectSettings.save() != OK:
-		return _plugin_rollback_failure(enabled, "Project plugin state could not be saved")
-	var persisted := ProjectSettings.get_setting("editor_plugins/enabled", PackedStringArray()) as PackedStringArray
-	if persisted.has(path) != bool(arguments.enabled):
-		return _plugin_rollback_failure(enabled, "Project plugin postcondition failed")
+	_editor.set_plugin_enabled(plugin_name, bool(arguments.enabled))
+	if bool(_editor.is_plugin_enabled(plugin_name)) != bool(arguments.enabled):
+		return _plugin_rollback_failure(plugin_name, currently_enabled, "Project plugin postcondition failed")
 	return {"ok": true, "data": {"operation": "plugin_set", "pluginSha256": path.sha256_text(), "enabled": bool(arguments.enabled), "rollback": "not_needed"}}
 
 func _reimport(arguments: Dictionary) -> Dictionary:
@@ -128,7 +146,7 @@ func _reimport(arguments: Dictionary) -> Dictionary:
 		var path := String(raw_path)
 		if not path.begins_with("res://") or _string_contains_zero(path) or ".." in path.trim_prefix("res://").split("/", false):
 			return _error("PATH_DENIED", "Selective reimport path is invalid")
-		if path.begins_with("res://addons/godot_mcp/") or not FileAccess.file_exists(ProjectSettings.globalize_path(path)):
+		if path.begins_with("res://addons/godot_mcp/") or not project_file_is_contained(path):
 			return _error("TARGET_NOT_FOUND", "Selective reimport source is unavailable or denied")
 		validated.append(path)
 	_filesystem.reimport_files(validated)
@@ -143,9 +161,9 @@ func _settings_rollback_failure(preimages: Array[Dictionary], message: String) -
 	var rollback := "succeeded" if ProjectSettings.save() == OK else "failed"
 	return {"ok": false, "code": "GODOT_RUNTIME_ERROR" if rollback == "succeeded" else "ROLLBACK_FAILED", "message": message, "retryable": false, "partialEffects": rollback == "failed", "rollback": rollback}
 
-func _plugin_rollback_failure(enabled: PackedStringArray, message: String) -> Dictionary:
-	ProjectSettings.set_setting("editor_plugins/enabled", enabled)
-	var rollback := "succeeded" if ProjectSettings.save() == OK else "failed"
+func _plugin_rollback_failure(plugin_name: String, enabled: bool, message: String) -> Dictionary:
+	_editor.set_plugin_enabled(plugin_name, enabled)
+	var rollback := "succeeded" if bool(_editor.is_plugin_enabled(plugin_name)) == enabled else "failed"
 	return {"ok": false, "code": "GODOT_RUNTIME_ERROR" if rollback == "succeeded" else "ROLLBACK_FAILED", "message": message, "retryable": false, "partialEffects": rollback == "failed", "rollback": rollback}
 
 static func _error(code: String, message: String) -> Dictionary:

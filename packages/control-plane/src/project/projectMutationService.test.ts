@@ -55,17 +55,20 @@ describe("ProjectMutationService", () => {
     const project = await copyFixture();
     let calls = 0;
     let release!: () => void;
+    let entered!: () => void;
     const pending = new Promise<void>((resolve) => { release = resolve; });
+    const requestEntered = new Promise<void>((resolve) => { entered = resolve; });
     try {
       const journal = await ProjectMutationJournal.open(join(project.root, "journal.jsonl"));
       const service = new ProjectMutationService(() => ({ request: async () => {
         calls += 1;
+        entered();
         await pending;
         return { data: result };
       } }), journal);
       const first = service.execute(input, "req-1");
       const retry = service.execute(input, "req-2");
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await requestEntered;
       const callsBeforeRelease = calls;
       release();
       await expect(Promise.all([first, retry])).resolves.toEqual([result, result]);

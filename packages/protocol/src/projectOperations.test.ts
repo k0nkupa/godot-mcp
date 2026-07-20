@@ -24,6 +24,8 @@ describe("project operation contracts", () => {
   it.each([
     { operation: "settings_apply", idempotencyKey, changes: [{ name: "editor_plugins/enabled", value: true }] },
     { operation: "settings_apply", idempotencyKey, changes: [{ name: "autoload/Backdoor", value: "res://evil.gd" }] },
+    { operation: "settings_apply", idempotencyKey, changes: [{ name: "application/run/main_scene", value: null }] },
+    { operation: "settings_apply", idempotencyKey, changes: [{ name: "application/run/load_shell_environment", value: true }] },
     { operation: "settings_apply", idempotencyKey, changes: [{ name: "network/host", value: "https://example.com" }] },
     { operation: "plugin_set", idempotencyKey, pluginPath: "res://addons/godot_mcp/plugin.cfg", enabled: false, expectedEnabled: true },
     { operation: "plugin_set", idempotencyKey, pluginPath: "res://../escape/plugin.cfg", enabled: true, expectedEnabled: false },
