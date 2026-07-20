@@ -47,6 +47,7 @@ export interface ExecutedToolResult {
 
 export interface ToolExecutionOptions {
   auditArguments?: unknown | ((correlationId: string) => unknown);
+  auditFallbackArguments?: unknown;
 }
 
 function normalizeError(error: unknown, correlationId: string): GodotMcpError {
@@ -83,7 +84,7 @@ export async function executeTool(
 ): Promise<ExecutedToolResult> {
   const correlationId = randomUUID();
   const startedAt = new Date().toISOString();
-  let auditArguments = argumentsValue;
+  let auditArguments = options.auditFallbackArguments ?? argumentsValue;
   try {
     authorize(dependencies.grants, policy);
     auditArguments = typeof options.auditArguments === "function" ? options.auditArguments(correlationId) : (options.auditArguments ?? argumentsValue);

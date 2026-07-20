@@ -5,7 +5,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { z } from "zod";
 import { expect, it } from "vitest";
-import { CORE_QUERY_POLICY, EvidenceStore, ExtensionRegistry, JsonlAuditSink, SessionService } from "@godot-mcp/control-plane";
+import { CORE_QUERY_POLICY, EDITOR_POLICY, EvidenceStore, ExtensionRegistry, JsonlAuditSink, SessionService } from "@godot-mcp/control-plane";
 import { createGodotMcpServer } from "./createServer.js";
 
 it("runs a typed extension through authorization/audit with an exact frozen least-authority context", async () => {
@@ -40,5 +40,23 @@ it("audits extension audit-hook failures without allowing reserved identity over
     expect(result.structuredContent).toMatchObject({ ok: false, data: { error: { code: "INVALID_REQUEST" } } });
     const record = JSON.parse((await readFile(auditPath, "utf8")).trim()) as { outcome: string; arguments: unknown };
     expect(record).toMatchObject({ outcome: "error", arguments: { extension: "fixture", operation: "reject_audit" } });
+  } finally { await Promise.allSettled([client.close(), server.close()]); await rm(directory, { recursive: true, force: true }); }
+});
+
+it("authorizes before extension validation and audits only operation identity on denial", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "godot-mcp-extension-auth-"));
+  const project = { projectId: "019f75d0-1234-7abc-8def-0123456789ab", rootRealPath: directory, projectConfigSha256: "a".repeat(64) };
+  const grants = { tiers: ["observe"] as const, packs: ["core"] as const }; const registry = new ExtensionRegistry(); let refinements = 0;
+  registry.register({ extension: "fixture", operation: "visible", policy: CORE_QUERY_POLICY, inputSchema: z.object({}).strict(), outputSchema: z.null(), audit: () => ({}), handler: async () => null });
+  registry.register({ extension: "fixture", operation: "mutate", policy: EDITOR_POLICY, inputSchema: z.object({ secret: z.string().refine(() => { refinements += 1; return true; }) }).strict(), outputSchema: z.null(), audit: () => ({}), handler: async () => null });
+  const session = new SessionService(project, { tiers: [...grants.tiers], packs: [...grants.packs] }, async () => ({ healthy: true, checks: [] })); const auditPath = join(directory, "audit.jsonl");
+  const server = createGodotMcpServer({ project, grants: { tiers: [...grants.tiers], packs: [...grants.packs] }, session, audit: new JsonlAuditSink(auditPath), bridge: () => null, evidence: new EvidenceStore(directory), extensions: registry, extensionContext: (correlationId) => ({ project, correlationId, evidence: { putJson: async () => "godot-mcp:unused" } }) });
+  const client = new Client({ name: "extension-auth-test", version: "1" }); const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  try {
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    const result = await client.callTool({ name: "godot_extension", arguments: { extension: "fixture", operation: "mutate", input: { secret: "PRIVATE_EXTENSION_INPUT" } } });
+    expect(result.structuredContent).toMatchObject({ ok: false, data: { error: { code: "PERMISSION_REQUIRED" } } });
+    expect(refinements).toBe(0);
+    const audit = await readFile(auditPath, "utf8"); expect(audit).not.toContain("PRIVATE_EXTENSION_INPUT"); expect(audit).toContain('"operation":"mutate"');
   } finally { await Promise.allSettled([client.close(), server.close()]); await rm(directory, { recursive: true, force: true }); }
 });

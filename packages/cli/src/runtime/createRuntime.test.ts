@@ -137,6 +137,8 @@ it("rejects inconsistent programmatic runtime grants", async () => {
     project: project.root,
     grants: { tiers: ["observe", "project_mutate"], packs: ["core"] },
   })).rejects.toThrow("editor pack");
+  await expect(createRuntime({ project: project.root, unsafeRegistryPath: join(project.root, "registry.json") })).rejects.toThrow("paths require unsafe grants");
+  await expect(createRuntime({ project: project.root, unsafeActivationPath: join(project.root, "activation.json") })).rejects.toThrow("paths require unsafe grants");
 });
 
 it("closes every outer resource while preserving runtime cleanup failures", async () => {

@@ -41,7 +41,8 @@ export class ExtensionRegistry {
     }
     const key = this.key(definition.extension, definition.operation);
     if (this.definitions.has(key)) throw new Error("Duplicate extension operation");
-    this.definitions.set(key, definition as ExtensionDefinition);
+    const policy = Object.freeze({ ...definition.policy, ...(definition.policy.requiredPacks === undefined ? {} : { requiredPacks: Object.freeze([...definition.policy.requiredPacks]) }) });
+    this.definitions.set(key, Object.freeze({ ...definition, policy }) as ExtensionDefinition);
   }
 
   resolve(extension: string, operation: string): ExtensionDefinition {

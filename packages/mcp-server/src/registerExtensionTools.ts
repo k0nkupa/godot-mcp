@@ -28,12 +28,12 @@ export function registerExtensionTools(server: McpServer, dependencies: Extensio
     description: "Invokes one startup-allowlisted typed extension through normal authorization and audit routing.",
     inputSchema: ExtensionCallSchema,
     outputSchema: ToolResultSchema,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
   }, async (rawInput) => {
     const input = ExtensionCallSchema.parse(rawInput);
     if (Buffer.byteLength(JSON.stringify(input.input)) > 256 * 1024) throw new Error("Extension input exceeds 256 KiB");
     const definition = dependencies.extensions.resolve(input.extension, input.operation);
-    const parsed = definition.inputSchema.parse(input.input);
+    let parsed: unknown;
     return toMcpToolResult(await executeTool(
       dependencies,
       definition.policy,
@@ -50,7 +50,13 @@ export function registerExtensionTools(server: McpServer, dependencies: Extensio
         if (Buffer.byteLength(JSON.stringify(output)) > 512 * 1024) throw new Error("Extension output exceeds 512 KiB");
         return { data: output };
       },
-      { auditArguments: () => extensionAuditArguments(input.extension, input.operation, () => definition.audit(parsed)) },
+      {
+        auditArguments: () => {
+          parsed = definition.inputSchema.parse(input.input);
+          return extensionAuditArguments(input.extension, input.operation, () => definition.audit(parsed));
+        },
+        auditFallbackArguments: { extension: input.extension, operation: input.operation },
+      },
     ));
   });
 }

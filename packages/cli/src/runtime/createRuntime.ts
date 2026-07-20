@@ -130,7 +130,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<GodotMcpRu
   const godotBin = await findGodotBinary(options.godotBin);
   const project = await readProjectIdentity(options.project);
   const wantsUnsafe = grants.tiers.includes("unsafe_fixture") && grants.packs.includes("unsafe");
-  if (wantsUnsafe !== (options.unsafeRegistryPath !== undefined && options.unsafeActivationPath !== undefined)) {
+  if (wantsUnsafe !== (options.unsafeRegistryPath !== undefined) || wantsUnsafe !== (options.unsafeActivationPath !== undefined)) {
     throw new Error("Unsafe grants require both explicit registry and one-use activation startup paths, and those paths require unsafe grants");
   }
   const unsafeActivation = wantsUnsafe

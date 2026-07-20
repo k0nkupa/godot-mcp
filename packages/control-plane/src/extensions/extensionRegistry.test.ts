@@ -17,3 +17,13 @@ it("denies unsafe authority and invalid dynamic names", () => {
   expect(() => registry.register({ extension: "../escape", operation: "read", policy: CORE_QUERY_POLICY, inputSchema: z.unknown(), outputSchema: z.unknown(), audit: () => ({}), handler: async () => null })).toThrow(/identifiers/i);
   expect(() => registry.register({ extension: "fixture", operation: "fake", policy: { ...CORE_QUERY_POLICY, command: "forged" }, inputSchema: z.unknown(), outputSchema: z.unknown(), audit: () => ({}), handler: async () => null })).toThrow(/exact existing/i);
 });
+
+it("snapshots validated definitions and policies", () => {
+  const registry = new ExtensionRegistry();
+  const definition = { extension: "fixture", operation: "read", policy: { ...CORE_QUERY_POLICY }, inputSchema: z.unknown(), outputSchema: z.unknown(), audit: () => ({}), handler: async () => null };
+  registry.register(definition);
+  definition.policy.command = "forged";
+  expect(registry.resolve("fixture", "read").policy.command).toBe(CORE_QUERY_POLICY.command);
+  expect(Object.isFrozen(registry.resolve("fixture", "read"))).toBe(true);
+  expect(Object.isFrozen(registry.resolve("fixture", "read").policy)).toBe(true);
+});
