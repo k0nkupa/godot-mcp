@@ -103,7 +103,7 @@ export class UnsafeFixtureService {
       exitCode = await this.interruptible(job, job.process.wait());
       terminal = exitCode === 0 && !job.process.outputExceeded() ? "completed" : "failed";
     } catch {
-      await job.process?.stop().catch(() => undefined);
+      try { await job.process?.stop(); } catch { cleanup = "failed"; }
       terminal = job.controller.signal.reason instanceof GodotMcpException && job.controller.signal.reason.code === "CANCELLED" ? "cancelled" : "failed";
     } finally {
       clearTimeout(deadlineTimer);

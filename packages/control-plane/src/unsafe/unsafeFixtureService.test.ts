@@ -81,6 +81,16 @@ it("chunks bounded output evidence and treats a pre-launch failure as clean", as
   } finally { await project.cleanup(); }
 });
 
+it("keeps export blocked when an owned unsafe process cannot be stopped", async () => {
+  const project = await copyFixture();
+  try {
+    const service = new UnsafeFixtureService({ activation: activation(project.root), sessionId: () => "session_12345678", launch: async () => ({ pid: 123, fingerprint: "123:owned", wait: async () => { throw new Error("wait failed"); }, stop: async () => { throw new Error("identity mismatch"); }, diagnostics: () => Buffer.alloc(0), outputExceeded: () => false }) });
+    const started = service.start("extends SceneTree", 5_000); await terminal(service, started.jobToken);
+    expect(service.result(started.jobToken)).toMatchObject({ state: "failed", cleanup: "failed" });
+    expect(service.blocksExport()).toBe(true);
+  } finally { await project.cleanup(); }
+});
+
 it("fails activation closed when crash residue exists", async () => {
   const project = await copyFixture();
   try {
