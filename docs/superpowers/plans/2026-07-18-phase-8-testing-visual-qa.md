@@ -257,7 +257,7 @@ Expected: FAIL because `ScenarioService` is missing.
 
 - [ ] **Step 3: Implement the job state machine**
 
-Use an internal record with an unexposed UUID and expose only an HMAC-like random token generated from 32 random bytes. Copy and parse every public result through protocol schemas. Start execution with `queueMicrotask`, carry one `AbortController`, race each awaited operation against the remaining deadline, and check cancellation before and after each boundary. Always call `runtime.execute({ operation: "stop", handle })` in `finally` when launch produced a handle.
+Use an internal record with an unexposed UUID and expose only an opaque, unguessable 256-bit job identifier. Copy and parse every public result through protocol schemas. Start execution with `queueMicrotask`, carry one `AbortController`, race each awaited operation against the remaining deadline, and check cancellation before and after each boundary. Always call `runtime.execute({ operation: "stop", handle })` in `finally` when launch produced a handle.
 
 Assertions must use existing runtime `node`, `logs`, and zero/short-time `wait` operations; do not evaluate expressions. Save canonical terminal reports through `EvidenceStore.putJson` and include its observation URI.
 
