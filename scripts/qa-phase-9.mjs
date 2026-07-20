@@ -44,7 +44,7 @@ try {
   try {
     const project = join(fixtureContainer, "project"); const runtime = join(fixtureContainer, "runtime");
     await cp(join(root, "fixtures/godot-4.7"), project, { recursive: true }); await mkdir(join(project, "addons")); await mkdir(runtime); await cp(join(root, "addons/godot_mcp"), join(project, "addons/godot_mcp"), { recursive: true });
-    const external = join(fixtureContainer, "external"); await mkdir(external); await writeFile(join(external, "plugin.cfg"), "[plugin]\n"); await writeFile(join(external, "outside.svg"), "outside\n");
+    const external = join(fixtureContainer, "external"); await mkdir(external); await writeFile(join(external, "plugin.cfg"), "[plugin]\n"); await cp(join(root, "fixtures/godot-4.7/icon.svg"), join(external, "outside.svg"));
     await symlink(external, join(project, "addons/external")); await symlink(join(external, "outside.svg"), join(project, "linked-outside.svg"));
     const importLog = join(fixtureContainer, "import.log");
     await run("7/16 disposable import", godot, ["--headless", "--editor", "--path", project, "--import", "--log-file", importLog], { ...environment, XDG_RUNTIME_DIR: runtime });
