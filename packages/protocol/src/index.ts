@@ -1,5 +1,13 @@
 export { canonicalFloat64Le, canonicalJson, decodeFloat64Le } from "./canonicalJson.js";
 export {
+  UnsafeFixtureJobReceiptSchema,
+  UnsafeFixtureJobResultSchema,
+  UnsafeFixtureOperationInputSchema,
+  type UnsafeFixtureJobReceipt,
+  type UnsafeFixtureJobResult,
+  type UnsafeFixtureOperationInput,
+} from "./unsafeFixture.js";
+export {
   ProjectArtifactManifestSchema,
   ProjectJobReceiptSchema,
   ProjectMutationResultSchema,

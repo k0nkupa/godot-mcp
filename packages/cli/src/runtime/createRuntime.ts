@@ -5,6 +5,7 @@ import {
   ArtifactStore,
   EditorMutationService,
   EvidenceStore,
+  type ExtensionRegistry,
   JsonlAuditSink,
   MutationLedger,
   OwnedProjectProcess,
@@ -16,10 +17,13 @@ import {
   RuntimeService,
   ScenarioService,
   SessionService,
+  UnsafeFixtureProcess,
+  UnsafeFixtureService,
   VisualService,
-  projectOperationPreflight,
   readProjectIdentity,
+  projectOperationPreflight,
   recoverOwnedProjectProcess,
+  consumeUnsafeFixtureActivation,
   type SessionGrants,
 } from "@godot-mcp/control-plane";
 import { createGodotMcpServer } from "@godot-mcp/mcp-server";
@@ -37,6 +41,9 @@ export interface RuntimeOptions {
   project: string;
   grants?: SessionGrants;
   godotBin?: string;
+  unsafeRegistryPath?: string;
+  unsafeActivationPath?: string;
+  extensions?: ExtensionRegistry;
 }
 
 export function normalizeRuntimeGrants(grants: SessionGrants | undefined): SessionGrants {
@@ -44,10 +51,10 @@ export function normalizeRuntimeGrants(grants: SessionGrants | undefined): Sessi
   const tiers = new Set(grants.tiers);
   const packs = new Set(grants.packs);
   for (const tier of tiers) {
-    if (tier !== "observe" && tier !== "runtime_control" && tier !== "project_mutate" && tier !== "project_operate") throw new Error(`Unsupported runtime tier: ${tier}`);
+    if (tier !== "observe" && tier !== "runtime_control" && tier !== "project_mutate" && tier !== "project_operate" && tier !== "unsafe_fixture") throw new Error(`Unsupported runtime tier: ${tier}`);
   }
   for (const pack of packs) {
-    if (pack !== "core" && pack !== "runtime" && pack !== "input" && pack !== "editor" && pack !== "visual" && pack !== "project") throw new Error(`Unsupported runtime pack: ${pack}`);
+    if (pack !== "core" && pack !== "runtime" && pack !== "input" && pack !== "editor" && pack !== "visual" && pack !== "project" && pack !== "unsafe") throw new Error(`Unsupported runtime pack: ${pack}`);
   }
   if (!tiers.has("observe") || !packs.has("core")) throw new Error("observe and core grants are required");
   const hasRuntimePack = packs.has("runtime") || packs.has("input");
@@ -65,10 +72,12 @@ export function normalizeRuntimeGrants(grants: SessionGrants | undefined): Sessi
   if (tiers.has("project_operate") !== hasProjectPack) {
     throw new Error("project_operate must be granted with the project pack");
   }
-  if (!hasRuntimePack && !hasEditorPack && !hasProjectPack) return { tiers: ["observe"], packs: ["core"] };
+  const hasUnsafePack = packs.has("unsafe");
+  if (tiers.has("unsafe_fixture") !== hasUnsafePack) throw new Error("unsafe_fixture must be granted with the unsafe pack");
+  if (!hasRuntimePack && !hasEditorPack && !hasProjectPack && !hasUnsafePack) return { tiers: ["observe"], packs: ["core"] };
   return {
-    tiers: ["observe", ...(tiers.has("runtime_control") ? ["runtime_control" as const] : []), ...(tiers.has("project_mutate") ? ["project_mutate" as const] : []), ...(tiers.has("project_operate") ? ["project_operate" as const] : [])],
-    packs: ["core", ...(packs.has("runtime") ? ["runtime" as const] : []), ...(packs.has("input") ? ["input" as const] : []), ...(packs.has("editor") ? ["editor" as const] : []), ...(packs.has("visual") ? ["visual" as const] : []), ...(packs.has("project") ? ["project" as const] : [])],
+    tiers: ["observe", ...(tiers.has("runtime_control") ? ["runtime_control" as const] : []), ...(tiers.has("project_mutate") ? ["project_mutate" as const] : []), ...(tiers.has("project_operate") ? ["project_operate" as const] : []), ...(tiers.has("unsafe_fixture") ? ["unsafe_fixture" as const] : [])],
+    packs: ["core", ...(packs.has("runtime") ? ["runtime" as const] : []), ...(packs.has("input") ? ["input" as const] : []), ...(packs.has("editor") ? ["editor" as const] : []), ...(packs.has("visual") ? ["visual" as const] : []), ...(packs.has("project") ? ["project" as const] : []), ...(packs.has("unsafe") ? ["unsafe" as const] : [])],
   };
 }
 
@@ -86,32 +95,25 @@ export class GodotMcpRuntime {
     readonly mcp: GodotMcpServer,
     readonly visualScenario?: ScenarioService,
     readonly projectJobs?: ProjectJobService,
+    readonly unsafeFixture?: UnsafeFixtureService,
   ) {}
 
   close(reason: string): Promise<void> {
     void reason;
     if (!this.closePromise) {
       const activeClose = (async () => {
-        const runtimeErrors: unknown[] = [];
+        let runtimeError: unknown;
         try {
+          await this.unsafeFixture?.close();
           await this.projectJobs?.close();
-        } catch (error) {
-          runtimeErrors.push(error);
-        }
-        try {
           await this.visualScenario?.close();
-        } catch (error) {
-          runtimeErrors.push(error);
-        }
-        try {
           await this.runtime.close();
         } catch (error) {
-          runtimeErrors.push(error);
+          runtimeError = error;
         }
         await Promise.allSettled([this.mcp.close(), this.bridge.close()]);
         this.session.close();
-        if (runtimeErrors.length === 1) throw runtimeErrors[0];
-        if (runtimeErrors.length > 1) throw new AggregateError(runtimeErrors, "Runtime shutdown encountered multiple failures");
+        if (runtimeError) throw runtimeError;
       })();
       this.closePromise = activeClose;
       void activeClose.catch(() => {
@@ -126,6 +128,13 @@ export async function createRuntime(options: RuntimeOptions): Promise<GodotMcpRu
   const grants = normalizeRuntimeGrants(options.grants);
   const godotBin = await findGodotBinary(options.godotBin);
   const project = await readProjectIdentity(options.project);
+  const wantsUnsafe = grants.tiers.includes("unsafe_fixture") && grants.packs.includes("unsafe");
+  if (wantsUnsafe !== (options.unsafeRegistryPath !== undefined && options.unsafeActivationPath !== undefined)) {
+    throw new Error("Unsafe grants require both explicit registry and one-use activation startup paths, and those paths require unsafe grants");
+  }
+  const unsafeActivation = wantsUnsafe
+    ? await consumeUnsafeFixtureActivation(options.unsafeRegistryPath!, project.rootRealPath, options.unsafeActivationPath!)
+    : undefined;
   const manifest = await readInstallManifest(project.rootRealPath);
   const audit = JsonlAuditSink.forProject(project.rootRealPath);
   const session = new SessionService(project, grants, () => runDoctor(project.rootRealPath, godotBin));
@@ -133,6 +142,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<GodotMcpRu
   let runtime: RuntimeService | undefined;
   let visualScenario: ScenarioService | undefined;
   let projectJobs: ProjectJobService | undefined;
+  let unsafeFixture: UnsafeFixtureService | undefined;
   let mcp: GodotMcpServer | undefined;
   const mutationLedger = grants.packs.includes("editor")
     ? await MutationLedger.open(join(project.rootRealPath, ".godot/evidence/godot-mcp/mutation-journal.jsonl"))
@@ -233,6 +243,15 @@ export async function createRuntime(options: RuntimeOptions): Promise<GodotMcpRu
           return new VisualService({ sessionId, evidence, scenario: visualScenario });
         })()
       : undefined;
+    if (unsafeActivation) {
+      unsafeFixture = new UnsafeFixtureService({
+        activation: unsafeActivation,
+        sessionId,
+        evidence,
+        launch: (input) => UnsafeFixtureProcess.launch({ ...input, godotBin }),
+      });
+      await unsafeFixture.initialize();
+    }
     const projectOperations = projectMutationJournal && projectJobJournal
       ? (() => {
           const mutations = new ProjectMutationService(
@@ -258,6 +277,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<GodotMcpRu
               if (input.operation !== "export_start") return null;
               if (!["idle", "stopped"].includes(runtime!.snapshot().state)) return "Export is unavailable while an MCP-owned runtime is active";
               if (visualScenario?.hasActiveJob()) return "Export is unavailable while a visual scenario is active";
+              if (unsafeFixture?.blocksExport()) return "Export is unavailable while unsafe fixture execution or residue is present";
               return null;
             },
             launch: (input) => OwnedProjectProcess.launch({ ...input, godotBin }),
@@ -283,9 +303,23 @@ export async function createRuntime(options: RuntimeOptions): Promise<GodotMcpRu
       ...(visual === undefined ? {} : { visual }),
       ...(editor === undefined ? {} : { editor }),
       ...(projectOperations === undefined ? {} : { projectOperations }),
+      ...(unsafeFixture === undefined ? {} : { unsafeFixture }),
+      ...(options.extensions === undefined || !options.extensions.visible(grants) ? {} : {
+        extensions: options.extensions,
+        extensionContext: (correlationId: string) => ({
+          project,
+          correlationId,
+          evidence: { putJson: async (value: unknown, metadata: Record<string, unknown>) => {
+            const attachedSession = sessionId();
+            if (!attachedSession) throw new Error("Godot editor addon is not attached");
+            return (await evidence.putJson(attachedSession, value, metadata)).observationUri;
+          } },
+        }),
+      }),
     });
-    return new GodotMcpRuntime(project, audit, session, bridge, runtime, mcp, visualScenario, projectJobs);
+    return new GodotMcpRuntime(project, audit, session, bridge, runtime, mcp, visualScenario, projectJobs, unsafeFixture);
   } catch (error) {
+    await unsafeFixture?.close().catch(() => undefined);
     await projectJobs?.close().catch(() => undefined);
     await visualScenario?.close().catch(() => undefined);
     await runtime?.close().catch(() => undefined);

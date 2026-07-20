@@ -1,4 +1,6 @@
 export { createGodotMcpServer, type GodotMcpServerDependencies } from "./createServer.js";
+export { registerUnsafeTools, unsafeAuditArguments, type UnsafeFixtureController, type UnsafeToolDependencies } from "./registerUnsafeTools.js";
+export { registerExtensionTools, type ExtensionToolDependencies } from "./registerExtensionTools.js";
 export {
   projectAuditArguments,
   registerProjectTools,

@@ -110,6 +110,12 @@ export const PROJECT_POLICY: CommandPolicy = {
   pack: "project",
   mutating: true,
 };
+export const UNSAFE_POLICY: CommandPolicy = {
+  command: "godot_unsafe_fixture",
+  tier: "unsafe_fixture",
+  pack: "unsafe",
+  mutating: true,
+};
 
 export const PHASE_ONE_POLICIES: readonly CommandPolicy[] = [
   CORE_CAPABILITIES_POLICY,
@@ -136,10 +142,11 @@ export const INPUT_POLICIES: readonly CommandPolicy[] = [INPUT_POLICY];
 export const EDITOR_POLICIES: readonly CommandPolicy[] = [EDITOR_POLICY];
 export const VISUAL_POLICIES: readonly CommandPolicy[] = [VISUAL_POLICY];
 export const PROJECT_POLICIES: readonly CommandPolicy[] = [PROJECT_POLICY];
+export const UNSAFE_POLICIES: readonly CommandPolicy[] = [UNSAFE_POLICY];
 
 export function visibleCapabilities(grants: SessionGrants): CommandPolicy[] {
   const tiers = expandPermissionTiers(grants.tiers);
-  return [...CORE_POLICIES, ...RUNTIME_POLICIES, ...INPUT_POLICIES, ...EDITOR_POLICIES, ...VISUAL_POLICIES, ...PROJECT_POLICIES].filter(
+  return [...CORE_POLICIES, ...RUNTIME_POLICIES, ...INPUT_POLICIES, ...EDITOR_POLICIES, ...VISUAL_POLICIES, ...PROJECT_POLICIES, ...UNSAFE_POLICIES].filter(
     (policy) => tiers.includes(policy.tier) && (policy.requiredPacks ?? [policy.pack]).every((pack) => grants.packs.includes(pack)),
   );
 }

@@ -8,12 +8,17 @@ import { registerEditorTools, type EditorController } from "./registerEditorTool
 import { registerRuntimeTools, type RuntimeController } from "./registerRuntimeTools.js";
 import { registerVisualTools, type VisualController } from "./registerVisualTools.js";
 import { registerProjectTools, type ProjectOperationsController } from "./registerProjectTools.js";
+import { registerUnsafeTools, type UnsafeFixtureController } from "./registerUnsafeTools.js";
+import { registerExtensionTools, type ExtensionToolDependencies } from "./registerExtensionTools.js";
 
 export type GodotMcpServerDependencies = CoreToolDependencies & {
   runtime?: RuntimeController & Partial<InputController>;
   editor?: EditorController;
   visual?: VisualController;
   projectOperations?: ProjectOperationsController;
+  unsafeFixture?: UnsafeFixtureController;
+  extensions?: ExtensionToolDependencies["extensions"];
+  extensionContext?: ExtensionToolDependencies["extensionContext"];
 };
 
 export function createGodotMcpServer(dependencies: GodotMcpServerDependencies): McpServer {
@@ -47,5 +52,13 @@ export function createGodotMcpServer(dependencies: GodotMcpServerDependencies): 
     dependencies.grants.tiers.includes("project_operate") &&
     dependencies.grants.packs.includes("project")
   ) registerProjectTools(server, { ...dependencies, projectOperations: dependencies.projectOperations });
+  if (
+    dependencies.unsafeFixture &&
+    dependencies.grants.tiers.includes("unsafe_fixture") &&
+    dependencies.grants.packs.includes("unsafe")
+  ) registerUnsafeTools(server, { ...dependencies, unsafeFixture: dependencies.unsafeFixture });
+  if (dependencies.extensions?.visible(dependencies.grants) && dependencies.extensionContext) {
+    registerExtensionTools(server, { ...dependencies, extensions: dependencies.extensions, extensionContext: dependencies.extensionContext });
+  }
   return server;
 }

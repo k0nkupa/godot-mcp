@@ -1,4 +1,15 @@
 export { GodotMcpException } from "./errors.js";
+export { ExtensionRegistry, type ExtensionContext, type ExtensionDefinition, type ExtensionEvidenceWriter } from "./extensions/extensionRegistry.js";
+export {
+  UNSAFE_CONFIRMATION_PHRASE,
+  approveUnsafeFixtureCopy,
+  consumeUnsafeFixtureActivation,
+  registerUnsafeFixture,
+  stampUnsafeFixtureCopy,
+  type UnsafeActivation,
+} from "./unsafe/unsafeFixtureAuthority.js";
+export { UnsafeFixtureProcess, type UnsafeFixtureProcessHandle } from "./unsafe/unsafeFixtureProcess.js";
+export { UnsafeFixtureService, type UnsafeFixtureServiceDependencies } from "./unsafe/unsafeFixtureService.js";
 export {
   EditorMutationService,
   editorMutationRequestDigest,
@@ -71,12 +82,14 @@ export {
   INPUT_POLICY,
   PROJECT_POLICIES,
   PROJECT_POLICY,
-  VISUAL_POLICIES,
-  VISUAL_POLICY,
+  UNSAFE_POLICIES,
+  UNSAFE_POLICY,
   PHASE_ONE_POLICIES,
   RUNTIME_CAPTURE_POLICY,
   RUNTIME_POLICIES,
   RUNTIME_POLICY,
+  VISUAL_POLICIES,
+  VISUAL_POLICY,
   expandPermissionTiers,
   visibleCapabilities,
   type CommandPolicy,
