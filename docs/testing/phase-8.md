@@ -22,7 +22,18 @@ Audit records contain operation names, hashed scenario/baseline names, step-kind
 
 When `/Users/tony/Projects/town-building-game` exists at the pinned source commit, acceptance records its `HEAD`, NUL-delimited working-tree status digest, and index digest; materializes `git archive HEAD` into a disposable directory; and installs the addon only in that archive. The archive uses a unique custom Godot user-data directory. An acceptance-only script exercises the project's real save/domain classes to create a deterministic developed town with four buildings, 18 residents, and fixed progression state.
 
-The normal gate never creates its own oracle. It waits for 30 rendered frames within a 30-second readiness bound, requires no error logs, pauses the runtime, captures the 1280×720 frame, and compares it with the human-approved repository baseline. The comparison allows channel delta 4 and at most 1% changed pixels. Refresh mode (`GODOT_MCP_UPDATE_TOWN_BASELINE=1`) writes a candidate bundle and deliberately fails until a human visually approves the candidate and installs its exact PNG and metadata. Both modes remove the disposable project and custom user data, and the source checkout must have identical recorded state after success or failure.
+The normal gate never creates its own oracle. It waits for 30 rendered frames within a 30-second readiness bound, requires no error logs, pauses the runtime, captures the 1280×720 frame, and compares it with the human-approved repository baseline. The comparison allows channel delta 4 and at most 1% changed pixels. Both modes remove the disposable project and custom user data, and the source checkout must have identical recorded state after success or failure.
+
+To create a review candidate, set both required variables and run the isolated acceptance directly:
+
+```bash
+GODOT_MCP_UPDATE_TOWN_BASELINE=1 \
+GODOT_MCP_FAILURE_ARTIFACT_DIR=/absolute/review-artifacts \
+GODOT_BIN=/opt/homebrew/bin/godot \
+pnpm exec vitest run tests/acceptance/town-building-game-phase-8.test.ts --fileParallelism=false
+```
+
+Refresh mode replaces only `/absolute/review-artifacts/town-building-game-phase-8-candidate`, writes the candidate bundle there, and deliberately fails until a human visually approves the candidate and installs its exact PNG and metadata.
 
 ## Gate
 

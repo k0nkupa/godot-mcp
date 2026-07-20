@@ -60,6 +60,8 @@ test.skipIf(!sourcePresent)("accepts a town-building-game archive without changi
   process.env.XDG_RUNTIME_DIR = join(container, "runtime");
   let editor: Awaited<ReturnType<typeof launchEditor>> | undefined;
   let client: Awaited<ReturnType<typeof launchMcpClient>> | undefined;
+  let primaryFailure: unknown;
+  let testFailed = false;
   try {
     await mkdir(project, { recursive: true });
     await extractHeadArchive(project);
@@ -114,6 +116,10 @@ test.skipIf(!sourcePresent)("accepts a town-building-game archive without changi
       const artifactRoot = process.env.GODOT_MCP_FAILURE_ARTIFACT_DIR;
       if (!artifactRoot) throw new Error("GODOT_MCP_FAILURE_ARTIFACT_DIR is required in baseline-update mode");
       const candidate = join(artifactRoot, "town-building-game-phase-8-candidate");
+      if (basename(candidate) !== "town-building-game-phase-8-candidate") {
+        throw new Error("Refusing to replace an unexpected baseline-candidate directory");
+      }
+      await rm(candidate, { recursive: true, force: true });
       await mkdir(candidate, { recursive: true });
       await cp(
         join(project, ".godot/evidence/godot-mcp/baselines", baselineName),
@@ -140,20 +146,53 @@ test.skipIf(!sourcePresent)("accepts a town-building-game archive without changi
         expect.objectContaining({ kind: "compare", state: "completed", summary: expect.objectContaining({ passed: true }) }),
       ]),
     });
+  } catch (error) {
+    testFailed = true;
+    primaryFailure = error;
   } finally {
-    await client?.close();
-    await editor?.close();
+    const cleanupFailures: unknown[] = [];
+    await attemptCleanup(async () => client?.close(), cleanupFailures);
+    await attemptCleanup(async () => editor?.close(), cleanupFailures);
     if (previousRuntime === undefined) delete process.env.XDG_RUNTIME_DIR;
     else process.env.XDG_RUNTIME_DIR = previousRuntime;
-    if (!container.startsWith("/private/tmp/godot-mcp-phase8-town-")) throw new Error("Refusing to remove an unexpected acceptance directory");
-    await rm(container, { recursive: true, force: true });
-    if (!basename(userDataDirectory).startsWith("godot-mcp-phase8-town-")) {
-      throw new Error("Refusing to remove an unexpected Godot user-data directory");
+    await attemptCleanup(async () => {
+      if (!container.startsWith("/private/tmp/godot-mcp-phase8-town-")) {
+        throw new Error("Refusing to remove an unexpected acceptance directory");
+      }
+      await rm(container, { recursive: true, force: true });
+    }, cleanupFailures);
+    await attemptCleanup(async () => {
+      if (!basename(userDataDirectory).startsWith("godot-mcp-phase8-town-")) {
+        throw new Error("Refusing to remove an unexpected Godot user-data directory");
+      }
+      await rm(userDataDirectory, { recursive: true, force: true });
+    }, cleanupFailures);
+    await attemptCleanup(async () => {
+      expect(await sourceState()).toEqual(before);
+    }, cleanupFailures);
+
+    if (testFailed) {
+      if (cleanupFailures.length > 0) {
+        throw new AggregateError(
+          [primaryFailure, ...cleanupFailures],
+          "Town acceptance failed and cleanup encountered additional errors",
+          { cause: primaryFailure },
+        );
+      }
+      throw primaryFailure;
     }
-    await rm(userDataDirectory, { recursive: true, force: true });
-    expect(await sourceState()).toEqual(before);
+    if (cleanupFailures.length === 1) throw cleanupFailures[0];
+    if (cleanupFailures.length > 1) throw new AggregateError(cleanupFailures, "Town acceptance cleanup failed");
   }
 }, 600_000);
+
+async function attemptCleanup(cleanup: () => void | Promise<void>, failures: unknown[]): Promise<void> {
+  try {
+    await cleanup();
+  } catch (error) {
+    failures.push(error);
+  }
+}
 
 async function configureCustomUserData(project: string, name: string): Promise<void> {
   if (!/^godot-mcp-phase8-town-[A-Za-z0-9_-]+$/.test(name)) {
