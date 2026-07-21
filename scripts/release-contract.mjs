@@ -114,7 +114,7 @@ async function sourceDirty(root) {
   });
 }
 
-async function stageAndPackPackage(root, packageDir, version, output, stagingRoot) {
+async function stageAndPackPackage(root, packageDir, version, repository, output, stagingRoot) {
   const source = join(root, "packages", packageDir);
   const staged = join(stagingRoot, packageDir);
   await mkdir(staged, { recursive: true });
@@ -125,6 +125,7 @@ async function stageAndPackPackage(root, packageDir, version, output, stagingRoo
   delete packageJson.private;
   packageJson.license = "MIT";
   packageJson.engines = { node: ">=22 <23" };
+  packageJson.repository = repository;
   const extras = [];
   for (const file of (packageJson.files ?? []).filter((file) => file !== "dist")) {
     if (await lstat(join(source, file)).then(() => true, () => false)) extras.push(file);
@@ -162,6 +163,7 @@ export async function buildRelease({ root, output }) {
   const rootPackage = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
   const plugin = await readFile(join(root, "addons/godot_mcp/plugin.cfg"), "utf8");
   assert(rootPackage.version === product.productVersion, "Root and product versions differ");
+  assert(rootPackage.repository?.type === "git" && rootPackage.repository.url === "git+https://github.com/k0nkupa/godot-mcp.git", "Root repository identity is invalid");
   assert(plugin.includes(`version=\"${product.productVersion}\"`), "Addon and product versions differ");
   const matrix = await readCompatibilityMatrix(join(root, "release/compatibility-matrix.json"));
   assert(matrix.productVersion === product.productVersion, "Compatibility and product versions differ");
@@ -171,7 +173,7 @@ export async function buildRelease({ root, output }) {
   const stagingRoot = await mkdtemp(join(tmpdir(), "godot-mcp-release-stage-"));
   const components = [];
   try {
-    for (const packageDir of PACKAGE_DIRS) components.push(await stageAndPackPackage(root, packageDir, version, output, stagingRoot));
+    for (const packageDir of PACKAGE_DIRS) components.push(await stageAndPackPackage(root, packageDir, version, rootPackage.repository, output, stagingRoot));
   } finally {
     await rm(stagingRoot, { recursive: true, force: true });
   }
@@ -239,6 +241,7 @@ export async function verifyRelease(output) {
     assert(packedJsonBytes, `npm tarball has no package.json: ${artifact.name}`);
     const packedJson = JSON.parse(packedJsonBytes.toString("utf8"));
     assert(packedJson.version === manifest.version && packedJson.private !== true, `npm tarball version/private metadata is invalid: ${artifact.name}`);
+    assert(packedJson.repository?.url === "git+https://github.com/k0nkupa/godot-mcp.git", `npm tarball repository identity is invalid: ${artifact.name}`);
     assert(packedJson.license === "MIT" && entries.has("package/README.md") && entries.has("package/LICENSE"), `npm tarball distribution metadata is incomplete: ${artifact.name}`);
     assert(!JSON.stringify(packedJson.dependencies ?? {}).includes("workspace:"), `npm tarball contains workspace dependency: ${artifact.name}`);
     assert(![...entries.keys()].some((name) => /\.test\.(?:js|d\.ts)(?:\.map)?$/.test(name)), `npm tarball contains compiled tests: ${artifact.name}`);
