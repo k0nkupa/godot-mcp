@@ -90,6 +90,18 @@ describe("input fixture state evidence", () => {
     });
   });
 
+  test("reports a property that disappears from one snapshot", () => {
+    expect(buildInputFixtureFailureEvidence(
+      properties(),
+      properties().filter(({ name }) => name !== "replay_digest"),
+    )).toEqual({
+      schemaVersion: 1,
+      firstReplayDigest: "replay-a",
+      replayedReplayDigest: null,
+      changedPropertyNames: ["replay_digest"],
+    });
+  });
+
   test("rejects a missing replay property", () => {
     expect(() => readInputFixtureReplayState(
       properties().filter(({ name }) => name !== "replay_digest"),

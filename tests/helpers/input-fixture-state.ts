@@ -68,9 +68,8 @@ function availableChangedPropertyNames(
   return diagnosticPropertyNames.filter((name) => {
     const firstProperty = findProperty(first, name);
     const replayedProperty = findProperty(replayed, name);
-    return firstProperty && replayedProperty
-      ? !Object.is(firstProperty.value, replayedProperty.value)
-      : false;
+    if (!firstProperty || !replayedProperty) return firstProperty !== replayedProperty;
+    return !Object.is(firstProperty.value, replayedProperty.value);
   });
 }
 
