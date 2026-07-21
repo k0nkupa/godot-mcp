@@ -14,6 +14,7 @@ import { expect, test } from "vitest";
 
 import {
   buildInputFixtureFailureEvidence,
+  readInputFixtureReplayState,
   type RuntimeProperty,
 } from "../helpers/input-fixture-state.js";
 
@@ -115,25 +116,46 @@ test.skipIf(process.platform !== "darwin")(
 
       const firstNode = await client.callTool({ name: "godot_runtime", arguments: { operation: "node", handle, nodePath: ".", includeProperties: true, includeSignals: false } });
       firstProperties = (firstNode.structuredContent as { data: { properties: RuntimeProperty[] } }).data.properties;
-      const firstDigest = firstProperties.find((entry) => entry.name === "state_digest")?.value;
-      expect(firstProperties.find((entry) => entry.name === "delivery_order")?.value).toBe("action,key,action");
+      const firstReplayState = readInputFixtureReplayState(firstProperties);
+      expect(firstReplayState).toMatchObject({
+        deliveryOrder: "action,key,action",
+        eventCount: 3,
+        lastKind: "action",
+        actionPressed: false,
+        keycode: 67,
+      });
+      expect(firstReplayState.digest).toMatch(/^[a-f0-9]{64}$/);
 
       await client.callTool({ name: "godot_input", arguments: { operation: "send", handle, event: { type: "key", keycode: 82, pressed: true } } });
       await waitUntil(async () => {
         const result = await client?.callTool({ name: "godot_runtime", arguments: { operation: "node", handle, nodePath: ".", includeProperties: true, includeSignals: false } });
         const properties = (result?.structuredContent as { data?: { properties?: Array<{ name: string; value: unknown }> } } | undefined)?.data?.properties ?? [];
         const property = (name: string) => properties.find((entry) => entry.name === name)?.value;
-        return property("event_count") === 0 && Number(property("frame_counter")) > 0;
+        return property("replay_event_count") === 0
+          && Number(property("frame_counter")) > 0
+          && property("inherited_reload_key_pressed") === false;
       }, 5_000, 50);
 
       await client.callTool({ name: "godot_runtime", arguments: { operation: "pause", handle } });
       const replay = await client.callTool({ name: "godot_input", arguments: { operation: "replay", handle, trace } });
       lastStructured = replay.structuredContent;
-      expect(replay.structuredContent).toMatchObject({ ok: true, data: { receipt: { deterministic: true, deliveredCount: 3 } } });
+      expect(replay.structuredContent).toMatchObject({
+        ok: true,
+        data: {
+          receipt: {
+            deterministic: true,
+            deliveredCount: 3,
+            events: [
+              { deliveredFrame: 0 },
+              { deliveredFrame: 1 },
+              { deliveredFrame: 2 },
+            ],
+          },
+        },
+      });
       const replayedNode = await client.callTool({ name: "godot_runtime", arguments: { operation: "node", handle, nodePath: ".", includeProperties: true, includeSignals: false } });
       replayedProperties = (replayedNode.structuredContent as { data: { properties: RuntimeProperty[] } }).data.properties;
-      expect(replayedProperties.find((entry) => entry.name === "state_digest")?.value).toBe(firstDigest);
-      expect(replayedProperties.find((entry) => entry.name === "delivery_order")?.value).toBe("action,key,action");
+      expect(readInputFixtureReplayState(replayedProperties)).toEqual(firstReplayState);
 
       const audit = await readFile(join(project.root, ".godot/evidence/godot-mcp/audit.jsonl"), "utf8");
       expect(audit).not.toContain("phase_4_accept");

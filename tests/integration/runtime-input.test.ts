@@ -15,6 +15,12 @@ import {
 import { copyFixture, findGodotBinary, reserveLoopbackPort, runGodot, waitUntil } from "@godot-mcp/testkit";
 import { expect, test } from "vitest";
 
+import {
+  readInputFixtureReplayState,
+  type InputFixtureReplayState,
+  type RuntimeProperty,
+} from "../helpers/input-fixture-state.js";
+
 const handleRunId = "019f644c-1379-79c0-825e-66a4b7653bd1";
 
 test("injects, records, and deterministically replays bounded runtime input", async () => {
@@ -186,7 +192,9 @@ test("injects, records, and deterministically replays bounded runtime input", as
 			try {
 				const node = await runtime.execute({ operation: "node", handle: launched.handle, nodePath: ".", includeProperties: true, includeSignals: false }) as { properties: Array<{ name: string; value: unknown }> };
 				const property = (name: string) => node.properties.find((entry) => entry.name === name)?.value;
-				return property("event_count") === 0 && Number(property("frame_counter")) > 0;
+				return property("replay_event_count") === 0
+					&& Number(property("frame_counter")) > 0
+					&& property("inherited_reload_key_pressed") === false;
 			} catch {
 				return false;
 			}
@@ -201,7 +209,11 @@ test("injects, records, and deterministically replays bounded runtime input", as
             { frameOffset: 2, event: { type: "action" as const, action: "phase_4_accept", pressed: false, strengthMillionths: 0 } },
           ],
         };
-        const deterministicRuns: Array<{ digest: unknown; order: unknown; frameDelta: number; deliveredFrames: number[] }> = [];
+        const deterministicRuns: Array<{
+          replayState: InputFixtureReplayState;
+          frameDelta: number;
+          deliveredFrames: number[];
+        }> = [];
         for (let iteration = 0; iteration < 2; iteration += 1) {
 		  phase = `fresh-run-${iteration}-pause`;
 		  await runtime.execute({ operation: "pause", handle: launched.handle });
@@ -212,11 +224,10 @@ test("injects, records, and deterministically replays bounded runtime input", as
 		  phase = `fresh-run-${iteration}-replay`;
 		  const replayed = await runtime.input({ operation: "replay", handle: launched.handle, mode: "deterministic", timeoutMs: 10_000, trace: pinnedTrace });
 		  phase = `fresh-run-${iteration}-after-query`;
-		  const after = await runtime.execute({ operation: "node", handle: launched.handle, nodePath: ".", includeProperties: true, includeSignals: false }) as { properties: Array<{ name: string; value: unknown }> };
+		  const after = await runtime.execute({ operation: "node", handle: launched.handle, nodePath: ".", includeProperties: true, includeSignals: false }) as { properties: RuntimeProperty[] };
           const afterProperty = (name: string) => after.properties.find((entry) => entry.name === name)?.value;
           deterministicRuns.push({
-            digest: afterProperty("state_digest"),
-            order: afterProperty("delivery_order"),
+            replayState: readInputFixtureReplayState(after.properties),
             frameDelta: Number(afterProperty("frame_counter")) - beforeFrame,
             deliveredFrames: replayed.receipt.events.map((event) => event.deliveredFrame),
           });
@@ -233,7 +244,9 @@ test("injects, records, and deterministically replays bounded runtime input", as
 			  try {
 				const node = await runtime.execute({ operation: "node", handle: launched.handle, nodePath: ".", includeProperties: true, includeSignals: false }) as { properties: Array<{ name: string; value: unknown }> };
 				const property = (name: string) => node.properties.find((entry) => entry.name === name)?.value;
-				return property("event_count") === 0 && Number(property("frame_counter")) > 0;
+				return property("replay_event_count") === 0
+					&& Number(property("frame_counter")) > 0
+					&& property("inherited_reload_key_pressed") === false;
 			  } catch {
 				return false;
 			  }
@@ -241,7 +254,7 @@ test("injects, records, and deterministically replays bounded runtime input", as
 		  }
         }
         expect(deterministicRuns[0]).toEqual(deterministicRuns[1]);
-        expect(deterministicRuns[0]?.order).toBe("action,key,action");
+        expect(deterministicRuns[0]?.replayState.deliveryOrder).toBe("action,key,action");
         expect(deterministicRuns[0]?.frameDelta).toBe(3);
         expect(deterministicRuns[0]?.deliveredFrames).toEqual([0, 1, 2]);
       } finally {
