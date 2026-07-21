@@ -69,6 +69,36 @@ func _init() -> void:
 	assert(EventFactory.build({"type": "magnify_gesture", "position": {"x": 1, "y": 2}, "viewportPath": ".", "coordinateSpace": "viewport", "factorMillionths": 1250000}).events[0] is InputEventMagnifyGesture)
 
 	await process_frame
+	var fixture_scene := load("res://input/input_fixture.tscn") as PackedScene
+	var fixture := fixture_scene.instantiate()
+	root.add_child(fixture)
+	await process_frame
+	fixture._input(action.events[0])
+	fixture._input(key.events[0])
+	var action_release: Dictionary = EventFactory.build({
+		"type": "action", "action": "phase_4_accept", "pressed": false,
+		"strengthMillionths": 0,
+	})
+	fixture._input(action_release.events[0])
+	assert(fixture.replay_delivery_order == "action,key,action")
+	assert(fixture.replay_event_count == 3)
+	assert(fixture.replay_last_kind == "action")
+	assert(not fixture.replay_action_pressed and fixture.replay_keycode == 65)
+
+	var replay_digest_before_noise: String = fixture.replay_digest
+	var full_digest_before_noise: String = fixture.state_digest
+	fixture._input(mouse.events[0])
+	assert(fixture.state_digest != full_digest_before_noise)
+	assert(fixture.replay_digest == replay_digest_before_noise)
+
+	var reset_release := InputEventKey.new()
+	reset_release.keycode = KEY_R
+	reset_release.pressed = false
+	fixture._input(reset_release)
+	assert(fixture.replay_digest == replay_digest_before_noise)
+	fixture.queue_free()
+	await process_frame
+
 	var game_root := Node.new()
 	game_root.name = "Game"
 	root.add_child(game_root)

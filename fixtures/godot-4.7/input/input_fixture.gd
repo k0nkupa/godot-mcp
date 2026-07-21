@@ -21,12 +21,19 @@ extends Node2D
 @export var joy_axis_millionths := 0
 @export var inherited_reload_key_pressed := false
 @export var state_digest := ""
+@export var replay_delivery_order := ""
+@export var replay_event_count := 0
+@export var replay_last_kind := ""
+@export var replay_action_pressed := false
+@export var replay_keycode := 0
+@export var replay_digest := ""
 
 var _active_touches: Dictionary = {}
 
 func _ready() -> void:
 	inherited_reload_key_pressed = Input.is_key_pressed(KEY_R)
 	_refresh_digest()
+	_refresh_replay_digest()
 
 func _process(_delta: float) -> void:
 	frame_counter += 1
@@ -35,9 +42,14 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventAction and String(event.action) == "phase_4_accept":
 		action_pressed = event.pressed
 		_record("action")
+		replay_action_pressed = event.pressed
+		_record_replay("action")
 	elif event is InputEventKey:
 		keycode = int(event.keycode)
 		_record("key")
+		if event.keycode != KEY_R:
+			replay_keycode = int(event.keycode)
+			_record_replay("key")
 		if event.pressed and event.keycode == KEY_R:
 			call_deferred("_reload_scene")
 	elif event is InputEventMouseButton:
@@ -85,11 +97,23 @@ func _record(kind: String) -> void:
 	delivery_order = kind if delivery_order.is_empty() else "%s,%s" % [delivery_order, kind]
 	_refresh_digest()
 
+func _record_replay(kind: String) -> void:
+	replay_last_kind = kind
+	replay_event_count += 1
+	replay_delivery_order = kind if replay_delivery_order.is_empty() else "%s,%s" % [replay_delivery_order, kind]
+	_refresh_replay_digest()
+
 func _refresh_digest() -> void:
 	state_digest = JSON.stringify([
 		delivery_order, action_pressed, keycode, mouse_x, mouse_y, mouse_button_pressed,
 		scroll_x, scroll_y, active_touch_count, touch_drag_x, touch_drag_y, pan_x, pan_y,
 		magnify_millionths, joy_button_pressed, joy_axis_millionths,
+	]).sha256_text()
+
+func _refresh_replay_digest() -> void:
+	replay_digest = JSON.stringify([
+		replay_delivery_order, replay_event_count, replay_last_kind,
+		replay_action_pressed, replay_keycode,
 	]).sha256_text()
 
 func _reload_scene() -> void:
