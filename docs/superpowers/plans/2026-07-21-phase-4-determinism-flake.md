@@ -456,7 +456,7 @@ git commit -m "test: harden Phase 4 deterministic replay"
 - [x] Mark every event produced by the closed factory with private `_godot_mcp_injected_v1` metadata. Do not add a wire field or allow caller-controlled provenance.
 - [x] Update only the fixture replay recorder to require that marker; retain every event in the broad state.
 - [x] Verify `GODOT_MCP_RUNTIME_INPUT_UNIT_OK` and the real integration/E2E path, proving metadata survives both `Input.parse_input_event()` and viewport delivery.
-- [ ] Re-run the 25/25 E2E stress and structured autoreview after this amendment.
+- [x] Re-run the 25/25 E2E stress and structured autoreview after this amendment.
 
 ---
 
