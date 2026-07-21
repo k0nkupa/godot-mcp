@@ -45,12 +45,16 @@ describe("Phase 11 release contract", () => {
     const release = await readFile(resolve(".github/workflows/release.yml"), "utf8");
     expect(release).toContain("npm install --global npm@12.0.1");
     expect(release).toContain("publish-release.mjs release/out");
+    expect(release).toContain('GODOT_ARCHIVE: ${{ runner.temp }}/godot-4.7.zip');
+    expect(release).not.toContain("--output godot.zip");
     const publisher = await readFile(resolve("scripts/publish-release.mjs"), "utf8");
     expect(publisher).toContain("Published npm artifact differs from release set");
     expect(publisher).toContain("Existing GitHub asset differs from release set");
     const compatibility = await readFile(resolve(".github/workflows/compatibility.yml"), "utf8");
     expect(compatibility).toContain("write-compatibility-receipt.mjs");
     expect(compatibility).toContain("actions/attest-build-provenance@");
+    expect(compatibility).toContain('GODOT_ARCHIVE: ${{ runner.temp }}/godot-4.7.zip');
+    expect(compatibility).not.toContain("--output godot.zip");
     expect(await readFile(resolve("scripts/verify-release-preconditions.mjs"), "utf8")).toContain('"attestation", "verify"');
   });
 });
