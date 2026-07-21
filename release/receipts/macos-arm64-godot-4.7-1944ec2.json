@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "cell": {
+    "godot": "4.7",
+    "exactVersion": "4.7.stable.official.5b4e0cb0f",
+    "platform": "macos",
+    "architecture": "arm64"
+  },
+  "sourceRevision": "1944ec202586b7fe5e1b4a4790ef48e97de58c2b",
+  "gate": "phase-11-cell",
+  "result": "passed",
+  "createdAt": "2026-07-21T21:00:11.386Z",
+  "workflowRunUrl": "https://github.com/k0nkupa/godot-mcp/actions/runs/29867321088",
+  "stages": [
+    {
+      "index": 1,
+      "name": "exact-engine-cell",
+      "status": "passed"
+    },
+    {
+      "index": 2,
+      "name": "generated-protocol",
+      "status": "passed"
+    },
+    {
+      "index": 3,
+      "name": "build",
+      "status": "passed"
+    },
+    {
+      "index": 4,
+      "name": "lint",
+      "status": "passed"
+    },
+    {
+      "index": 5,
+      "name": "typecheck",
+      "status": "passed"
+    },
+    {
+      "index": 6,
+      "name": "release-lifecycle",
+      "status": "passed"
+    },
+    {
+      "index": 7,
+      "name": "hostile-concurrency-stale-session",
+      "status": "passed"
+    },
+    {
+      "index": 8,
+      "name": "serialized-regressions",
+      "status": "passed"
+    },
+    {
+      "index": 9,
+      "name": "release-build-a",
+      "status": "passed"
+    },
+    {
+      "index": 10,
+      "name": "release-verify-a",
+      "status": "passed"
+    },
+    {
+      "index": 11,
+      "name": "release-build-b",
+      "status": "passed"
+    },
+    {
+      "index": 12,
+      "name": "reproducibility",
+      "status": "passed"
+    },
+    {
+      "index": 13,
+      "name": "cleanup",
+      "status": "passed"
+    },
+    {
+      "index": 14,
+      "name": "committed-diff",
+      "status": "passed"
+    },
+    {
+      "index": 15,
+      "name": "working-tree-clean",
+      "status": "passed"
+    }
+  ]
+}

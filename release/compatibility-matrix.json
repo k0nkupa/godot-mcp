@@ -12,7 +12,7 @@
     { "godot": "4.6", "exactVersion": null, "platform": "macos", "architecture": "arm64", "state": "pending", "gate": "phase-11-cell" },
     { "godot": "4.6", "exactVersion": null, "platform": "windows", "architecture": "x64", "state": "pending", "gate": "phase-11-cell" },
     { "godot": "4.7", "exactVersion": "4.7.stable.official.5b4e0cb0f", "platform": "linux", "architecture": "x64", "state": "pending", "gate": "phase-11-cell" },
-    { "godot": "4.7", "exactVersion": "4.7.stable.official.5b4e0cb0f", "platform": "macos", "architecture": "arm64", "state": "pending", "gate": "phase-11-cell" },
+    { "godot": "4.7", "exactVersion": "4.7.stable.official.5b4e0cb0f", "platform": "macos", "architecture": "arm64", "state": "certified", "gate": "phase-11-cell", "receipt": "release/receipts/macos-arm64-godot-4.7-1944ec2.json" },
     { "godot": "4.7", "exactVersion": "4.7.stable.official.5b4e0cb0f", "platform": "windows", "architecture": "x64", "state": "pending", "gate": "phase-11-cell" }
   ]
 }
