@@ -24,6 +24,8 @@ Sequences and traces contain at most 256 events, nondecreasing offsets 0–1,800
 
 Realtime sequences are explicitly non-deterministic. Replay and deterministic sequences require an already paused owned runtime. Frame offsets are zero-based: events scheduled at offsets 0–2 are processed across exactly three rendered frames, and the runtime remains paused. Reproducible comparisons pin project revision, Godot version, scene, viewport size, renderer, locale, seed, and time-step settings.
 
+Deterministic receipts certify the schedule of MCP-injected events; they do not suppress or record concurrent platform input delivered to a windowed Godot runtime. Release replay comparisons therefore use the fixture's trace-scoped action/key digest and exact delivered frames. The fixture's separate all-input digest continues to certify mouse, touch, gesture, and joypad handling. Failure evidence records digest values and changed property names only, never raw action names, keycodes, coordinates, or trace payloads.
+
 Recording is non-passive: it captures only successfully injected MCP events, never ambient hardware input. Receipts contain event kinds/counts, scheduled/delivered offsets, coordinate-space metadata, release kinds, deterministic/recording state, and a canonical trace SHA-256. Audit JSONL stores only a summary and digest, not action names, keycodes, coordinates, or trace payloads.
 
 Held MCP state is neutralized on timeout/error when reachable, scene replacement, runtime stop/exit, debugger loss, and owner shutdown. Scene-replacement tests prove held reload keys are released before the replacement fixture starts. All editor/runtime/E2E checks use disposable fixture copies and require zero project diff and no remaining descriptors or leases.
