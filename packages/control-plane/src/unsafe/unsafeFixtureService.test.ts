@@ -1,7 +1,7 @@
 import { access, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { copyFixture } from "@godot-mcp/testkit";
+import { copyFixture, findGodotBinary } from "@godot-mcp/testkit";
 import { expect, it, test } from "vitest";
 
 import { UnsafeFixtureProcess, type UnsafeFixtureProcessHandle } from "./unsafeFixtureProcess.js";
@@ -21,12 +21,13 @@ async function terminal(service: UnsafeFixtureService, token: string) {
 
 test.skipIf(process.env.GODOT_MCP_SKIP_PROCESS_FINGERPRINT === "1")("runs arbitrary GDScript in a separate process, stores bounded evidence, and deletes source", async () => {
   const project = await copyFixture();
+  const godotBin = await findGodotBinary();
   let launchError: unknown;
   try {
     const service = new UnsafeFixtureService({
       activation: activation(project.root),
       sessionId: () => "session_12345678",
-      launch: async (input) => { try { return await UnsafeFixtureProcess.launch({ ...input, godotBin: "/opt/homebrew/bin/godot" }); } catch (error) { launchError = error; throw error; } },
+      launch: async (input) => { try { return await UnsafeFixtureProcess.launch({ ...input, godotBin }); } catch (error) { launchError = error; throw error; } },
     });
     const started = await service.execute({ operation: "execute_start", source: 'extends SceneTree\nfunc _init():\n print("PHASE10_UNSAFE_FIXTURE_OK")\n quit()\n', deadlineMs: 5_000 }, "req-1") as { data: { jobToken: string } };
     await terminal(service, started.data.jobToken);
