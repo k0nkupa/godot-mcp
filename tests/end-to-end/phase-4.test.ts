@@ -12,6 +12,11 @@ import {
 } from "@godot-mcp/testkit";
 import { expect, test } from "vitest";
 
+import {
+  buildInputFixtureFailureEvidence,
+  type RuntimeProperty,
+} from "../helpers/input-fixture-state.js";
+
 function sanitizeFailureValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sanitizeFailureValue);
   if (typeof value !== "object" || value === null) return value;
@@ -21,7 +26,14 @@ function sanitizeFailureValue(value: unknown): unknown {
   ]));
 }
 
-async function preserveFailureReceipts(projectRoot: string, editorOutput: string, mcpStderr: string, lastStructured: unknown): Promise<void> {
+async function preserveFailureReceipts(
+  projectRoot: string,
+  editorOutput: string,
+  mcpStderr: string,
+  lastStructured: unknown,
+  firstProperties?: RuntimeProperty[],
+  replayedProperties?: RuntimeProperty[],
+): Promise<void> {
   const directory = process.env.GODOT_MCP_FAILURE_ARTIFACT_DIR;
   if (!directory) return;
   await mkdir(directory, { recursive: true });
@@ -34,6 +46,11 @@ async function preserveFailureReceipts(projectRoot: string, editorOutput: string
   await writeFile(join(directory, "phase-4-end-to-end-editor.log"), redact(editorOutput), "utf8");
   await writeFile(join(directory, "phase-4-end-to-end-mcp-stderr.log"), redact(mcpStderr), "utf8");
   await writeFile(join(directory, "phase-4-end-to-end-receipt.json"), `${JSON.stringify(sanitizeFailureValue(lastStructured))}\n`, "utf8");
+  await writeFile(
+    join(directory, "phase-4-end-to-end-state.json"),
+    `${JSON.stringify(buildInputFixtureFailureEvidence(firstProperties, replayedProperties))}\n`,
+    "utf8",
+  );
 }
 
 test.skipIf(process.platform !== "darwin")(
@@ -45,6 +62,8 @@ test.skipIf(process.platform !== "darwin")(
     let editor: Awaited<ReturnType<typeof launchEditor>> | undefined;
     let client: Awaited<ReturnType<typeof launchMcpClient>> | undefined;
     let lastStructured: unknown;
+    let firstProperties: RuntimeProperty[] | undefined;
+    let replayedProperties: RuntimeProperty[] | undefined;
     try {
       const imported = await runGodot(["--headless", "--editor", "--path", project.root, "--import"]);
       expect(imported.exitCode, imported.stderr).toBe(0);
@@ -95,7 +114,7 @@ test.skipIf(process.platform !== "darwin")(
       const trace = (recorded.structuredContent as { data: { trace: unknown } }).data.trace;
 
       const firstNode = await client.callTool({ name: "godot_runtime", arguments: { operation: "node", handle, nodePath: ".", includeProperties: true, includeSignals: false } });
-      const firstProperties = (firstNode.structuredContent as { data: { properties: Array<{ name: string; value: unknown }> } }).data.properties;
+      firstProperties = (firstNode.structuredContent as { data: { properties: RuntimeProperty[] } }).data.properties;
       const firstDigest = firstProperties.find((entry) => entry.name === "state_digest")?.value;
       expect(firstProperties.find((entry) => entry.name === "delivery_order")?.value).toBe("action,key,action");
 
@@ -112,7 +131,7 @@ test.skipIf(process.platform !== "darwin")(
       lastStructured = replay.structuredContent;
       expect(replay.structuredContent).toMatchObject({ ok: true, data: { receipt: { deterministic: true, deliveredCount: 3 } } });
       const replayedNode = await client.callTool({ name: "godot_runtime", arguments: { operation: "node", handle, nodePath: ".", includeProperties: true, includeSignals: false } });
-      const replayedProperties = (replayedNode.structuredContent as { data: { properties: Array<{ name: string; value: unknown }> } }).data.properties;
+      replayedProperties = (replayedNode.structuredContent as { data: { properties: RuntimeProperty[] } }).data.properties;
       expect(replayedProperties.find((entry) => entry.name === "state_digest")?.value).toBe(firstDigest);
       expect(replayedProperties.find((entry) => entry.name === "delivery_order")?.value).toBe("action,key,action");
 
@@ -140,7 +159,14 @@ test.skipIf(process.platform !== "darwin")(
       expect(await project.diffFromOriginal()).toEqual([]);
       expect(await readdir(join(project.root, "runtime/godot-mcp")).catch(() => [])).toEqual([]);
     } catch (error) {
-      await preserveFailureReceipts(project.root, editor?.output ?? "", client?.stderr ?? "", lastStructured);
+      await preserveFailureReceipts(
+        project.root,
+        editor?.output ?? "",
+        client?.stderr ?? "",
+        lastStructured,
+        firstProperties,
+        replayedProperties,
+      );
       throw new Error(`${String(error)}\nLast structured:\n${JSON.stringify(sanitizeFailureValue(lastStructured))}\nMCP stderr:\n${client?.stderr ?? ""}\nEditor output:\n${editor?.output ?? ""}`);
     } finally {
       await client?.close();
