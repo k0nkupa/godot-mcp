@@ -1,5 +1,7 @@
 extends Node2D
 
+const MCP_EVENT_META := &"_godot_mcp_injected_v1"
+
 @export var delivery_order := ""
 @export var event_count := 0
 @export var frame_counter := 0
@@ -42,12 +44,13 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventAction and String(event.action) == "phase_4_accept":
 		action_pressed = event.pressed
 		_record("action")
-		replay_action_pressed = event.pressed
-		_record_replay("action")
+		if event.has_meta(MCP_EVENT_META):
+			replay_action_pressed = event.pressed
+			_record_replay("action")
 	elif event is InputEventKey:
 		keycode = int(event.keycode)
 		_record("key")
-		if event.keycode != KEY_R:
+		if event.keycode != KEY_R and event.has_meta(MCP_EVENT_META):
 			replay_keycode = int(event.keycode)
 			_record_replay("key")
 		if event.pressed and event.keycode == KEY_R:

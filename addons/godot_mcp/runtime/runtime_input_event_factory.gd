@@ -2,6 +2,7 @@ class_name GodotMcpRuntimeInputEventFactory
 extends RefCounted
 
 const ONE_MILLION := 1000000.0
+const MCP_EVENT_META := &"_godot_mcp_injected_v1"
 
 static func build(spec: Variant) -> Dictionary:
 	if typeof(spec) != TYPE_DICTIONARY:
@@ -245,6 +246,8 @@ static func _set_position(event: InputEventMouse, position: Vector2) -> void:
 	event.global_position = position
 
 static func _ok(events: Array, route: String) -> Dictionary:
+	for event: InputEvent in events:
+		event.set_meta(MCP_EVENT_META, true)
 	return {"ok": true, "events": events, "route": route}
 
 static func _error(code: String, message: String) -> Dictionary:

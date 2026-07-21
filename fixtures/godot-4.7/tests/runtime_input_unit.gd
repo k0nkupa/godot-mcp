@@ -75,6 +75,10 @@ func _init() -> void:
 	await process_frame
 	fixture._input(action.events[0])
 	fixture._input(key.events[0])
+	var ambient_key := InputEventKey.new()
+	ambient_key.keycode = KEY_X
+	ambient_key.pressed = true
+	fixture._input(ambient_key)
 	var action_release: Dictionary = EventFactory.build({
 		"type": "action", "action": "phase_4_accept", "pressed": false,
 		"strengthMillionths": 0,

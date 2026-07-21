@@ -4,7 +4,7 @@
 
 **Goal:** Remove the intermittent Phase 4 release risk by making replay certification compare only state controlled by the recorded trace, while preserving full input-family coverage and adding redaction-safe evidence that exposes any future component drift.
 
-**Architecture:** Keep the production input protocol, `RuntimeInput`, and `RuntimeFrameClock` unchanged. Split the disposable Godot fixture's current all-input digest from a new trace-scoped action/key replay digest. The broad digest continues to certify every supported input family; replay tests use the trace-scoped digest plus exact receipt timing. A shared TypeScript helper projects fixture properties and writes failure evidence containing only digest values and changed property names. If a replay-controlled property still drifts, stop this oracle-only change and investigate the production delivery path before release.
+**Architecture:** Keep the production input protocol, `RuntimeInput`, and `RuntimeFrameClock` unchanged. The closed event factory attaches private diagnostic provenance metadata to its internally constructed `InputEvent` objects without changing the wire contract. Split the disposable Godot fixture's current all-input digest from a factory-tagged action/key replay digest. The broad digest continues to certify every supported input family and ambient input; replay tests use the tagged digest plus exact receipt timing. A shared TypeScript helper projects fixture properties and writes failure evidence containing only digest values and changed property names. The marker is not authentication or a protocol security boundary.
 
 **Tech Stack:** Godot 4.7 GDScript, TypeScript, Vitest, Node.js 22, pnpm 11.13.0, Godot MCP disposable fixtures and Phase 4/11 QA gates.
 
@@ -16,6 +16,7 @@
 - [ ] Run editor, native, destructive, and end-to-end checks only against disposable fixture copies. Never mutate a real game checkout.
 - [ ] Do not change the stdio MCP boundary, loopback binding, grants/packs, trace schema, receipt schema, audit schema, or input event union.
 - [ ] Do not add OS-global input suppression or `Viewport.gui_disable_input` to production code. The observed failure establishes an over-broad oracle, not a production delivery defect.
+- [ ] Treat the private event metadata only as fixture diagnostic provenance. Do not expose it on the wire, accept it from callers, or use it for authorization.
 - [ ] Preserve full `state_digest` coverage for action, key, mouse, touch, gesture, and joypad behavior. Add a separate replay oracle; do not weaken the all-input assertions.
 - [ ] Persist only digest values and changed property names in failure artifacts. Never persist action names, keycodes, coordinates, trace payloads, descriptors, or bearer material.
 - [ ] Escalation gate: if the reproducer or new evidence shows `replay_digest`, `replay_delivery_order`, `replay_event_count`, `replay_last_kind`, `replay_action_pressed`, or `replay_keycode` drifting for identical traces, stop. Do not land the oracle narrowing; inspect `runtime_input.gd`, `runtime_frame_clock.gd`, scene reload state release, and descriptor/session ordering instead.
@@ -442,6 +443,23 @@ git commit -m "test: harden Phase 4 deterministic replay"
 
 ---
 
+## Task 3A: Accepted review amendment — exclude ambient keys by provenance
+
+**Files:**
+
+- Modify: `addons/godot_mcp/runtime/runtime_input_event_factory.gd`
+- Modify: `fixtures/godot-4.7/input/input_fixture.gd`
+- Modify: `fixtures/godot-4.7/tests/runtime_input_unit.gd`
+
+- [x] Autoreview identified that filtering mouse and reset-key events was insufficient because ambient non-reset keyboard input could still mutate the replay digest.
+- [x] Add an untagged ambient key between factory-built events in the native fixture test and verify the replay-order assertion fails.
+- [x] Mark every event produced by the closed factory with private `_godot_mcp_injected_v1` metadata. Do not add a wire field or allow caller-controlled provenance.
+- [x] Update only the fixture replay recorder to require that marker; retain every event in the broad state.
+- [x] Verify `GODOT_MCP_RUNTIME_INPUT_UNIT_OK` and the real integration/E2E path, proving metadata survives both `Input.parse_input_event()` and viewport delivery.
+- [ ] Re-run the 25/25 E2E stress and structured autoreview after this amendment.
+
+---
+
 ## Task 4: Document the determinism boundary and certify release readiness
 
 **Files:**
@@ -479,7 +497,7 @@ git diff 3fd0bea...HEAD -- \
   docs/testing/phase-4.md docs/protocol/bridge-v1.md docs/security/threat-model.md
 ```
 
-Expected: no whitespace errors; no production runtime/addon/package changes; no secret or raw input values in evidence-writing code.
+Expected: no whitespace errors; the only production addon change is the internal event-factory provenance marker; no protocol, receipt, grant, runtime-service, or frame-clock change; no secret or raw input values in evidence-writing code.
 
 - [ ] Commit the documentation and this plan.
 
