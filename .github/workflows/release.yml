@@ -44,7 +44,10 @@ jobs:
           mkdir -p "$RUNNER_TEMP/godot"
           ditto -x -k "$GODOT_ARCHIVE" "$RUNNER_TEMP/godot"
           echo "GODOT_BIN=$RUNNER_TEMP/godot/Godot.app/Contents/MacOS/Godot" >> "$GITHUB_ENV"
-      - run: pnpm qa:phase-11
+      - name: Run Phase 11 release gate
+        env:
+          GODOT_MCP_DIFF_BASE: origin/main
+        run: pnpm qa:phase-11
       - run: node scripts/build-release.mjs release/out
       - run: node scripts/verify-release.mjs release/out
       - name: Attest exact release artifacts
