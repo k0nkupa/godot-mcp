@@ -93,4 +93,16 @@ describe("workspace package contract", () => {
     expect(plugin).toContain("_consume_secure_launch_attestation()");
     expect(plugin).toContain("RuntimeDebugger.launch_attestation_matches");
   });
+
+  it("publishes safe AI-agent setup instructions", async () => {
+    const readme = await readFile("README.md", "utf8");
+    expect(readme).toContain("## Set up with an AI coding agent");
+    expect(readme).toContain("https://raw.githubusercontent.com/k0nkupa/godot-mcp/main/setup-instructions/setup.md");
+
+    const setup = await readFile("setup-instructions/setup.md", "utf8");
+    expect(setup).toContain("codex mcp add godot -- node");
+    expect(setup).toContain("explicit approval");
+    expect(setup).toContain("--grant runtime_control --pack runtime");
+    expect(setup).toContain("--grant project_mutate --pack editor");
+  });
 });

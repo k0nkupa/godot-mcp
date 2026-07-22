@@ -2,6 +2,17 @@
 
 Godot MCP is an open-source, security-first MCP server and Godot editor addon. Phase 7 provides reversible installation, authenticated Godot 4.7 editor attachment, six default observe-only tools, explicitly gated runtime/input surfaces, permission-scoped editor authoring, native read-only GDScript debugging, and bounded structured performance evidence.
 
+## Set up with an AI coding agent
+
+Copy this prompt and paste it into your AI coding agent:
+
+```text
+Set up Godot MCP by following these instructions:
+https://raw.githubusercontent.com/k0nkupa/godot-mcp/main/setup-instructions/setup.md
+```
+
+The agent will check compatibility and prerequisites, install the addon into your chosen Godot project, register the observe-only MCP server, and verify the setup. Runtime control, input automation, and project mutation remain separate opt-ins that require your explicit approval.
+
 ## Requirements
 
 - macOS (the currently certified platform)
