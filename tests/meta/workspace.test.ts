@@ -64,7 +64,6 @@ describe("workspace package contract", () => {
     expect(gate).toContain("tests/security/editor-authoring-hostile.test.ts");
     expect(gate).toContain("tests/end-to-end/phase-6.test.ts");
     expect(gate).toContain("scripts/verify-phase-6-cleanup.mjs");
-    expect(await readFile("docs/superpowers/plans/2026-07-17-phase-6-complete-authoring-surface.md", "utf8")).toContain("Phase 6");
     expect(await readFile("README.md", "utf8")).toContain("pnpm qa:phase-6");
     expect(await readFile("docs/testing/phase-6.md", "utf8")).toContain("create_script");
   });
@@ -87,9 +86,7 @@ describe("workspace package contract", () => {
     expect(gate).toContain("tests/end-to-end/phase-7.test.ts");
     expect(gate).toContain("scripts/verify-phase-7-cleanup.mjs");
     expect(gate).toContain('readOutput("git", ["status", "--porcelain=v1", "--untracked-files=all"]');
-    const agents = await readFile("AGENTS.md", "utf8");
-    expect(agents).toContain("docs/superpowers/plans/2026-07-17-phase-7-debugging-performance.md");
-    expect(agents).toContain("docs/testing/phase-7.md");
+    expect(await readFile("AGENTS.md", "utf8")).toContain("docs/testing/phase-7.md");
     expect(await readFile("README.md", "utf8")).toContain("pnpm qa:phase-7");
     expect(await readFile("docs/testing/phase-7.md", "utf8")).toContain("debug_breakpoints_set");
     const plugin = await readFile("addons/godot_mcp/plugin.gd", "utf8");

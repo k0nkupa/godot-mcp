@@ -99,7 +99,7 @@ GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-6
 GODOT_BIN=/opt/homebrew/bin/godot pnpm qa:phase-7
 ```
 
-The Phase 7 gate certifies secure shared-port editor startup, native-DAP inertness, authenticated editor-session debugging, breakpoints/stacks/variables/selector watches, bounded public monitor snapshots, completed and cancelled profiles, hostile-input rejection, published stdio behavior, and zero owned-state or fixture residue. Earlier gates remain required regressions. See [Phase 7 testing](docs/testing/phase-7.md), [Phase 6 testing](docs/testing/phase-6.md), the [threat model](docs/security/threat-model.md), the [bridge protocol](docs/protocol/bridge-v1.md), and the [master design](docs/superpowers/specs/2026-07-15-godot-mcp-master-design.md).
+The Phase 7 gate certifies secure shared-port editor startup, native-DAP inertness, authenticated editor-session debugging, breakpoints/stacks/variables/selector watches, bounded public monitor snapshots, completed and cancelled profiles, hostile-input rejection, published stdio behavior, and zero owned-state or fixture residue. Earlier gates remain required regressions. See [Phase 7 testing](docs/testing/phase-7.md), [Phase 6 testing](docs/testing/phase-6.md), the [threat model](docs/security/threat-model.md), and the [bridge protocol](docs/protocol/bridge-v1.md).
 
 ## Roadmap
 

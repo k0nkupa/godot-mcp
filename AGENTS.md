@@ -2,8 +2,6 @@
 
 ## Start here
 
-- Product contract: `docs/superpowers/specs/2026-07-15-godot-mcp-master-design.md`
-- Current implementation plan: `docs/superpowers/plans/2026-07-17-phase-7-debugging-performance.md`
 - Security boundary: `docs/security/threat-model.md`
 - Wire contract: `docs/protocol/bridge-v1.md`
 - Phase gate: `docs/testing/phase-7.md`
